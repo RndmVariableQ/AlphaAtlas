@@ -1,0 +1,102 @@
+Use case: infographic-diagram / reference-guided redesign.
+Create ONE refined Chinese AlphaAtlas research vision and technical roadmap image, based closely on the attached ORIGINAL concept poster. This is a modest technical elaboration of that original image, not a software architecture diagram. Preserve its visual identity: luminous blue-and-gold atlas globe, illustrated mechanism continents, unexplored golden continent, elegant navy Chinese titles, translucent white panels, fine connecting lines, pale sky and mountain background, grand but readable academic research poster. Landscape approximately 3:2 matching reference, high resolution preferably 3840x2560. Maintain a large central globe occupying roughly 40 percent of the composition and a clearly visible five-step exploration loop on the right. Preserve the left-to-right narrative: existing factor research → AI generates hypotheses → unified knowledge atlas → map-driven open exploration. Clear Chinese typography, enough whitespace, no overcrowding.
+
+Input image role: primary content, layout and style reference. Rebuild the text cleanly according to the following precise copy. Only modestly elaborate the research techniques. This depicts proposed research, not completed capabilities.
+
+TOP:
+Large title “AlphaAtlas：面向开放式因子发现的市场知识地图”
+Subtitle “让 AI 从搜索已有因子，走向探索未知 Alpha 大陆”
+Small subtle label “研究构想与技术路线”
+
+FAR LEFT, narrow column, two stacked panels; make these compact so main globe and hypothesis reasoning get room:
+Panel heading “传统因子研究”
+subtitle “以人类经验提出假设”
+vertical four steps “市场观察” → “机制假说” → “因子构造” → “回测检验”
+bottom “探索范围受已有认知约束”
+Second panel heading “自动化搜索”
+subtitle “在既定表达空间中迭代”
+vertical three steps “公式生成” → “批量实验” → “筛选因子”
+bottom “更多公式，未必带来更多知识”
+A subtle arrow into the adjacent hypothesis panel.
+
+LEFT MIDDLE, main panel heading “AI 提出新机制假说”
+subtitle “跨领域知识与推理，拓展可检验的研究方向”
+Three elegant subpanels:
+1 heading “跨领域迁移”
+text “物理扩散 → 信息传播”
+text “生态竞争 → 资金博弈”
+text “网络结构 → 关联资产”
+Use three fine line icons, no excessive ornaments.
+2 heading “类比与反事实推理”
+text “如果信息传播更慢？”
+text “如果流动性突然收缩？”
+text “将直觉转化为可证伪的预测”
+3 heading “假说具体化”
+text “经济机制 → 可观测变量”
+text “作用方向 → 时间尺度”
+text “适用条件 → 失效条件”
+Below three panels, small luminous AI/knowledge icon, then gold rounded output card:
+“新市场机制假说”
+“有依据 · 可表达 · 可检验”
+Gold arrow connects to central atlas. Never write AGI as an implemented system.
+
+CENTER:
+Title above globe “AlphaAtlas”
+subtitle “可探索、可积累的市场知识空间”
+Beautiful globe very similar to original with six clearly labeled colored mechanism continents:
+“动量大陆” / small “趋势与持续性”
+“流动性大陆” / small “交易、深度与冲击”
+“信息传播大陆” / small “预期、注意力与扩散”
+“波动大陆” / small “不确定性与风险”
+“期限结构大陆” / small “利率、曲线与时序”
+“未知大陆” / small “尚待验证的机制假说”
+Make the unknown continent partially hidden by mist, amber question mark and dashed coastline. Existing continent nodes connect by subtle glowing graph edges. Near map, a concise annotation card:
+“机制 → 区域 → 因子”
+“按语义、结构与行为建立关联”
+“聚合证据，识别重复与探索空白”
+Small note “大陆为概念示意，空白不保证存在 Alpha”
+A magnifying inset near globe lower left illustrates a single glowing factor node:
+“单个因子”
+“可计算、可解释的知识单元”
+
+Below central globe, a wide readable 4-row white rounded panel. Heading:
+“每个因子的四类知识描述”
+Rows:
+“语义机制”  “经济解释、机制假说、知识来源”
+“计算结构”  “表达式与算子、变量依赖、时间尺度”
+“行为表现”  “预测相关性、稳定性、与已有因子的冗余”
+“历史演化”  “尝试路径、成立与失效条件、证据变化”
+Use intuitive small line icons. Four rows not packed densely.
+
+RIGHT:
+Heading “地图驱动的开放式探索闭环”
+subtitle “从识别空白，到积累可复用的知识”
+Arrange FIVE cards in a spacious clockwise cycle, linked with unmistakable blue arrows 1→2→3→4→5→1. Only this cycle, not extra architecture.
+Card 1 title “1. 识别值得探索的区域”
+body “综合知识覆盖、证据不确定性与新颖性”
+body “平衡已有方向的深化与未知方向的探索”
+Card 2 title “2. 提出可检验的新假说”
+body “结合文献、跨域类比与失败经验”
+body “明确机制、预测方向和适用条件”
+Card 3 title “3. 转化为因子表达”
+body “将机制映射为变量、算子与时间尺度”
+body “生成可计算的表达式（AST / DSL）”
+Card 4 title “4. 实验检验与比较”
+body “检验有效性、稳定性与非冗余性”
+body “比较已有因子，并进行样本外验证”
+Card 5 title “5. 更新 Atlas”
+body “关联假说、表达式与实验证据”
+body “记录成功、失败、重复与探索成本”
+Below loop a small clearly readable note:
+“样本外结果用于独立验证，不回流当轮搜索”
+Then white rounded takeaway card:
+“成功与失败都成为长期知识”
+“让下一次探索建立在已有证据之上”
+
+BOTTOM:
+Elegant gold-accent footer, close to original:
+“目标：让每次实验都扩展市场知识，持续探索未知规律”
+Small secondary footer:
+“研究验证：同等预算下，能否更快发现有效、非冗余且样本外稳定的因子？”
+
+Avoid engineering content completely: no MarketData, no code modules or data schema, no asset data frequency/configuration, no file paths, no tests/checkpoints, no numbered implementation phases or milestones, no blue/orange implemented-versus-planned badges, no deployment pipeline, no token budgets, no run isolation mechanics. Do not turn this into a grid of software boxes. Keep the original poster's map-centric illustrated storytelling. Include only the meaningful light research-tech elaboration given above. No performance claims and no claim AGI is already implemented. All copy legible and accurate.

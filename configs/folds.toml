@@ -1,0 +1,15 @@
+data_start = 2015-01-01
+data_end = 2026-09-01
+
+[[folds]]
+id = "fold1"
+train = [2016-01-01, 2018-12-31]
+val = [2019-01-01, 2020-12-31]
+test = [2021-01-01, 2022-12-31]
+
+[[folds]]
+id = "fold2"
+train = [2019-01-01, 2021-12-31]
+val = [2022-01-01, 2023-12-31]
+test = [2024-01-01, 2025-12-31]
+note = "Folds are independent, not a sequential live backtest."

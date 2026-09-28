@@ -1,0 +1,16 @@
+# Paper v3 search, adapted to shared Atlas diagnostics. No vendor or data configuration.
+chat_model = "gpt-5.5"
+chat_base_url = "http://127.0.0.1:27483/codex/v1"
+chat_key_env = "OPENAI_API_KEY"
+temperature = 1.0
+repair_temperature = 0.8
+risk_temperature = 0.1
+timeout_seconds = 120.0
+exploration = 1.0
+dimension_temperature = 1.0
+tree_budget = 3
+budget_increment = 1
+fsa_top_k = 3
+max_formula_repairs = 3
+max_dialogue_rounds = 8
+tree_selection = true

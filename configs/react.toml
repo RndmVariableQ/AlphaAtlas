@@ -1,0 +1,9 @@
+# One AgentScope ReAct agent; context compression is managed by AgentScope.
+framework = "agentscope"
+chat_model = "Qwen/Qwen3-8B-AWQ"
+chat_base_url = "http://127.0.0.1:8001/v1"
+chat_key_env = "ALPHA_ATLAS_LLM_API_KEY"
+temperature = 0.5
+max_output_tokens = 1536
+summary_output_tokens = 768
+timeout_seconds = 120.0

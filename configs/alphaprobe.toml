@@ -1,0 +1,21 @@
+# AlphaPROBE search under Atlas's numerical/data/admission protocol.
+# Configure actual models before running. No keys belong in this file.
+chat_model = "gpt-5.5"
+embedding_model = "Qwen3-Embedding-0.6B"
+chat_base_url = "http://127.0.0.1:27483/codex/v1"
+embedding_base_url = "http://127.0.0.1:8003/v1"
+chat_key_env = "OPENAI_API_KEY"
+embedding_key_env = "ALPHA_ATLAS_EMBEDDING_API_KEY"
+temperature = 1.0
+max_output_tokens = 4096
+timeout_seconds = 120.0
+
+pool_capacity = 50
+top_k = 15
+offspring = 5
+depth_penalty = 0.05
+retrieval_penalty = 0.10
+min_train_quality = 0.006 # Descendants only; roots need finite, nonzero train IC.
+# Empty: LLM cold start, generating up to offspring roots; every submission costs a trial.
+# Explicit DSL seeds can be supplied here and shared with comparison methods.
+initial_expressions = []

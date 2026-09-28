@@ -1,0 +1,25 @@
+# Daily RQ PIT-derived fields, exposed as funda_<field> after one full trading-day lag.
+daily_fields = [
+  "pe_ratio_ttm", "ep_ratio_ttm", "pb_ratio_lf", "book_to_market_ratio_lf",
+  "ps_ratio_ttm", "sp_ratio_ttm", "pcf_ratio_ttm", "cfp_ratio_ttm",
+  "dividend_yield_ttm", "market_cap", "a_share_market_val_in_circulation",
+  "ev_to_ebitda_ttm", "return_on_equity_ttm", "return_on_equity_diluted_ttm",
+  "return_on_asset_ttm", "return_on_asset_net_profit_ttm", "net_profit_margin_ttm",
+  "gross_profit_margin_ttm", "diluted_earnings_per_share_ttm",
+  "account_receivable_turnover_rate_ttm", "inventory_turnover_ttm", "total_asset_turnover_ttm",
+  "debt_to_asset_ratio_lf", "debt_to_equity_ratio_lf", "current_ratio_lf", "quick_ratio_lf",
+  "cash_ratio_lf", "tangible_asset_per_share_lf", "inc_revenue_ttm",
+  "net_profit_growth_ratio_ttm", "operating_revenue_growth_ratio_ttm",
+  "net_asset_growth_ratio_lf", "total_asset_growth_ratio_lf", "inc_book_per_share_lf",
+  "cash_flow_per_share_ttm", "operating_cash_flow_per_share_ttm", "fcff_ttm", "fcfe_ttm",
+  "ocf_to_debt_ttm", "cash_flow_ratio_ttm",
+]
+
+# Original statement rows, including historical revisions and announcement dates.
+statement_fields = [
+  "revenue", "operating_revenue", "net_profit", "net_profit_parent_company",
+  "profit_before_tax", "income_tax", "cost_of_goods_sold", "selling_expense",
+  "ga_expense", "financing_expense", "r_n_d", "total_assets", "total_liabilities",
+  "total_equity", "cash_flow_from_operating_activities",
+  "cash_flow_from_investing_activities", "cash_flow_from_financing_activities",
+]

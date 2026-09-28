@@ -1,0 +1,22 @@
+asset_id = "futures_curve"
+frequency = "5m"
+provider = "ricequant"
+data_dir = "data/futures_curve"
+default_universe = "all"
+universes = ["all"]
+timezone = "Asia/Shanghai"
+bar_time_label = "end"
+price_field = "close"
+target_horizon_bars = 12
+metric = "time_series_weighted_pearson_ic"
+min_train_val_ic = 0.005
+fundamentals = false
+start = 2015-01-01
+end = 2026-09-01
+
+[acquisition]
+frequency = "5m"
+adjust_type = "none"
+contract_scope = "dominant_with_two_later_maturities"
+dominant_rule = 0
+credential_env = "RICEQUANT_LICENSE_KEY"

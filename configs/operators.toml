@@ -1,0 +1,8 @@
+# Registered group_batch kernels execute locally as trusted Numba code.
+validation_seconds = 120.0
+evaluation_seconds = 120.0
+benchmark_small_size = 64
+benchmark_large_size = 256
+benchmark_repeats = 5
+benchmark_floor_seconds = 0.001
+benchmark_max_growth = 3.0

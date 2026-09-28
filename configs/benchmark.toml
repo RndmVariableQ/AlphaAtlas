@@ -1,0 +1,19 @@
+# Illustrative defaults, freeze before formal comparisons.
+max_attempts = 100
+# Shared reference access for every method; empty string disables it for all methods.
+reference_library = "futures_cta"
+# Shared train-only diagnostics; identical availability for all methods.
+search_diagnostics = "icir_turnover_v1"
+# Used when the asset profile does not set min_train_val_ic.
+min_abs_val_ic = 0.01
+min_coverage = 0.8
+# Reject when absolute validation Spearman reaches this configurable threshold.
+max_abs_corr = 0.7
+min_corr_overlap = 100
+max_expression_nodes = 100
+max_expression_depth = 20
+seed = 42
+warmup_policy = "one_calendar_year_before_train"
+target_boundary_policy = "target_end_must_be_within_split"
+admission = "train_sign_then_positive_val_ic; first_accepted_wins"
+oos_policy = "freeze_first; no_test_feedback"

@@ -1,0 +1,21 @@
+asset_id = "ashare"
+frequency = "1d"
+provider = "ricequant"
+data_dir = "data/ashare"
+default_universe = "union1800"
+universes = ["union1800", "hs300", "zz500", "zz1000"]
+timezone = "Asia/Shanghai"
+bar_time_label = "end"
+price_field = "adj_close"
+target_horizon_bars = 5
+metric = "cross_sectional_spearman"
+fundamentals = true
+start = 2015-01-01
+end = 2026-09-01
+
+[acquisition]
+mode = "native_ricequant"
+index_ids = ["000300.XSHG", "000905.XSHG", "000852.XSHG"]
+fundamental_lag_trading_days = 1
+raw_pit_statements = "all"
+credential_env = "RICEQUANT_LICENSE_KEY"

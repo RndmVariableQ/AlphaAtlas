@@ -1,0 +1,107 @@
+Use case: infographic-diagram
+Create ONE polished Chinese technical roadmap poster for AlphaAtlas. It must be a serious research architecture and staged roadmap, suitable for a project proposal and academic presentation. Landscape 16:9, preferably 3840x2160, very crisp legible Simplified Chinese typography. Generate a new original image. White/light ice-blue background, navy text, restrained blue/teal module accents and amber for future research. Faint atlas contour lines and subtle connected geographical regions only as a background motif. Clean flat editorial/vector-like infographic with generous whitespace, professional hierarchy, thin arrows, consistent rounded rectangles, tasteful small line icons. No photoreal globe, no AI brain, no mountains or decorative fantasy scenes. Prioritize precise text and clear flow over ornament.
+
+Title at top, large:
+“AlphaAtlas 技术路线图”
+Subtitle:
+“以市场机制、计算结构与实证行为组织知识，驱动可检验的开放式因子探索”
+
+Below title a slim research-question strip:
+“核心问题：知识地图能否在相同预算下，更快发现有效且非冗余的因子？”
+A small top-right legend: blue filled label “已有基础”; amber outlined label “拟研究能力”. Make all method innovations clearly planned; do not imply AGI or proven superiority.
+
+Main architecture: five clearly numbered columns left-to-right across the upper-middle 55% of image. Each column is a compact vertical card. Thin main flow arrows link 01→02→03→04→05. Left first card blue, middle research cards amber accents, final evaluation card blue. Each card has a bold heading then three succinct sub-blocks with exact copy:
+
+01 heading “数据与实验底座”
+badge “已有基础”
+sub-blocks:
+“A 股日线 / 期货原生 5m”
+“历史股票池 · PIT 财务”
+“真实合约 · 覆盖与来源”
+divider
+“MarketData 统一读取”
+“特征与标签分离”
+“固定 train / val · 独立运行”
+bottom small output tag “输出：可复现实验上下文”
+
+02 heading “因子知识表示”
+badge “联合表示待研究”
+three small stacked subcards with labels and smaller descriptions:
+“语义 Semantic”
+“机制假设 · 来源 · 可证伪条件”
+“结构 Symbolic”
+“AST / DSL · 算子 · 依赖”
+“行为 Behavioral”
+“train/val IC · 覆盖 · 冗余”
+bottom small output tag “输出：Factor Genome”
+Make clear this is three dimensions. History is not a fourth equivalent dimension.
+
+03 heading “Atlas 知识地图”
+badge “拟研究”
+show a small clean network of clustered regions above concise text, tiny labels “动量” “流动性” “信息传播” and one dashed empty region “待验证”
+text:
+“机制大陆 → 假设区域 → 因子”
+“联合相似性 · 关联与检索”
+“成功 / 失败 / 重复 / 成本”
+“识别证据不足的区域”
+bottom small output tag “输出：区域证据与探索候选”
+
+04 heading “地图引导探索”
+badge “拟研究”
+four stacked steps with down arrows:
+“选区：质量 × 新颖性 × 成本”
+“提出可检验的机制假设”
+“LLM 构造表达式 / 算子”
+“UCB / MCTS 分配探索预算”
+small note “跨域类比提供线索，实验检验假设”
+bottom small output tag “输出：候选因子与实验计划”
+
+05 heading “统一实验与反馈”
+badge “已有基础”
+stacked text:
+“编译校验 → 因子计算”
+“train 定方向 · val 检验”
+“质量门槛 + 行为查重”
+“因子库准入 · Trial 记录”
+bottom small output tag “输出：指标、拒绝原因与成本”
+
+Immediately under columns 02-05, a conspicuous feedback arrow FROM column 05 back LEFT to column 03, with label:
+“开发反馈闭环：更新区域证据，指导下一次探索”
+Below it a thin neutral strip:
+“贯穿记录：假设来源 → 表达式版本 → 实验结果 → 探索历史”
+Tiny note “地图空白代表证据不足，不保证存在 Alpha”
+
+Next row beneath architecture: separated experiment validation band, with thin downward arrow from 05 to a locked gate icon and three boxes laid out left-to-right:
+First box title “统一对照与消融”
+body “Random / GP / UCT MCTS / 区域 UCB”
+body “AlphaPROBE 适配 · Atlas 拟议方法”
+body “控制搜索空间、种子与预算；披露模型成本”
+body “消融：语义 / 结构 / 行为 / 地图导航”
+Second box title “冻结开发决策与因子库”
+body “全部开发决策冻结后，独立评估 OOS”
+body “测试标签与结果不回流搜索”
+Third box title “研究验收”
+body “有效非冗余因子积累曲线”
+body “单位发现成本 · 固定口径知识覆盖”
+body “冻结因子库的 OOS IC 与稳定性”
+Connect first to second to third with arrows. NO arrows from OOS/third box back to exploration. Make freeze separation visually obvious.
+
+Bottom 17%: horizontal four-phase roadmap with connected circles, each clearly has status and one short deliverable line:
+“阶段 1｜工程底座”
+blue status “已具备基础”
+“数据、DSL、评估、基线、冻结 OOS”
+“阶段 2｜知识地图”
+amber status “下一步研究”
+“三维表示、区域证据、检索与新颖性”
+“阶段 3｜开放式探索”
+amber status “方法研究”
+“LLM 假设生成、地图导航、反馈迭代”
+“阶段 4｜实证验证”
+amber status “待系统验证”
+“多 seed 对照、消融、冻结后 OOS”
+
+Very bottom restrained footnote:
+“当前 Atlas 为区域 UCB 符号基线；AlphaPROBE 已适配，真实模型实验待开展。”
+“首阶段研究静态探索效率；动态市场推演属于远期方向。”
+
+Constraints: all Chinese accurately rendered; no invented numbers, no performance claim, no dates/deadlines, no claim of implemented AGI or full LLM-MCTS paper replication, no trading interface. Do not add Sharpe or portfolio performance as implemented metrics. Clear spacing, avoid lines crossing text, balanced modules, keep text large enough to read. Only render requested text, without prompt scaffolding.
