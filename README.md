@@ -201,6 +201,8 @@ LLM、语义 embedding、自动开放式假设生成或学习式多模态地图�
 
 ## 目录
 
+多人协作的实验汇总表见[实验记录](docs/experiment_log.md)。
+
 ```text
 configs/                 资产、财务字段、fold、实验规则
 src/alpha_atlas/
