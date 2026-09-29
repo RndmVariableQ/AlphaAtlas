@@ -42,29 +42,7 @@ $close / base - 1
 超出整张面板长度的基础窗口直接返回 null，避免为不可能完整的窗口分配巨大临时数组。
 四个符号基线自行使用有限候选窗口集合，这属于方法策略，不限制其他方法提交的窗口。
 
-## 运行上下文与查询接口
-
-模型可见的公共入口为 `session.query("get_context", {})`，一次返回 asset、frequency、
-target、metric、fields、operators、expression_rules、evaluation_rules、reference_library。
-实时 remaining_attempts 只出现在评估结果中；平台内部的 `session.get_context()` 保留它
-用于 ask/tell 调度与预算停止，不直接序列化给模型。
-目标定义包含 price_field、horizon_bars、return_type、boundary，不含日期或标签数组。
-不向方法提供 run_id、snapshot_id、universe、fold、train/val/预热日期或窗口预算。
-
-以下底层接口用于组装公共 context，不作为模型单独调用的工具：
-
-- `get_fields()`：当前允许的字段名称。
-- `get_evaluation_rules()`：评估聚合、训练方向、覆盖率、当前准入门槛与查重规则；无日期和数据值。
-- `list_operators()`：当前基础及已成功注册算子的名称、签名、作用域和类型。
-- `get_operator(name)`：完整 OperatorSpec、别名和最小窗口；未知算子明确报错。
-- `get_expression_rules()`：单行／多行语法与 JSON 示例、节点/深度限制、通用数值与高周期规则，
-  不包含窗口上限或日期。
-- `get_library()`：已有的只读因子库；因子间训练统计仍经 `factor_correlations()` 获取。
-
-内部 context 和目标定义不可修改；公共查询结果为独立副本，修改不会改变注册表。新增算子成功后
-再次查询即可看到，失败算子不会出现。ask/tell 方法可通过 `set_session(session)` 绑定查询入口；
-Runner 在运行和恢复时都绑定。AlphaProbe 从查询接口获取需要的信息，具体模型协议见
-[AlphaProbe 查询](alphaprobe.md#模型只读查询)。不增加通用工具执行框架。
+公共 context、查询和评估反馈见[研究工具](research_tools.md)。
 
 ## 数值规则
 
@@ -120,15 +98,14 @@ $close / TS_MEAN($close@1d,5) - 1
 | close / open_interest / days_to_maturity | 最后一根 |
 | volume / amount | 求和 |
 
-`15m/30m/60m` 参照 ChaoticTrader 的自然时钟切桶和结束时间标签：15m、30m
+`15m/30m/60m` 使用自然时钟切桶和结束时间标签：15m、30m
 桶最早在 09:30 可见，09:25 不能读取。午休等间歇不产生虚构 Bar；端点无观测时，
 只能在端点之后的已有 5m 行上看到该桶。聚合实际观测，不要求午休桶也有 6/12 根 Bar。
 
 `1d` 按供应商 `trading_day` 合并夜盘、跨午夜和白盘。当前导出没有历史收盘时刻表，
 因此采用明确的确认时点：**同一真实合约下一交易日的首根已观测 Bar**，才发布上一交易日。
 例如周五夜盘归属周一，周五夜盘首根 Bar 可以确认周五日线。末日未确认则不发布。
-这比 ChaoticTrader 根据当前输入中当天最大时间戳标记日线完成更晚，但截断到盘中或
-补入未来 Bar 时不会回改过去的结果。不能把当前输入的最后一行当作已知收盘时刻。
+截断到盘中或补入未来 Bar 时不会回改过去的结果，不能把当前输入的最后一行当作已知收盘时刻。
 
 广播只匹配 `available_at <= 当前 timestamp`，同时要求主合约连续段与所有依赖腿的
 连续段相同。换约、退出后重新入选、已知缺口都会阻断广播与滚动历史。桶跨越连续段时
@@ -141,7 +118,7 @@ CS 在相同发布时间的合格观测上计算，其结果再向后广播。
 时间、合约内交易日倒退会拒绝执行，避免错误交易日将未来报价归入已发布的日线。
 
 规范化 AST 保留后缀，`compiled.fields` 仅列实际基础字段；原有表达式身份不变。
-沿用原有冻结、代码与快照校验。`get_expression_rules().timeframes` 提供频率、允许字段
+沿用原有冻结与快照校验，源码指纹仅记来源。`get_expression_rules().timeframes` 提供频率、允许字段
 和规则；ReAct 固定系统提示词包含这些信息，未添加运行日期或身份。
 
 ## 远月合约字段
@@ -184,7 +161,7 @@ $close_p1 / $close - 1
 ```powershell
 # 显式采集原生 5m，并导出 p1/p2 字段；凭据方式沿用既有采集入口。
 uv run python scripts/acquire_data.py futures --far-contracts --merge `
-  --env-file D:\WORKSPACE\ChaoticTrader\.env
+  --env-file C:\path\to\credentials.env
 
 # 已有分区时只合并，不连接供应商、不读取凭据。
 uv run python scripts/acquire_data.py futures --far-contracts --merge-only
@@ -279,9 +256,7 @@ definition = OperatorDefinition(
 `feedback.validation` 保存每阶段状态、耗时和错误；`performance_growth` 还保存测量规模、
 中位耗时、增长比、计时下限和是否拒绝。记录先落盘，全部通过后才发布注册；失败保留已完成
 阶段和失败阶段。冻结恢复注册也执行同一组检查。通过注册不代表通过因子质量和相关性准入。
-当前没有 stateful、任意依赖安装或通用 LLM 工具。四个 ask/tell 基线及 AlphaPROBE
-专用 LLM 搜索支持 JSON 检查点；
-本节的任意 run(session) 算子创建流程暂不支持中断恢复。
+不支持 stateful 或任意依赖安装；本节任意 run(session) 算子创建流程暂不支持中断恢复。
 
 ## 复杂内核示例
 
@@ -303,38 +278,10 @@ uv run python examples/complex_operator.py
 
 ## 证据与重现
 
-期货 `EvaluationReport.metrics` 按主指标在前排列：Pearson 的 SQRT 成交额加权、品种等权，
-然后是 Spearman 的 SQRT 成交额加权、品种等权；每项按 train/val/val_raw 排列，共 12 项。
-两种相关均先合并同品种合约样本，Spearman 重新排名，Pearson 直接使用因子与标签数值。
-val 统一使用加权 train Pearson IC 确定的方向。库筛选和方法反馈只用主指标；完整口径见
-[统一评估](../README.md#统一评估与公平对比)。`context.metric` 标明主指标。
-成交额由平台通过 MarketData 额外读取用于固定区间权重；不因此扩大方法的允许字段。
-新 `oos.json` 每个成功结果都使用 `metrics` 数组：期货四项、A 股两项；A 股仍然是
-Spearman 在前、Pearson 在后，train/val 报告共六项。旧单项 `metric` 仍可只读展示。
-控制台按加权方式分表，最右两列为 Spearman IC 与 Pearson IC；旧记录缺失 Pearson 显示 —。
-`atlas test <run目录>` 的控制台默认显示表格，`--json` 可切换为 JSON 输出；不改变落盘格式。
-查看已经保存的历史结果用 `atlas report <run目录> --oos`；只读 oos.json 并标明未重新验证，
-不触发行情读取、计算或写入。该展示入口不改变 test/resume 的指纹检查。
+算子验证记录先落盘，成功后才发布注册；冻结保存成员定义、展开计划、注册依赖、方向与
+运行环境。运行内代码算子需满足已有身份／运行环境校验，旧产物不自动迁移。
+源码指纹仅作来源记录，恢复和 OOS 的边界见[实验规范](research_protocol.md#恢复与产物)。
 
-每个 trial 的评估、准入和库版本写入同一个 JSON 后才更新内存；成员值缓存不能单独证明入库。
-`RunStore.library_view()` 从已提交 trial 重建只读成员。缓存可能被回收；单个当前求值结果的工作
-内存不受缓存容量限制，避免无法返回刚计算的观测。
-
-Runner 的 `cache/evaluations` 与 `cache/members` 共用 512 MiB 磁盘上限。启动/恢复只列举
-这两个目录的 Arrow 文件大小和修改时间，不读取全部 IPC 内容；运行中增量统计，超限淘汰
-最久未使用的文件，恢复时以修改时间初始化顺序。每次成功写入完成后，保留文件总量不超限；
-写入临时文件期间可能短暂超限。单个文件超过上限时不保留磁盘副本，当前观测仍可用于计算。
-恢复只重建成员目录，查重需要的数值缺失/不可读时才重算并核对原评估，不重复 trial 或准入。
-内存缓存继续使用既有预算，不是进程总内存限制。独立装配可将同一 `ArrowCache` 传给评估器
-和因子库；因子库同时提供 `rebuild(entry)` 回调。未提供缓存对象的独立因子库仍按显式目录
-保存成员值，调用方自行管理保留范围。
-
-冻结保存全部成员、展开计划、注册定义、方向及 Python/NumPy/Numba/llvmlite 和平台版本。
-运行汇总为根目录 report.md，OOS 原始结果为同层 oos.json；报告只从现有记录生成，不触发计算。
-OOS 先检查配置、代码/锁文件、
-数据和冻结文件，再读取缓存报告；成员失败不会静默省略。
-同步 ask/tell 搜索恢复见 [README](../README.md#中断与恢复)：复用已提交反馈，缺失成员缓存
-可重建，方法状态和随机数状态由 JSON 检查点恢复。任意 run(session) 和通用 LLM 流程尚不支持；
-AlphaPROBE 的三阶段响应与待处理子代恢复见 [搜索适配说明](alphaprobe.md)。
-
-旧 Docker 运行产物保留，但不自动迁移到 Numba；旧运行时或指纹不符时明确拒绝重现。
+正式成员由已提交 trial 重建，数值缓存不能单独证明入库。Runner 的评估／成员磁盘缓存
+共用 512 MiB 上限；恢复只列举大小和修改时间，缺失／不可读的成员值按需重建。
+单文件超限时不留副本，内存工作集与临时文件不属于保留缓存额度。

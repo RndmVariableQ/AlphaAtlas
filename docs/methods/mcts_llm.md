@@ -1,9 +1,8 @@
-# MCTS-LLM：统一框架复现方案
+# MCTS-LLM 搜索适配
 
-日期：2026-09-12。状态：**已有五维搜索算法适配与合成数据／模拟模型测试**。
-遵循 [全方法统一复现规范](method_reproduction.md)。入口 `--method mcts_llm`，实现标识
-`mcts_llm_atlas_v1`，与原有 `mcts` 符号基线独立。尚未验证真实模型的市场搜索效果，
-不声称重现原论文实验成绩。
+入口 `--method mcts_llm`，实现标识 `mcts_llm_atlas_v1`。
+已有五维搜索算法、FSA、阶段恢复与模拟测试；真实运行见[实验记录](../records/experiments.md)。
+遵循[方法复现规范](../method_reproduction.md)，与 `mcts` 符号基线独立，不声称复现论文收益。
 
 ## 1. 固定来源
 
@@ -34,8 +33,8 @@
 | `evaluation/qlib_evaluator.py`、`metrics/*`、`comprehensive.py` | 阅读指标意图，不直接调用；不带入数据、标签或准入 | 公共 evaluator 与 SearchSession |
 | `llm/client.py`、缓存、CLI、pickle checkpoint、YAML 配置框架 | 不移植 | 复用现有模型客户端、runner、TOML、trial 和方法状态 |
 
-搜索实现集中在 [mcts_llm.py](../src/alpha_atlas/methods/mcts_llm.py) 与
-[方法配置](../configs/mcts_llm.toml)。工厂、CLI、冻结配置检查复用现有方法接入路径。
+搜索实现集中在 [mcts_llm.py](../../src/alpha_atlas/methods/mcts_llm.py) 与
+[方法配置](../../configs/mcts_llm.toml)。工厂、CLI、冻结配置检查复用现有方法接入路径。
 共享诊断位于 evaluation/session/reporting，方法不读取面板。编译预检复用
 `SearchSession.validate_expression`：只返回规范 AST 和错误，不计评估尝试，不增加模型工具。
 
@@ -81,7 +80,7 @@
 
 五维奖励与最终平台成绩严格分开：
 
-| 维度 | 计划输入与使用方式 | 当前能力／必须补足 |
+| 维度 | 输入与使用方式 | 本地实现 |
 | --- | --- | --- |
 | 有效性 | 公共 train 主指标，按训练方向后的质量；与正式库训练指标排名，越大越好 | 已实现；期货主指标由 profile 决定，不硬编码为论文 RankIC |
 | 稳定性 | 公共训练期 ICIR 诊断，方向与主指标一致，再作相对排名 | 已实现；资产分组与边界见下节 |
@@ -99,43 +98,19 @@
 公共准入仍按即时规则执行；保存评估前视图不延迟或绕过准入。
 必要的训练相关对可在已有方法会话中请求；不新增模型数据权限。
 
-当前共享诊断定义为 `icir_turnover_v1`，开关位于 `benchmark.toml` 的
-`search_diagnostics`，空字符串对所有方法关闭。MCTS-LLM 要求开启，关闭时在加载数据前
-报错。诊断保存在 `EvaluationReport.diagnostics`，经统一评估结果、库查询和 Markdown
-报告提供；原有 metrics 顺序、训练方向、准入与 OOS IC 定义不变。
-
-- ICIR：仅取 train 的 eligible／有效 target 评分行，每组至少 5 对有限值。A 股先算日
-  截面主指标；期货先算每个 product／trading_day 内的主相关，再按该 profile 的等权或
-  固定训练期成交额权重汇总为日序列。至少两个有效交易日，以方向统一后的日均值除以
-  样本标准差（ddof=1）；std ≤ 1e-12 或不足两个有效日返回 null，不补造“稳定高分”。
-  期货按日切块是稳定性诊断，不改写主指标原有整段品种聚合。
-- A 股换手：train 内当日 PIT eligible 成员的因子截面平均秩减去平均秩，再除以绝对值
-  总和，得到 gross=1 的多空持仓；完全同秩时持仓为零。相邻完整观测日，对成员并集
-  求 `0.5 * sum(abs(w_t-w_prev))`，再等权平均；新进／退出的另一侧权重为零。要求
-  每个截面至少 5 个成员且值全部有限；不跨越无效日。第一日建仓不计入。
-- 期货换手：每根原生 Bar 以 `sign(value)` 作为单位名义持仓，对同一真实合约与
-  segment 的相邻观测计算 `0.5 * abs(position_t-position_prev)`；先按品种平均，
-  再按 profile 等权／固定训练权重汇总。首笔、合约切换、已知连续段中断及 null 两侧
-  不产生转移，不能跨过去拼接。单位标明为 `native_bar_unit_position`，不是日换手。
-- 换手不读取未来收益，只使用 train 内特征有效行。它衡量固定持仓映射的变化，
-  不包含交易费、滑点、实际成交约束或首笔建仓费用，不能当真实交易成本。
-  这一持仓映射与原论文组合不同，属于公开的本地适配。
-
-所有诊断是有限标量及计数，日期明细、持仓／标签数组不提供给方法。数值回归验证诊断
-开启前后原有 IC 不变、修改 val 不改变 train 诊断、缺失与合约切换不制造换手。
-训练相关使用既有有界缓存，丢失时只重建请求因子。
+共享训练诊断的定义与缺失规则见[数据与实验规范](../research_protocol.md#共享训练诊断)。
 
 参考示例仅来自当前正式库，或公共开关允许的无绩效参考定义；两者身份明确区分。
 FSA 保留参数抽象后的 root gene、按公式支持度和闭合结构 top-k 规避；只把它作为
 本方法生成约束，不能变成所有方法的正式准入规则。规避检查使用 AST，失败后走有界
 纠正阶段；原始及修复回复都计模型成本，提交的非法候选照常扣尝试。
 
-## 5. 实施顺序与验收
+## 5. 验证
 
 上述共享诊断、算法、模型流程和 runner 接入已实现。验证文件：
-[数值诊断测试](../tests/test_search_diagnostics.py)、
-[MCTS-LLM 测试](../tests/test_mcts_llm.py)、
-[跨方法工具一致性](../tests/test_research_tools.py)。
+[数值诊断测试](../../tests/test_search_diagnostics.py)、
+[MCTS-LLM 测试](../../tests/test_mcts_llm.py)、
+[跨方法工具一致性](../../tests/test_research_tools.py)。
 覆盖手算排名／概率／UCT、FSA 结构与参数抽象、根预算与局部重启、完整五维评分、
 非法 DSL／模型回复、关键诊断缺失、重复节点、原始模型响应已保存后恢复、trial 提交／
 回传后恢复及冻结 OOS。测试全用合成数据和模拟模型，不访问真实凭据或供应商。
@@ -143,17 +118,9 @@ FSA 保留参数抽象后的 root gene、按公式支持度和闭合结构 top-k
 
 ## 6. 配置、运行与限制
 
-默认模型为本地 `http://127.0.0.1:27483/codex/v1` 接口的 `gpt-5.5`，凭据从外部
-`OPENAI_API_KEY` 环境变量读取，不写入仓库或项目 `.env`。Windows 用户环境变量更新后，
-已运行的终端／Codex 需要重启以继承新值。地址和模型名由方法 TOML 配置，
-客户端不额外读取 `OPENAI_API_BASE` 或 `MODEL` 环境变量。
-ClovAPI 请求路径必须含 providerId；这里使用 `codex`，客户端追加 `/chat/completions`。
-`/v1/models` 可用不代表 `/v1/chat/completions` 可用；省略 providerId 会返回 HTTP 404。
-ReAct／AlphaPROBE 配置保持各自设置，正式比较时仍需统一同组模型条件。
-客户端复用 HTTPModels，阶段温度随请求显式传递。
-MCTS-LLM 不设置客户端输出 token 上限，请求省略 `max_tokens`，实际长度仍受模型服务限制。
-此前统一的 4096 上限为本地设置，已移除。固定上游版本的普通生成请求未设置此参数，
-但风险评分单独设置 200；本地按用户要求统一省略，不采用该风险阶段上限。
+模型、服务地址与密钥环境变量名见[方法配置](../../configs/mcts_llm.toml)。
+服务需兼容 Chat Completions；密钥只从配置指定的环境变量读取。阶段温度随请求传递，
+本地客户端省略 `max_tokens`，实际输出长度受服务限制；这是本地选择，原参考风险阶段设为 200。
 
 | 配置／约定 | 当前值 | 来源／偏离 |
 | --- | --- | --- |
@@ -183,20 +150,13 @@ uv run atlas test artifacts/runs/<run_id>
 
 请求所用的公共 context、阶段输入、原响应、查询结果、解析／编译反馈和阶段结果保存在
 既有方法状态，供恢复；提示词来自执行时源码，阶段温度来自冻结配置。
-共享客户端对断流、连接错误、超时及临时 HTTP 错误最多额外重试 3 次，等待 1／2／4 秒；
-规则对所有 LLM 方法一致，见 [统一规范](method_reproduction.md)。每次重试计请求数，
-失败请求用量记 unknown，不占因子评估次数，不重做已经完成的建议／公式阶段。
-重试耗尽或不可重试的模型服务错误使运行失败，配置不变时修复服务后可以恢复；
-源码指纹仅记录来源，不再作为恢复门槛；
-不返回固定风险分。
-若修改模型地址等冻结配置，需重新执行 `atlas run` 创建新运行，旧产物保留，不能直接 resume。
-已经保存的响应即使
-尚未解析也不会重发。请求已发出但未保存响应时仍可能重发，计入未知用量。
-不提供 token／总耗时硬上限，不声称模型 seed 可保证服务端输出确定。
+公共重试、成本与恢复边界见[方法复现规范](../method_reproduction.md#预算失败与恢复)。
+方法状态保存模型阶段、原始响应、查询结果和解析反馈；已保存响应即使尚未解析也不重发。
+修改模型地址等冻结配置需新建运行。必要风险评分失败不补固定分。
 
 机制消融至少区分完整适配、去 FSA、去树选择；去树选择应保留相同生成与反馈阶段。
 现有 `react` 和 `mcts` 可作系统参照，不能代替这一受控消融。去掉任一关键维度或
 以模板替代 LLM 的版本使用独立标识，不以完整 MCTS-LLM 名称报告。
-冻结库可使用公共 [model 入口](model.md) 训练 linear／LightGBM 并独立评估组合预测 IC；
+冻结库可使用公共 [model 入口](../model.md) 训练 linear／LightGBM 并独立评估组合预测 IC；
 它不改变本方法的搜索和奖励，也不宣称复现原论文组合成绩。原论文的 top-k、MLP 和
 交易收益实验尚未接入。

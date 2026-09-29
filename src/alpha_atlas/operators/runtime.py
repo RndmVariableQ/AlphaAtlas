@@ -101,7 +101,18 @@ class NumbaRuntime:
         env = {
             key: value
             for key, value in os.environ.items()
-            if key.upper() in {"SYSTEMROOT", "WINDIR", "PATH", "TEMP", "TMP", "LANG", "LC_ALL"}
+            if key.upper()
+            in {
+                "SYSTEMROOT",
+                "WINDIR",
+                "PATH",
+                "TEMP",
+                "TMP",
+                "LANG",
+                "LC_ALL",
+                "PROCESSOR_ARCHITECTURE",
+                "PROCESSOR_ARCHITEW6432",
+            }
         }
         env.update(
             PYTHONPATH=str(Path(__file__).resolve().parents[2]),

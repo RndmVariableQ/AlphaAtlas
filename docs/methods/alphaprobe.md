@@ -1,11 +1,10 @@
 # AlphaPROBE：统一协议下的搜索算法适配
 
-适用 [全方法统一复现规范](method_reproduction.md)；以下保留本方法具体算法与偏离说明。
+适用 [全方法统一复现规范](../method_reproduction.md)；以下保留本方法具体算法与偏离说明。
 
-实现名 `alphaprobe_atlas_v1`，入口 `--method alphaprobe`。这是使用真实 LLM 和语义
-embedding 接口的搜索实现；自动测试用模拟响应验证算法和运行协议。旧版人工模板初始化
-已有真实模型运行产物；本次默认 LLM 冷启动尚未完成市场实验。不声称复现原论文的实验
-收益、原始算子数值或动态组合。
+入口 `--method alphaprobe`，实现名 `alphaprobe_atlas_v1`。采用 Chat 与语义 embedding
+服务，算法与运行协议使用模拟模型测试；真实结果见[实验记录](../records/experiments.md)。
+默认 LLM 冷启动与历史模板初始化须分组比较，不声称复现论文收益或动态组合。
 
 参考：[AlphaPROBE 论文](https://arxiv.org/abs/2602.11917)，以及
 [公开实现 872299d](https://github.com/gta0804/AlphaPROBE/tree/872299dc9841f3c3096a2786fe976a2e2e1ad23f)。
@@ -73,46 +72,14 @@ likelihood = max(0, gain)
 | 生成 | 三个显式角色请求，祖先信息和输出保存；公开代码的合并提示词不照搬 |
 | 组合与测试 | 不引入动态 Mega 因子、交易回测或搜索期 test 日志；冻结后统一审计全库 OOS IC |
 
-## 训练期相关性接口
-
-`session.factor_correlations([(factor_id_a, factor_id_b), ...])` 只接受本运行已经评估且
-具有规范化计算表达式的因子，不接受外部表达式或另一个 run 的 ID。
-返回不可变 `FactorCorrelation(left, right, value, n_obs, aggregation, split="train")`。
-
-- A 股：训练期每日横截面 Pearson，逐日等权。
-- 期货：同品种全部合约的训练样本合并后计算 Pearson，再按整个训练期间的品种
-  `sqrt(sum(amount))` 加权，沿用平台主指标的品种权重与有效性规则。
-  图节点质量也使用主指标——训练期 SQRT 成交额加权 Pearson IC 的绝对值；其他 IC 仅报告。
-- 共同有限值、每个相关分组至少 5 个观测，整体有效观测不少于统一规则 `min_corr_overlap`。
-- 只在训练评分范围内计算，保留既有 eligible、标签可用性与 split 端点过滤。
-  不输出因子数组或任何收益标签。
-- 因子间统计不生成新 trial，不重新准入；耗时计入运行活动时间。Runner 在 ask 前计算，
-  因而候选生成耗时也包含这部分检索准备。恢复前已经记录的统计保留在方法状态中。
-- 训练因子值采用运行内、按字节限额的内存缓存，仅此方法启用主动保留；缺失时仅重建
-  请求的因子，读取的仍是评估器已有 MarketData 面板，不访问供应商或 Parquet。
-  不增加缓存校验和或成员扫描。训练缓存额度与现有评估缓存额度各自计算，单因子可超过额度。
-
-AlphaProbe 在 ask 阶段通过绑定的 `session.factor_correlations(correlation_pairs())`
-请求训练统计，不再通过 context 传递。`EvaluationReport.canonical_expression` 提供编译后的计算树，
-复用原 factor ID，不增加身份体系。
+训练相关性通过公共[研究工具](../research_tools.md#训练相关性)计算，只使用本运行训练证据。
+本方法在 ask 前请求所需因子对，检索准备耗时计入候选生成；主动缓存已有训练值，缺失按需重建。
 
 ## 配置与运行
 
-编辑 `configs/alphaprobe.toml` 的 `chat_model`、`embedding_model` 和两个 `*_base_url`。
-当前 Chat 为本地 `http://127.0.0.1:27483/codex/v1` 的 `gpt-5.5`；Embedding 为
-`http://127.0.0.1:8003/v1` 的 `Qwen3-Embedding-0.6B`。缺少模型配置时在加载行情前报错。
-模型可使用不同服务；模型名、地址、参数和密钥环境变量名记录在原有 run 配置中。
-终端每次“模型请求”同时打印类型、实际配置的 `MODEL` 名称和请求次数。
-
-客户端使用标准库发送兼容请求：
-
-- `POST /chat/completions`：`model`、`messages`、`temperature`、`max_tokens`。
-- `POST /embeddings`：`model`、文本数组 `input`、`encoding_format="float"`。
-
-参考 [Chat API](https://developers.openai.com/api/reference/resources/chat) 与
-[Embeddings API](https://platform.openai.com/docs/api-reference/embeddings/create)。
-所选服务需支持上述请求参数。API key 仅从配置所指向的外部环境变量按请求读取；不读取项目
-`.env`，不把密钥写入配置、日志或检查点。无鉴权的本地服务可不设置对应环境变量。
+在[方法配置](../../configs/alphaprobe.toml)设置 Chat、embedding 模型、服务地址和密钥
+环境变量名。服务分别支持 `/chat/completions` 和 `/embeddings`，缺少模型配置时在加载数据前失败。
+密钥只从外部环境变量读取，不写入配置、日志或检查点；无需在文档复制本机部署方案。
 
 ```powershell
 uv run atlas run --asset ashare --universe union1800 --fold fold1 --method alphaprobe --seed 42 --attempts 100
@@ -136,7 +103,7 @@ uv run atlas test artifacts/runs/<run_id>
 
 每次生成数量为 `min(offspring, remaining_attempts)`。非法表达式和重复表达式正常消耗
 尝试；格式错误的模型响应以空 DSL、`alphaprobe_generation_error` 候选记录一次编译失败，
-错误与原响应留在方法状态中。不执行自动重试或无限修复。HTTP／embedding 错误使运行失败，
+错误与原响应留在方法状态中。不做无限格式修复；临时网络错误遵循公共重试规则。重试耗尽使运行失败，
 修复外部服务后使用同一配置恢复。
 
 ## 检查点、成本与复现限度
@@ -151,15 +118,7 @@ uv run atlas test artifacts/runs/<run_id>
 返回但尚未写入节点的 embedding 仍可能重新请求。模型服务器的确定性也不由本地 seed 保证。
 
 报告显示请求数、已知 prompt/completion/embedding token、未知用量请求数与图／检索规模。
-Chat 和 embedding 都按 [统一规范](method_reproduction.md) 对断流、连接错误、超时及
-临时 HTTP 错误最多额外重试 3 次，等待 1／2／4 秒。重试计入对应请求数，失败用量记
-unknown，不增加候选评估次数；耗尽后沿用阶段恢复。
-目前没有价格换算、token 硬预算或活动总时长硬上限；`max_output_tokens` 是每次 Chat 的
-输出限制，`timeout_seconds` 是单次 HTTP 请求超时，不是实验总预算。
-方法配置沿用现有 run 指纹保护，恢复与 OOS 不允许悄悄改变配置。
-
-与现有四个有限文法基线比较时，必须披露其搜索空间、初始化与模型费用差异。相同算子目录
-不意味着每种搜索器都能探索相同组合，不能据此宣称已经完成严格控制变量的论文比较。
+公共请求重试、成本统计、配置冻结与比较边界见[方法复现规范](../method_reproduction.md)。
 
 ## 验证
 
@@ -174,10 +133,7 @@ OOS 不回写搜索状态、模拟 HTTP 协议、错误响应计数和凭据不�
 
 ## 模型只读查询
 
-LLM 使用与 ReAct、符号基线同源的公共研究 context：asset、frequency、target、metric、
-fields、operators、expression_rules、evaluation_rules、reference_library。
-不传日期区间、fold、universe、运行/快照 ID 或实时预算。最近一次公共评估结果单独放在
-evaluation_result 中，其中包含 remaining_attempts；沿用现有方法状态保存和恢复该反馈。
+模型可见字段与工具定义见[研究工具](../research_tools.md)。
 三阶段生成沿用 JSON 响应协议；模型可先返回：
 
 ```json
@@ -192,10 +148,3 @@ library_stats 五个只读工具。参考库开关来自 configs/benchmark.toml�
 这是现有 JSON 对话上的专用查询协议，不依赖服务端原生 function calling 或任意 Python 执行。
 查询也计入实际模型请求/token 成本，已完成查询保存于现有 batches/checkpoint；恢复继续使用
 已保存结果。仅绑定既有 session，不增加文件、工具管理器或新的身份校验。
-
-工具权限和评估口径统一，搜索策略仍各自独立：AlphaPROBE 使用冷启动或显式种子、图检索和
-三阶段生成，符号基线保留有限语法。开放参考库表示各方法可以查询，并不强制自动使用种子。
-
-平台没有窗口或累计历史上限；正整数、算子最小窗口、完整有效历史和复杂度约束保留。
-冷启动窗口由 LLM 根据公共 context 提出；显式种子使用给定窗口，不再自动按目标 horizon
-构造初始模板。
