@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -53,7 +54,11 @@ class FactorLibrary:
         directory: Path | None = None,
         disk_cache: ArrowCache | None = None,
         rebuild=None,
+        cache_factors: int = 200,
     ):
+        if type(cache_factors) is not int or cache_factors < 0:
+            raise ValueError("cache_factors must be a nonnegative integer")
+        self._cache_factors = cache_factors
         self._rules = dict(rules)
         self._min_train_val_ic = min_train_val_ic
         self._snapshot_id, self._context_id = snapshot_id, context_id
@@ -64,7 +69,7 @@ class FactorLibrary:
         if directory:
             directory.mkdir(parents=True, exist_ok=True)
         self._members: dict[str, LibraryEntry] = {}
-        self._values: dict[str, pl.DataFrame | Path] = {}
+        self._values: OrderedDict[str, pl.DataFrame | Path] = OrderedDict()
 
     def view(self) -> LibraryView:
         return LibraryView(tuple(self._members.values()), len(self._members))
@@ -72,9 +77,10 @@ class FactorLibrary:
     def _load(self, factor_id: str) -> pl.DataFrame:
         reference = self._values[factor_id]
         if not isinstance(reference, Path):
+            self._values.move_to_end(factor_id)
             return reference
         try:
-            return (
+            frame = (
                 self._disk_cache.read(reference)
                 if self._disk_cache is not None
                 else pl.read_ipc(reference, memory_map=False)
@@ -82,11 +88,21 @@ class FactorLibrary:
         except (FileNotFoundError, pl.exceptions.PolarsError):
             if self._rebuild is None:
                 raise
-        values = self._rebuild(self._members[factor_id])
-        self._save_values(factor_id, values.frame)
-        return values.frame
+            frame = self._rebuild(self._members[factor_id]).frame
+            self._save_values(factor_id, frame)
+        return self._retain_values(factor_id, frame)
 
-    def _save_values(self, identity: str, frame: pl.DataFrame) -> pl.DataFrame | Path:
+    def _retain_values(self, identity: str, frame: pl.DataFrame) -> pl.DataFrame:
+        frame = frame.sort("row_id")
+        self._values[identity] = frame.clone()
+        self._values.move_to_end(identity)
+        if self._directory is not None:
+            cached = [k for k, v in self._values.items() if isinstance(v, pl.DataFrame)]
+            for key in cached[: max(0, len(cached) - self._cache_factors)]:
+                self._values[key] = self._directory / f"{key}.arrow"
+        return frame
+
+    def _save_values(self, identity: str, frame: pl.DataFrame) -> None:
         if self._directory:
             path = self._directory / f"{identity}.arrow"
             if self._disk_cache is not None:
@@ -95,8 +111,6 @@ class FactorLibrary:
                 temp = path.with_suffix(".tmp")
                 frame.write_ipc(temp, compression="zstd")
                 temp.replace(path)
-            return path
-        return frame.clone()
 
     def restore(self, view: LibraryView, observation=None) -> None:
         """Restore committed membership without readmission or trial/budget side effects."""
@@ -116,7 +130,8 @@ class FactorLibrary:
                 or values.frame["row_id"].n_unique() != values.frame.height
             ):
                 raise ValueError("restored observation identity mismatch")
-            self._values[entry.factor_id] = self._save_values(entry.factor_id, values.frame)
+            self._save_values(entry.factor_id, values.frame)
+            self._retain_values(entry.factor_id, values.frame)
             self._members[entry.factor_id] = entry
 
     def consider(
@@ -169,15 +184,23 @@ class FactorLibrary:
         elif values.frame["row_id"].n_unique() != values.frame.height:
             reason = "duplicate_observation_row"
         else:
-            finite = values.frame.filter(pl.col("value").is_finite().fill_null(False))
+            ordered = values.frame.sort("row_id")
+            finite = ordered.filter(pl.col("value").is_finite().fill_null(False))
             if finite["value"].n_unique() < 2:
                 reason = "constant_factor"
             else:
                 failures = set()
                 for factor_id in self._members:
                     reference = self._load(factor_id).rename({"value": "reference"})
-                    overlap = finite.join(reference, on="row_id", validate="1:1").filter(
-                        pl.col("reference").is_finite().fill_null(False)
+                    if ordered["row_id"].equals(
+                        reference["row_id"], check_dtypes=True, null_equal=False
+                    ):
+                        overlap = ordered.select("value").with_columns(reference["reference"])
+                    else:
+                        overlap = finite.join(reference, on="row_id", validate="1:1")
+                    overlap = overlap.filter(
+                        pl.col("value").is_finite().fill_null(False)
+                        & pl.col("reference").is_finite().fill_null(False)
                     )
                     if overlap.height < self._rules["min_corr_overlap"]:
                         failures.add("insufficient_corr_overlap")
@@ -217,7 +240,6 @@ class FactorLibrary:
             version,
             trial_index=trial_index,
         )
-        stored = None
         if accepted:
             if (
                 identity is None
@@ -225,12 +247,12 @@ class FactorLibrary:
                 or any(c not in "0123456789abcdef" for c in identity)
             ):
                 raise ValueError("invalid factor identity")
-            stored = self._save_values(identity, values.frame)
+            self._save_values(identity, values.frame)
         # The trial file is the commit marker; caches alone never imply membership.
         if commit:
             commit(feedback)
         if accepted:
             self._snapshot_id, self._context_id = values.snapshot_id, values.context_id
             self._members[identity] = LibraryEntry(identity, candidate, report, version)
-            self._values[identity] = stored
+            self._retain_values(identity, values.frame)
         return feedback

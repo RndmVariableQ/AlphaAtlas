@@ -24,7 +24,7 @@ from alpha_atlas.evaluation import (
     metrics,
     product_weights,
 )
-from alpha_atlas.library import FactorLibrary
+from alpha_atlas.library import FactorLibrary, LibraryEntry, LibraryView
 from alpha_atlas.operators import OperatorRegistry
 from alpha_atlas.session import SearchSession
 from alpha_atlas.storage import ArrowCache, RunStore
@@ -428,6 +428,100 @@ def test_library_rejection_boundaries():
     assert library.consider(b[0], b[1], duplicate).reason == "duplicate_observation_row"
 
 
+@pytest.mark.parametrize("restored", [False, True])
+@pytest.mark.parametrize("layout", ["same", "shifted", "short", "disjoint", "null"])
+def test_library_prealignment_preserves_common_row_spearman(
+    tmp_path, monkeypatch, restored, layout
+):
+    rng = np.random.default_rng(42)
+    left = evaluated("left", rng.integers(-10, 11, 240).astype(float))
+    right = evaluated("right", rng.integers(-20, 21, 240).astype(float))
+    frames = []
+    for index, item in enumerate((left, right)):
+        frames.append(
+            item[2].frame.with_columns(
+                pl.when(pl.col("row_id") % 17 == index)
+                .then(None)
+                .when(pl.col("row_id") % 19 == index)
+                .then(float("nan"))
+                .when(pl.col("row_id") % 23 == index)
+                .then(float("inf"))
+                .otherwise(pl.col("value"))
+                .alias("value")
+            )
+        )
+    if layout in {"shifted", "disjoint"}:
+        frames[1] = frames[1].with_columns(pl.col("row_id") + (70 if layout == "shifted" else 1000))
+    elif layout == "short":
+        frames[1] = frames[1].head(70)
+    elif layout == "null":
+        frames = [
+            frame.with_columns(pl.when(pl.col("row_id") != 1).then(pl.col("row_id")))
+            for frame in frames
+        ]
+    left = (*left[:2], replace(left[2], frame=frames[0].reverse()))
+    right = (
+        *right[:2],
+        replace(right[2], frame=frames[1].sample(fraction=1, shuffle=True, seed=7)),
+    )
+    lookup = dict(left[2].frame.iter_rows())
+    common = [
+        (lookup[row], value)
+        for row, value in right[2].frame.iter_rows()
+        if row is not None
+        and row in lookup
+        and lookup[row] is not None
+        and value is not None
+        and np.isfinite(lookup[row])
+        and np.isfinite(value)
+    ]
+    library = FactorLibrary(
+        RULES, directory=tmp_path, disk_cache=ArrowCache((tmp_path,)), rebuild=lambda _: left[2]
+    )
+    assert library.consider(*left).accepted
+    if restored:
+        view = library.view()
+        library = FactorLibrary(
+            RULES, directory=tmp_path, disk_cache=ArrowCache((tmp_path,)), rebuild=lambda _: left[2]
+        )
+        library.restore(view)
+    if layout == "same":
+
+        def unexpected_join(*args, **kwargs):
+            pytest.fail("matching cached row IDs must not perform a per-pair join")
+
+        monkeypatch.setattr(pl.DataFrame, "join", unexpected_join)
+    result = library.consider(*right)
+    if len(common) < RULES["min_corr_overlap"]:
+        assert result.reason == "insufficient_corr_overlap" and not result.comparison_complete
+        assert result.max_abs_corr is None
+    else:
+        x, y = np.asarray(common).T
+        expected = abs(np.corrcoef(average_rank(x), average_rank(y))[0, 1])
+        assert result.max_abs_corr == pytest.approx(expected, abs=1e-14)
+        assert result.nearest_factor == left[1].expression_id
+        assert result.comparison_complete
+        assert result.accepted == (expected < RULES["max_abs_corr"])
+
+
+def test_prealigned_member_cache_preserves_duplicate_row_validation(tmp_path):
+    item = evaluated("left", np.arange(200, dtype=float))
+    library = FactorLibrary(
+        RULES, directory=tmp_path, disk_cache=ArrowCache((tmp_path,)), rebuild=lambda _: item[2]
+    )
+    assert library.consider(*item).accepted
+    view = library.view()
+    broken = pl.concat([item[2].frame, item[2].frame.head(1)])
+    broken.write_ipc(tmp_path / f"{item[1].expression_id}.arrow")
+    library = FactorLibrary(
+        RULES, directory=tmp_path, disk_cache=ArrowCache((tmp_path,)), rebuild=lambda _: item[2]
+    )
+    library.restore(view)
+    with pytest.raises(pl.exceptions.ComputeError, match="1:1"):
+        library.consider(*evaluated("right", -np.arange(200, dtype=float)))
+    assert library.view() == view
+
+
 @pytest.mark.parametrize(
     "train, val, accepted",
     [
@@ -580,7 +674,11 @@ def test_shared_member_budget_rebuilds_only_when_needed(tmp_path, restore):
     assert feedback.reason == "behavior_duplicate" and feedback.comparison_complete
     assert feedback.nearest_factor == saved[0][1].expression_id
     assert feedback.max_abs_corr == pytest.approx(1)
-    assert set(rebuilt) == set(observations)
+    assert set(rebuilt) == (set(observations) if restore else set())
+    rebuilt.clear()
+    repeated = library.consider(*duplicate)
+    assert repeated == feedback
+    assert rebuilt == []
     assert library.view() == view
     assert sum(p.stat().st_size for p in tmp_path.rglob("*.arrow")) <= limit
 
@@ -632,10 +730,179 @@ def test_member_cache_read_or_rebuild_does_not_change_admission(tmp_path, state)
     elif state == "unreadable":
         path.write_bytes(b"broken IPC")
     before = library.view()
+    # A new process starts with metadata only, even if the previous process held these values.
+    library = FactorLibrary(
+        RULES, directory=tmp_path, disk_cache=ArrowCache((tmp_path,)), rebuild=rebuild
+    )
+    library.restore(before)
+    assert rebuilt == []
     result = library.consider(*evaluated("inverse", -np.arange(200, dtype=float)))
     assert result.reason == "behavior_duplicate" and result.comparison_complete
     assert library.view() == before
     assert len(rebuilt) == (0 if state == "present" else 1)
+    rebuilt.clear()
+    assert library.consider(*evaluated("inverse", -np.arange(200, dtype=float))) == result
+    assert rebuilt == []
+
+
+def test_restored_library_keeps_200_members_and_evicts_oldest_values(tmp_path):
+    saved = [
+        evaluated(f"x{i}", a)
+        for i, a in enumerate(np.random.default_rng(10).normal(size=(201, 200)))
+    ]
+    entries = tuple(
+        LibraryEntry(report.expression_id, candidate, report, i + 1)
+        for i, (candidate, report, _) in enumerate(saved)
+    )
+    observations = {report.expression_id: values for _, report, values in saved}
+    rebuilt = []
+
+    def rebuild(entry):
+        rebuilt.append(entry.factor_id)
+        return observations[entry.factor_id]
+
+    library = FactorLibrary(
+        RULES,
+        directory=tmp_path,
+        disk_cache=ArrowCache((tmp_path,), max_bytes=0),
+        rebuild=rebuild,
+    )
+    view = LibraryView(entries, len(entries))
+    library.restore(view)
+    assert rebuilt == []
+    for _ in range(2):
+        for entry in entries[:200]:
+            assert library._load(entry.factor_id).equals(observations[entry.factor_id].frame)
+    assert rebuilt == [entry.factor_id for entry in entries[:200]]
+    assert not list(tmp_path.glob("*.arrow"))
+    # Touch the oldest member before exceeding capacity: the next-oldest must be evicted.
+    library._load(entries[0].factor_id)
+    library._load(entries[200].factor_id)
+    rebuilt.clear()
+    library._load(entries[0].factor_id)
+    assert rebuilt == []
+    library._load(entries[1].factor_id)
+    assert rebuilt == [entries[1].factor_id]
+    assert library.view() == view
+
+
+def test_training_cache_holds_200_members_and_candidate_without_recomputation(monkeypatch):
+    service = evaluator(retain_training=True, cache_bytes=0)
+    candidates = {}
+    for i in range(201):
+        candidate = Candidate(f"ADD($x,{i})")
+        report = service.evaluate(candidate)
+        candidates[report.expression_id] = candidate
+    identities = list(candidates)
+    pairs = [(identities[-1], identity) for identity in identities[:-1]]
+
+    def unexpected_execute(*args, **kwargs):
+        pytest.fail("cached member or current candidate was recomputed")
+
+    monkeypatch.setattr("alpha_atlas.evaluation.execute", unexpected_execute)
+    first = service.factor_correlations(pairs, candidates, min_overlap=10)
+    assert len(first) == 200
+    assert all(r.value == pytest.approx(1) and r.n_obs == 48 for r in first)
+    assert service.factor_correlations(pairs, candidates, min_overlap=10) == first
+
+
+@pytest.mark.parametrize("futures", [False, True])
+@pytest.mark.parametrize("partial", [False, True])
+def test_training_prealignment_preserves_groups_weights_and_missing_values(
+    monkeypatch, futures, partial
+):
+    frame = futures_frame() if futures else market_frame()
+    frame = frame.with_columns(
+        pl.when(pl.col("row_id") % 17 == 0)
+        .then(None)
+        .when(pl.col("row_id") % 19 == 0)
+        .then(float("nan"))
+        .when(pl.col("row_id") % 23 == 0)
+        .then(float("inf"))
+        .otherwise(pl.col("x") % 5)
+        .alias("x")
+    ).sample(fraction=1, shuffle=True, seed=42)
+    service = evaluator(frame, retain_training=True)
+    if futures:
+        service.profile["metric"] = FUTURES_METRICS[1]
+        service.weights = {"train": product_weights(frame, service.fold.train)}
+    candidates = {}
+    for expression in ("$x", "$close"):
+        candidate = Candidate(expression)
+        report = service.evaluate(candidate)
+        candidates[report.expression_id] = candidate
+    left, right = candidates
+    if partial:
+        service._remember_training(
+            right, service._training[right].filter(pl.col("row_id") % 11 != 0).reverse()
+        )
+    lookup = dict(service._training[right].select("row_id", "value").iter_rows())
+    group = "product" if futures else "trading_day"
+    groups = {}
+    for row, key, value in service._training[left].select("row_id", group, "value").iter_rows():
+        other = lookup.get(row)
+        if value is not None and other is not None and np.isfinite(value) and np.isfinite(other):
+            groups.setdefault(key, []).append((value, other))
+    weights = dict(service.weights["train"].iter_rows()) if futures else dict.fromkeys(groups, 1)
+    observed = []
+    for key, rows in groups.items():
+        x, y = np.asarray(rows).T
+        if len(rows) >= 5 and len(set(x)) > 1 and len(set(y)) > 1 and key in weights:
+            observed.append((np.corrcoef(x, y)[0, 1], weights[key], len(rows)))
+    expected = sum(corr * weight for corr, weight, _ in observed) / sum(
+        weight for _, weight, _ in observed
+    )
+    count = sum(n for _, _, n in observed)
+    if not partial:
+        original_join = pl.DataFrame.join
+
+        def join(self, *args, **kwargs):
+            assert kwargs.get("on") != "row_id", "matching training rows must not join"
+            return original_join(self, *args, **kwargs)
+
+        monkeypatch.setattr(pl.DataFrame, "join", join)
+    actual = service.factor_correlations([(left, right)], candidates, min_overlap=count)[0]
+    assert actual.value == pytest.approx(expected, abs=1e-14)
+    assert actual.n_obs == count and actual.split == "train"
+    assert (
+        service.factor_correlations([(left, right)], candidates, min_overlap=count + 1)[0].value
+        is None
+    )
+
+
+def test_training_lru_rebuilds_only_evicted_factor_and_preserves_correlation(monkeypatch):
+    import alpha_atlas.evaluation as module
+
+    service = evaluator(retain_training=True, training_cache_factors=2)
+    candidates = {}
+    for expression in ("$x", "NEG($x)", "$close"):
+        candidate = Candidate(expression)
+        report = service.evaluate(candidate)
+        candidates[report.expression_id] = candidate
+    a, _, c = candidates
+    original = module.execute
+    rebuilt = []
+
+    def execute(compiled, *args, **kwargs):
+        rebuilt.append(compiled.factor_id)
+        return original(compiled, *args, **kwargs)
+
+    monkeypatch.setattr(module, "execute", execute)
+    first = service.factor_correlations([(a, c)], candidates, min_overlap=10)
+    assert rebuilt == [a]
+    assert service.factor_correlations([(a, c)], candidates, min_overlap=10) == first
+    assert rebuilt == [a]
+    service._training.clear()
+    assert service.factor_correlations([(a, c)], candidates, min_overlap=10) == first
+    assert rebuilt == [a, a, c]
+
+
+@pytest.mark.parametrize("limit", [-1, True, 1.5])
+def test_factor_cache_capacities_require_valid_integers(limit):
+    with pytest.raises(ValueError, match="cache_factors"):
+        FactorLibrary(RULES, cache_factors=limit)
+    with pytest.raises(ValueError, match="training_cache_factors"):
+        evaluator(training_cache_factors=limit)
 
 
 def test_polars_panic_records_failed_trial_and_allows_next_candidate(tmp_path, monkeypatch):

@@ -38,6 +38,7 @@ def test_context_is_immutable_current_and_run_local(project):
                 "frequency",
                 "target",
                 "metric",
+                "panel",
                 "remaining_attempts",
             }
             assert context.asset == "ashare" and context.frequency == "1d"
@@ -267,7 +268,7 @@ def test_progress_lines_handle_chinese_wrapping_and_control_characters(caplog):
 
 
 @pytest.mark.parametrize("defined", [True, False])
-def test_candidate_results_align_metrics_and_print_admission_name(caplog, defined):
+def test_candidate_result_shows_summary_and_full_expression(caplog, defined):
     from dataclasses import replace
 
     from alpha_atlas.contracts import EvaluationReport, Metric, TrialFeedback
@@ -285,28 +286,27 @@ def test_candidate_results_align_metrics_and_print_admission_name(caplog, define
         report,
         defined,
         "accepted" if defined else "undefined_val_metric",
-        library_version=1,
+        library_version=int(defined),
     )
     with caplog.at_level(logging.INFO, logger="alpha_atlas.progress"):
         terminal_candidate(feedback, index=1, limit=100, elapsed=1.35, total=26.27)
     message = caplog.records[-1].getMessage()
     lines = message.strip().splitlines()
-    assert not any(line.startswith(("+", "|")) for line in lines)
-    assert all(_display_width(line) <= 79 for line in lines)
-    assert ("[因子入库] 短期价格均值" in message) == defined
-    assert "候选完成 1/100" in message and "方向 -1" in message and "99.66%" in message
+    assert len(lines) >= (6 if defined else 7)
+    assert all(_display_width(line) <= 80 for line in lines)
+    assert f"{'✓ 入库' if defined else '! 拒绝'} · 1/100" in lines[0]
+    assert f"已入库 {int(defined)}" in lines[0]
+    val_ic = "+0.0187" if defined else "—"
+    assert f"IC(train/val) -0.0311/{val_ic}" in lines[0]
+    assert "覆盖 99.7%" in lines[0]
+    assert "公式: 短期价格均值 = TS_MEAN($close,12)" in lines[1]
+    assert "训练 IC（原始）" in message and "验证 IC（定向）" in message
+    assert "√成交额加权 Pearson *" in message
+    assert "-0.031132" in message
+    assert ("+0.018719" if defined else "—") in message
     assert f"* 主指标：{name}" in message
-    header = next(line for line in lines if "训练 IC" in line)
-    row = next(line for line in lines if "Pearson" in line)
-    assert _display_width(row[: row.index("-0.031132")]) == _display_width(
-        header[: header.index("训练")]
-    )
     if defined:
-        assert "无法计算" not in message and "未定义" not in message
-        assert "+0.018719" in row and "-0.018719" not in message and "原因" not in message
-        assert _display_width(row[: row.index("+0.018719")]) == _display_width(
-            header[: header.index("验证")]
-        )
+        assert "behavior_duplicate" not in message
         with caplog.at_level(logging.INFO, logger="alpha_atlas.progress"):
             terminal_candidate(
                 replace(feedback, accepted=False, reason="behavior_duplicate"),
@@ -316,11 +316,76 @@ def test_candidate_results_align_metrics_and_print_admission_name(caplog, define
                 total=183.07,
             )
         duplicate = caplog.records[-1].getMessage()
-        assert "behavior_duplicate" in duplicate and "无法计算" not in duplicate
-        assert "[因子入库]" not in duplicate
+        assert "behavior_duplicate" in duplicate and "+0.0187" in duplicate
+        assert "短期价格均值" in duplicate
     else:
-        assert "—" in row and "原因：undefined_val_metric" in message
-        assert "— 表示无法计算" in message
+        assert "IC(train/val) -0.0311/—" in message and "undefined_val_metric" in message
+
+
+def test_candidate_result_shows_all_futures_metrics_in_primary_order(caplog):
+    from alpha_atlas.contracts import Candidate, EvaluationReport, Metric, TrialFeedback
+    from alpha_atlas.reporting import _display_width, terminal_candidate
+
+    values = (
+        ("time_series_weighted_pearson_ic", -0.004295, 0.002212),
+        ("time_series_equal_pearson_ic", 0.002650, -0.001274),
+        ("time_series_weighted_spearman_ic", 0.001023, 0.004724),
+        ("time_series_equal_spearman_ic", 0.001241, 0.004633),
+    )
+    metrics = tuple(
+        Metric(name, split, value, 100, name)
+        for name, train, valid in values
+        for split, value in (("train", train), ("val", valid))
+    )
+    report = EvaluationReport("factor", metrics, -1, 0.9742, 1.0, "success")
+    feedback = TrialFeedback(
+        Candidate("TS_MEAN($close, 12)"), report, False, "quality_threshold", library_version=8
+    )
+
+    with caplog.at_level(logging.INFO, logger="alpha_atlas.progress"):
+        terminal_candidate(feedback, index=117, limit=500, elapsed=7.3, total=5406.7)
+
+    message = caplog.records[-1].getMessage()
+    lines = message.splitlines()
+    assert all(_display_width(line) <= 80 for line in lines)
+    assert "√成交额加权 Pearson *" in lines[5]
+    assert "-0.004295" in lines[5] and "+0.002212" in lines[5]
+    assert "品种等权 Pearson" in lines[6]
+    assert "+0.002650" in lines[6] and "-0.001274" in lines[6]
+    assert "√成交额加权 Spearman" in lines[7]
+    assert "+0.001023" in lines[7] and "+0.004724" in lines[7]
+    assert "品种等权 Spearman" in lines[8]
+    assert "+0.001241" in lines[8] and "+0.004633" in lines[8]
+    assert "* 主指标：time_series_weighted_pearson_ic" in lines[9]
+
+
+def test_candidate_expression_preserves_source_lines_and_wraps_long_lines(caplog, monkeypatch):
+    from alpha_atlas.contracts import Candidate, EvaluationReport, TrialFeedback
+    from alpha_atlas.reporting import _display_width, terminal_candidate
+
+    monkeypatch.setattr("alpha_atlas.reporting._terminal_width", lambda: 80)
+    report = EvaluationReport("factor", (), -1, 0.9, 1.0, "success")
+    expression = (
+        "signed_amount = $amount * SIGN($close - $open)\n"
+        "total_amount = TS_SUM($amount, 12)\n"
+        "sti = TS_SUM(signed_amount, 12) / total_amount\n"
+        "peer_sti_lag = DELAY(sti_dev, 1) peer_noi_lag = DELAY(noi_dev, 1) "
+        "+ sti_dev * peer_noi_lag + peer_sti_lag * noi_dev"
+    )
+    feedback = TrialFeedback(
+        Candidate(expression), report, False, "quality_threshold", library_version=3
+    )
+
+    with caplog.at_level(logging.INFO, logger="alpha_atlas.progress"):
+        terminal_candidate(feedback, index=4, limit=20, elapsed=1.0, total=4.0)
+
+    lines = caplog.records[-1].getMessage().splitlines()
+    assert any("signed_amount =" in line for line in lines)
+    assert any("total_amount =" in line for line in lines)
+    assert any("sti = TS_SUM" in line for line in lines)
+    assert any("peer_sti_lag =" in line for line in lines)
+    assert any("peer_noi_lag =" in line for line in lines)
+    assert all(_display_width(line) <= 80 for line in lines)
 
 
 def test_cli_progress_stays_on_stderr_and_quiet_preserves_results(project):
@@ -339,8 +404,9 @@ def test_cli_progress_stays_on_stderr_and_quiet_preserves_results(project):
     args = ("run", "--asset", "ashare", "--fold", "fold1", "--method", "atlas", "--attempts", "3")
     result, output = cli(*args)
     assert "开始搜索 / 加载行情" in output and "行情就绪" in output
-    assert output.index("评估候选") < output.index("候选完成")
-    assert output.count("候选完成") == 3 and "搜索完成" in output
+    assert output.index("评估候选") < output.index("1/3 · 已入库 ")
+    assert all(f"{index}/3 · 已入库 " in output for index in range(1, 4))
+    assert "搜索完成" in output
     report, output = cli("test", result["run_dir"], "--json")
     assert report["results"] and "OOS 计算" in output and "OOS 完成" in output
     cached, output = cli("test", result["run_dir"], "--json")

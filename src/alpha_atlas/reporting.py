@@ -3,7 +3,10 @@
 import html
 import json
 import logging
+import shutil
 import sys
+import threading
+import time
 import unicodedata
 import warnings
 from collections import Counter
@@ -13,6 +16,10 @@ from alpha_atlas.assets.common import atomic_json
 from alpha_atlas.checkpoint import read_json
 from alpha_atlas.storage import FORMAT_VERSION, RunStore
 
+_PROGRESS_TEXT = ""
+_ACTIVE_STREAM = None
+_REPLY_TAIL_COLUMNS = 512
+
 
 def _display_width(text):
     return sum(
@@ -21,21 +28,39 @@ def _display_width(text):
     )
 
 
+def _stream_display_width(text):
+    """Count ambiguous glyphs wide so live rows fit CJK terminals conservatively."""
+    return sum(
+        0 if unicodedata.combining(c) else 2 if unicodedata.east_asian_width(c) in "WFA" else 1
+        for c in text
+    )
+
+
 def _terminal_wrap(value, width, *, preserve_spaces=False):
     text = "—" if value is None else str(value)
-    text = (
-        "".join(" " if c.isspace() else c for c in text)
-        if preserve_spaces
-        else " ".join(text.split())
-    )
-    text = "".join(c for c in text if not unicodedata.category(c).startswith("C"))
-    lines, line = [], ""
-    for char in text:
-        if _display_width(line + char) > width:
-            lines.append(line)
-            line = ""
-        line += char
-    return [*lines, line]
+    if preserve_spaces:
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+        text = "".join(
+            "\n" if c == "\n" else " " if c.isspace() else c
+            for c in text
+            if c == "\n" or c.isspace() or not unicodedata.category(c).startswith("C")
+        )
+        source_lines = text.split("\n")
+    else:
+        text = " ".join(text.split())
+        text = "".join(c for c in text if not unicodedata.category(c).startswith("C"))
+        source_lines = [text]
+
+    lines = []
+    for source_line in source_lines:
+        line = ""
+        for char in source_line:
+            if _display_width(line + char) > width:
+                lines.append(line)
+                line = ""
+            line += char
+        lines.append(line)
+    return lines
 
 
 def _terminal_grid(rows, widths):
@@ -58,174 +83,344 @@ def _terminal_grid(rows, widths):
 
 
 def terminal_progress(title, **values):
-    """Compact progress lines on stderr; no terminal state or file writes."""
+    """Print a compact one-line status, or refresh an active response line."""
     logger = logging.getLogger("alpha_atlas.progress")
     if logger.isEnabledFor(logging.INFO):
         details = "  ·  ".join(
             f"{key}={value if value is not None else '—'}" for key, value in values.items()
         )
-        text = f"[{title}]" + (f" {details}" if details else "")
-        logger.info("\n".join("  " + line for line in _terminal_wrap(text, 77)))
+        text = f"{title}" + (f" │ {details}" if details else "")
+        if _ACTIVE_STREAM is not None:
+            with _ACTIVE_STREAM.lock:
+                _ACTIVE_STREAM.notice = text
+                _ACTIVE_STREAM._write_line()
+            return
+        global _PROGRESS_TEXT
+        _PROGRESS_TEXT = text
+        logger.info(_fit_progress_line(f"  › {text}", _terminal_width()))
 
 
 class TerminalStream:
-    """Print provider deltas on stderr, including Qwen think tags split across chunks."""
+    """Show response text on one terminal line without exposing model reasoning."""
 
     def __init__(self, *, summary=False):
         self.summary = summary
-        self.channel = None
+        self.started = None
+        self.stop = None
+        self.thread = None
+        self.interactive = False
+        self.enabled = False
+        self.lock = threading.RLock()
+        self.response = ""
+        self.pending = ""
         self.thinking = False
-        self.buffer = ""
-        self.column = 0
+        self.tick = 0
+        self.status = ""
+        self.notice = None
 
     def __enter__(self):
+        global _ACTIVE_STREAM
+        logger = logging.getLogger("alpha_atlas.progress")
+        if not logger.isEnabledFor(logging.INFO):
+            return self
+        self.enabled = True
+        self.started = time.monotonic()
+        self.interactive = sys.stderr.isatty()
+        self.status = _PROGRESS_TEXT or ("摘要生成" if self.summary else "模型回复")
+        if self.interactive:
+            _ACTIVE_STREAM = self
+            self.stop = threading.Event()
+            self.thread = threading.Thread(target=self._refresh, daemon=True)
+            self.thread.start()
+        else:
+            logger.info(_fit_progress_line(f"  … {self.status} │ 生成中", _terminal_width()))
         return self
 
-    def _write(self, channel, text):
-        if not logging.getLogger("alpha_atlas.progress").isEnabledFor(logging.INFO):
-            return
-        text = "".join(
-            c if c != "\t" else " "
-            for c in text
-            if c in "\n\t" or not unicodedata.category(c).startswith("C")
-        )
-        if not text.strip() and self.channel != channel:
-            return
-        output = []
-        if self.channel != channel:
-            title = "模型思考 · 流式" if channel == "reasoning" else "模型输出 · 流式"
-            if self.summary:
-                title = "摘要 / " + title
-            output.append(f"\n  [{title}]\n")
-            self.channel, self.column = channel, 0
-        for char in text:
-            width = _display_width(char)
-            if char == "\n" or self.column + width > 75:
-                output.append("\n")
-                self.column = 0
-                if char == "\n":
-                    continue
-            if not self.column:
-                output.append("    ")
-            output.append(char)
-            self.column += width
-        sys.stderr.write("".join(output))
+    def _refresh(self):
+        while not self.stop.is_set():
+            with self.lock:
+                self._write_line()
+                self.tick += 1
+            self.stop.wait(0.15)
+
+    def _write_line(self, *, done=False, failed=False):
+        sys.stderr.write("\r" + self._render_line(done=done, failed=failed) + "\x1b[K")
         sys.stderr.flush()
 
-    def delta(self, channel, text):
-        if channel == "restart":
-            self.__exit__(None, None, None)
-            self.channel = None
-            self.thinking = False
-            self.buffer = ""
-            self.column = 0
-            return
-        if channel == "reasoning":
-            self._write(channel, text)
-            return
-        self.buffer += text
-        tags = ("<think>", "</think>")
-        while self.buffer:
-            found = [(self.buffer.find(tag), tag) for tag in tags if tag in self.buffer]
-            if found:
-                index, tag = min(found)
-                self._write("reasoning" if self.thinking else "content", self.buffer[:index])
-                self.thinking = tag == "<think>"
-                self.buffer = self.buffer[index + len(tag) :]
-                continue
-            # Hold only a possible partial tag; everything else is visible immediately.
-            tail = max(
-                (n for tag in tags for n in range(1, len(tag)) if self.buffer.endswith(tag[:n])),
-                default=0,
+    def _render_line(self, *, done=False, failed=False):
+        width = _terminal_width()
+        measure = _stream_display_width
+        elapsed = int(time.monotonic() - self.started)
+        status = self.notice or self.status
+        status = _compact_annealing_status(status)
+        marker = "!" if failed else "✓" if done else "|/-\\"[self.tick % 4]
+        elapsed_text = f"{elapsed // 60:02d}:{elapsed % 60:02d}"
+        if failed:
+            return _fit_terminal_line(
+                f"  {marker} {status} │ 请求失败 · {elapsed_text}", width, measure=measure
             )
-            end = len(self.buffer) - tail
-            self._write("reasoning" if self.thinking else "content", self.buffer[:end])
-            self.buffer = self.buffer[end:]
+        suffix = f" │ {elapsed_text}"
+        if self.response:
+            suffix += " → "
+            response_width = min(32, max(12, (width - 38) // 2))
+            status_width = max(12, width - measure(suffix) - response_width)
+            status_line = _fit_progress_line(f"  {marker} {status}", status_width, measure=measure)
+            response_line = _fit_terminal_line(
+                self.response, response_width, preserve_tail=True, measure=measure
+            )
+            line = status_line + suffix + response_line
+            return (
+                _fit_terminal_line(line, width, preserve_tail=True, measure=measure)
+                if measure(line) > width
+                else line
+            )
+        activity = "完成" if done else "生成中"
+        return _fit_terminal_line(
+            f"  {marker} {status} │ {elapsed_text} · {activity}", width, measure=measure
+        )
+
+    def _append_response(self, text):
+        self.response += text
+        if (
+            len(self.response) <= _REPLY_TAIL_COLUMNS
+            and _display_width(self.response) <= _REPLY_TAIL_COLUMNS
+        ):
+            return
+        tail, used = [], 0
+        for char in reversed(self.response):
+            char_width = _display_width(char)
+            if used + char_width > _REPLY_TAIL_COLUMNS or len(tail) >= _REPLY_TAIL_COLUMNS:
+                break
+            tail.append(char)
+            used += char_width
+        self.response = "".join(reversed(tail))
+
+    def _content_delta(self, text):
+        self.pending += text
+        while self.pending:
+            lowered = self.pending.lower()
+            markers = (
+                ("</think>", "</thinking>", "</analysis>", "</reasoning>")
+                if self.thinking
+                else ("<think>", "<thinking>", "<analysis>", "<reasoning>")
+            )
+            matches = [(lowered.find(marker), marker) for marker in markers]
+            matches = [(position, marker) for position, marker in matches if position >= 0]
+            if matches:
+                position, marker = min(matches)
+                if not self.thinking:
+                    self._append_response(self.pending[:position])
+                self.pending = self.pending[position + len(marker) :]
+                self.thinking = not self.thinking
+                continue
+            keep = max(map(len, markers)) - 1
+            if self.thinking:
+                self.pending = self.pending[-keep:] if keep else ""
+            elif len(self.pending) > keep:
+                self._append_response(self.pending[:-keep] if keep else self.pending)
+                self.pending = self.pending[-keep:] if keep else ""
             break
 
+    def delta(self, channel, text):
+        if not self.enabled:
+            return
+        with self.lock:
+            if channel == "restart":
+                self.response = ""
+                self.pending = ""
+                self.thinking = False
+            elif channel == "content":
+                self.notice = None
+                self._content_delta(text)
+            else:
+                return
+            if self.interactive:
+                self._write_line()
+                self.tick += 1
+
     def __exit__(self, exc_type, exc, traceback):
-        if self.buffer:
-            self._write("reasoning" if self.thinking else "content", self.buffer)
-        if self.channel is not None:
-            sys.stderr.write("\n\n")
-            sys.stderr.flush()
-        if exc_type is not None:
-            terminal_progress("模型请求未完成", 状态="本次未获得完整回复")
+        global _ACTIVE_STREAM
+        if self.thread is not None:
+            self.stop.set()
+            self.thread.join()
+            with self.lock:
+                if exc_type is None and not self.thinking and self.pending:
+                    self._append_response(self.pending)
+                self.pending = ""
+                self._write_line(done=exc_type is None, failed=exc_type is not None)
+                sys.stderr.write("\n")
+                sys.stderr.flush()
+            if _ACTIVE_STREAM is self:
+                _ACTIVE_STREAM = None
+        elif self.enabled:
+            logger = logging.getLogger("alpha_atlas.progress")
+            if exc_type is not None:
+                terminal_progress("模型请求失败")
+            else:
+                with self.lock:
+                    if not self.thinking and self.pending:
+                        self._append_response(self.pending)
+                    self.pending = ""
+                    logger.info(self._render_line(done=True))
+
+
+def _fit_terminal_line(text, width, *, preserve_tail=False, measure=_display_width):
+    """Clip a terminal preview to one row, keeping the newest response characters visible."""
+    text = "".join(" " if char.isspace() else char for char in text)
+    text = "".join(char for char in text if not unicodedata.category(char).startswith("C"))
+    if measure(text) <= width:
+        return text
+    if preserve_tail:
+        kept = []
+        used = measure("…")
+        for char in reversed(text):
+            char_width = measure(char)
+            if used + char_width > width:
+                break
+            kept.append(char)
+            used += char_width
+        return "…" + "".join(reversed(kept))
+    kept = []
+    used = measure("…")
+    for char in text:
+        char_width = measure(char)
+        if used + char_width > width:
+            break
+        kept.append(char)
+        used += char_width
+    return "".join(kept) + "…"
+
+
+def _compact_annealing_status(status):
+    if not status.startswith(("退火 │ ", "区域退火 │ ")):
+        return status
+    parts = [part.strip() for part in status.replace(" │ ", "  ·  ").split("  ·  ")]
+    title = parts[0]
+    if title == "区域退火":
+        title = "退火"
+    progress = next((part for part in parts[1:] if part.startswith("进度=")), None)
+    agent = next((part for part in parts[1:] if part.startswith("Agent=")), None)
+    details = " · ".join(part for part in (progress, agent) if part)
+    return f"{title} │ {details}" if details else title
+
+
+def _terminal_width():
+    if sys.stderr.isatty():
+        return max(24, shutil.get_terminal_size(fallback=(80, 24)).columns - 1)
+    return 78
+
+
+def _fit_progress_line(text, width, *, measure=_display_width):
+    """Keep the start and end of long statuses visible on a single terminal row."""
+    text = "".join(" " if char.isspace() else char for char in text)
+    text = "".join(char for char in text if not unicodedata.category(char).startswith("C"))
+    if measure(text) <= width:
+        return text
+    ellipsis_width = measure("…")
+    left_width = (width - ellipsis_width) // 2
+    right_width = width - left_width - ellipsis_width
+    left = _fit_terminal_line(text, left_width, measure=measure)
+    right = _fit_terminal_line(text, right_width, preserve_tail=True, measure=measure)
+    return left[:-1] + "…" + right[1:]
 
 
 def terminal_evaluation(candidate, *, index, limit):
     terminal_progress("评估候选", 进度=f"{index}/{limit}", 名称=candidate.name or "未命名")
-    expression = _expression(
-        candidate.expression
-        if isinstance(candidate.expression, str)
-        else candidate.expression.to_dict()
-    )
-    logger = logging.getLogger("alpha_atlas.progress")
-    logger.info(
-        "  表达式：\n%s",
-        "\n".join(
-            "    " + part
-            for line in expression.splitlines()
-            for part in _terminal_wrap(line, 75, preserve_spaces=True)
-        ),
-    )
 
 
 def terminal_candidate(feedback, *, index, limit, elapsed, total):
-    """Aligned results followed by admission, only after the trial has been committed."""
+    """Print the committed outcome, primary evaluation and full candidate expression."""
     logger = logging.getLogger("alpha_atlas.progress")
     if not logger.isEnabledFor(logging.INFO):
         return
     report = feedback.report
-    status = "已入库" if feedback.accepted else "未入库"
-    lines = [f"[候选完成 {index}/{limit}]  {status}  ·  库内 {feedback.library_version}"]
-    coverage = f"{report.coverage:.2%}" if report.coverage is not None else "—"
-    direction = f"{report.direction:+d}" if report.direction is not None else "—"
-    missing = report.coverage is None or report.direction is None
-    lines.append(
-        f"覆盖率 {coverage}  ·  方向 {direction}  ·  评估 {elapsed:.2f}s  ·  累计 {total:.2f}s"
+    primary_name = (
+        next((metric.name for metric in report.metrics if metric.split == "train"), None)
+        if report
+        else None
     )
+    measured = (
+        {
+            metric.split: metric.value
+            for metric in report.metrics
+            if metric.name == primary_name and metric.split in {"train", "val"}
+        }
+        if report and primary_name
+        else {}
+    )
+    numbers = "/".join(
+        f"{measured[split]:+.4f}" if measured.get(split) is not None else "—"
+        for split in ("train", "val")
+    )
+    coverage = f"{report.coverage:.1%}" if report and report.coverage is not None else "—"
+    status = "入库" if feedback.accepted else "拒绝"
+    width = _terminal_width()
+    line = (
+        f"  {'✓' if feedback.accepted else '!'} {status} · {index}/{limit}"
+        f" · 已入库 {feedback.library_version} · IC(train/val) {numbers} · 覆盖 {coverage}"
+    )
+    duration = f"耗时 {elapsed:.1f}s / 累计 {total:.1f}s"
+    if _display_width(line) + 3 + _display_width(duration) <= width:
+        line += " · " + duration
+
+    expression = _expression(feedback.candidate.expression) or "—"
+    if feedback.candidate.name:
+        expression = f"{feedback.candidate.name} = {expression}"
+    prefix = "  ↳ 公式: "
+    wrapped = _terminal_wrap(expression, width - _display_width(prefix), preserve_spaces=True)
+    lines = [_fit_terminal_line(line, width), prefix + wrapped[0]]
+    continuation = "     "
+    lines.extend(continuation + part for part in wrapped[1:])
     if not feedback.accepted:
-        lines.append(f"原因：{feedback.reason}")
-    names = tuple(dict.fromkeys(m.name for m in report.metrics if m.split in {"train", "val"}))
-    if names:
-        rows = [("指标", "训练 IC（原始）", "验证 IC（定向）")]
-        for index, name in enumerate(names):
-            measured = {m.split: m.value for m in report.metrics if m.name == name}
-            label = metric_title(name) + (" *" if index == 0 else "")
-            numbers = [
-                f"{measured[s]:+.6f}" if measured.get(s) is not None else "—"
-                for s in ("train", "val")
-            ]
-            missing |= "—" in numbers
-            rows.append((label, *numbers))
-        lines += [""] + [
-            "".join(
-                cell + " " * max(0, width - _display_width(cell))
-                for cell, width in zip(row, (30, 18, 18), strict=True)
-            )
-            for row in rows
-        ]
-        lines.append(f"* 主指标：{names[0]}")
-    if missing:
-        lines.append("— 表示无法计算")
-    if feedback.accepted:
-        identity = (report.expression_id or "")[:12]
-        candidate = feedback.candidate
-        name = candidate.name or _expression(
-            candidate.expression
-            if isinstance(candidate.expression, str)
-            else candidate.expression.to_dict()
+        reason = _terminal_wrap(feedback.reason, width - _display_width(continuation))[0]
+        lines.append(f"{continuation}原因: {reason}")
+    elif report and report.status != "success":
+        lines.append(f"{continuation}评估状态: {report.status}")
+    if report:
+        metric_lines = _candidate_metric_lines(report, primary_name)
+        if metric_lines:
+            lines.append("")
+            lines.extend(metric_lines)
+    logger.info("\n".join(lines))
+
+
+def _candidate_metric_lines(report, primary_name):
+    names = list(dict.fromkeys(m.name for m in report.metrics if m.split == "train"))
+    if not names:
+        return []
+    train = {m.name: m.value for m in report.metrics if m.split == "train"}
+    valid = {m.name: m.value for m in report.metrics if m.split == "val"}
+    labels = [metric_title(name) + (" *" if name == primary_name else "") for name in names]
+    label_width = max(_display_width("指标"), *(_display_width(label) for label in labels)) + 2
+    train_header, val_header = "训练 IC（原始）", "验证 IC（定向）"
+    train_width = max(_display_width(train_header), 9)
+    val_width = max(_display_width(val_header), 9)
+
+    def pad(value, width):
+        return value + " " * max(0, width - _display_width(value))
+
+    lines = [
+        "  "
+        + pad("指标", label_width)
+        + "  "
+        + pad(train_header, train_width)
+        + "  "
+        + pad(val_header, val_width)
+    ]
+    for name, label in zip(names, labels, strict=True):
+        train_value = f"{train[name]:+.6f}" if train.get(name) is not None else "—"
+        val_value = f"{valid[name]:+.6f}" if valid.get(name) is not None else "—"
+        lines.append(
+            "  "
+            + pad(label, label_width)
+            + "  "
+            + pad(train_value, train_width)
+            + "  "
+            + pad(val_value, val_width)
         )
-        lines += ["", f"[因子入库] {name}  ·  ID {identity}"]
-    logger.info(
-        "\n".join(
-            "  " + part.rstrip()
-            for line in lines
-            for part in _terminal_wrap(line, 77, preserve_spaces=True)
-        )
-        + "\n"
-    )
+    if primary_name:
+        lines.append(f"  * 主指标：{primary_name}")
+    return lines
 
 
 def terminal_oos(report, directory):
@@ -329,6 +524,8 @@ def _table(headers, rows) -> list[str]:
 def _expression(value) -> str:
     if isinstance(value, str):
         return value
+    if not isinstance(value, dict):
+        value = value.to_dict()
     if value["op"] in {"field", "const"}:
         return ("$" if value["op"] == "field" else "") + str(value["value"])
     arguments = [_expression(a) for a in value.get("args", [])]
@@ -368,6 +565,10 @@ def write_report(directory: Path) -> Path:
             ("实现", spec.get("implementation")),
             ("数据快照", spec.get("snapshot_id")),
             ("频率", profile.get("frequency")),
+            (
+                "因子面板",
+                "品种（跨主力合约）" if profile.get("panel") == "product" else "真实合约",
+            ),
             ("fold", fold["id"]),
             ("train", f"{fold['train']['start']} ~ {fold['train']['end']}"),
             ("val", f"{fold['val']['start']} ~ {fold['val']['end']}"),

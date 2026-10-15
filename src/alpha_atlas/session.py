@@ -56,6 +56,7 @@ class SearchSession:
             frequency=profile.get("frequency"),
             target=TargetDefinition(profile["price_field"], profile["target_horizon_bars"]),
             metric=profile["metric"],
+            panel=profile.get("panel", "contract"),
         )
         self._fields = tuple(spec.get("fields", sorted(evaluator.fields)))
 
@@ -133,18 +134,23 @@ class SearchSession:
                 "Constants inherit scope. Intraday buckets publish at natural clock ends; "
                 "daily buckets use trading_day, confirmed at the next trading day's first "
                 "observed bar. No inferred last-row close or future values. Null buckets "
-                "replace older values. Broadcast and TS obey main/dependent-leg segments. "
+                "replace older values. Broadcast and TS obey the configured panel continuity. "
                 "Only observed native bars are aggregated; unknown whole-bar omissions "
                 "cannot be distinguished from scheduled breaks without a session calendar.",
             },
             "numeric_rules": "Float64; nonfinite results and division near zero yield null. "
             "Windows are positive integers in the operand frequency with no upper bound; "
             "operator minimum windows still apply. Full finite windows are required; "
-            "insufficient history yields null. TS never crosses instruments or continuity "
-            "segments. Fields ending _p1/_p2 refer to the first/second later-maturity contract, "
-            "matched at the same bar end and trading day. Missing quotes stay null. Each TS "
-            "subexpression also resets when any auxiliary leg it reads switches or has a gap; "
-            "main-only windows and targets keep their original boundaries. "
+            "insufficient history yields null. "
+            + (
+                "TS groups by (exchange, product) and crosses dominant-contract changes, "
+                "resetting at known product gaps or invalid bars. Futures price fields are "
+                "unadjusted, so price-derived windows include roll gaps. "
+                if self._context.panel == "product"
+                else "TS groups by (exchange, instrument_id, continuity segment). "
+            )
+            + "Fields ending _p1/_p2 refer to the first/second later-maturity contract, "
+            "matched at the same bar end and trading day. Missing quotes stay null. "
             "Conditions are typed; final output must be numeric.",
         }
 
@@ -154,6 +160,15 @@ class SearchSession:
         minimum = self._evaluator.profile.get("min_train_val_ic")
         return {
             "primary_metric": self._context.metric,
+            "panel": self._context.panel,
+            "panel_semantics": (
+                "Factor windows group by exchange and product, continuing across dominant-contract "
+                "changes and resetting at known product gaps or invalid bars. Auxiliary-leg windows "
+                "also reset when that leg changes actual contract. Price fields remain unadjusted. "
+                "Targets still stay within one actual contract and continuity segment."
+                if self._context.panel == "product"
+                else "Factor windows group by exchange, actual instrument and continuity segment."
+            ),
             "aggregation": (
                 "Pool all contracts of each product, then calculate Pearson and Spearman IC. "
                 "Report product equal and weighted means; weight=sqrt(sum(amount)) over all "

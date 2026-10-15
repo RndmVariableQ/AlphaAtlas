@@ -11,6 +11,9 @@
 | `atlas` | 区域 UCB 预算分配 | 区域导航原型，不是完整开放式地图 |
 | [alphaprobe](alphaprobe.md) | 演化图、贝叶斯检索、三阶段 LLM 生成 | 本地算法适配，需 Chat 与 embedding 服务 |
 | [mcts_llm](mcts_llm.md) | 公式树、五维奖励、定向改进与 FSA | 本地算法适配，需 Chat 服务和共享训练诊断 |
+| [annealing](annealing.md) | Explorer、Analyst、Miner 三 Agent；Metropolis 退火选择研究 Region | 共享平台预算、评估与准入 |
+| [V1](v1.md) (`v1`) | 同步 ChaoticTrader_Future 的 Explorer 选题、查证与三方向评分 | 保留原三 Agent 退火执行；仅更新 Explorer |
+| [V1 异步](v1_async.md) (`v1_async`) | 多组 Analyst/Miner 并发，完成即补位 | V1 本地异步适配；平台评估、原子提交和退火裁决串行 |
 | [react](react.md) | 单 Agent 工具循环与上下文压缩 | 自建 LLM 基线，需支持 tools 的 Chat 服务 |
 
 前四项共享有限文法；LLM 方法可使用更广 DSL，比较时必须披露搜索空间、初始化、

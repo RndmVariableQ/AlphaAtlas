@@ -60,6 +60,32 @@ def test_native_contract_reentry_missing_days_and_normal_breaks(tmp_path):
     targets = build_targets(data, "close", 1)
     assert targets["target"].null_count() == 4
 
+    # Product factors continue through dominant-contract switches, while targets stay local.
+    product_segments = (
+        data.group_by("trading_day")
+        .agg(
+            pl.col("product_segment_id").n_unique().alias("segments"),
+            pl.col("product_segment_id").first().alias("segment"),
+        )
+        .sort("trading_day")
+    )
+    assert product_segments["segments"].to_list() == [1, 1, 1, 1]
+    assert product_segments["segment"][:3].n_unique() == 1
+    assert product_segments["segment"][3] != product_segments["segment"][2]
+
+    first_roll_bar = data.filter(pl.col("trading_day") == days[1]).sort("timestamp").row(0)
+    product_values = execute("TS_MEAN($close,2)", data, {"close"}, panel="product")
+    contract_values = execute("TS_MEAN($close,2)", data, {"close"})
+    assert product_values.filter(pl.col("row_id") == first_roll_bar[0])["value"][0] == 45
+    assert contract_values.filter(pl.col("row_id") == first_roll_bar[0])["value"][0] is None
+
+    last_old_contract = (
+        data.filter((pl.col("trading_day") == days[0]) & (pl.col("instrument_id") == "A"))
+        .sort("timestamp")
+        .tail(1)["row_id"][0]
+    )
+    assert targets.filter(pl.col("row_id") == last_old_contract)["target"][0] is None
+
 
 def test_same_identifier_other_exchange_does_not_share_history():
     data = pl.DataFrame(

@@ -1,6 +1,6 @@
 # Paper v3 search, adapted to shared Atlas diagnostics. No vendor or data configuration.
-chat_model = "gpt-5.5"
-chat_base_url = "http://127.0.0.1:27483/codex/v1"
+chat_model = "deepseek-flash"
+chat_base_url = "https://api.deepseek.com/v1"
 chat_key_env = "OPENAI_API_KEY"
 temperature = 1.0
 repair_temperature = 0.8

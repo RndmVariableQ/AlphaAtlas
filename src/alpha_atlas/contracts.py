@@ -34,14 +34,20 @@ class AssetProfile:
     price_field: str
     target_horizon_bars: int
     metric: str
+    panel: str = "contract"
 
     @classmethod
     def from_mapping(cls, value: dict) -> AssetProfile:
         names = cls.__dataclass_fields__
-        fields = {name: value[name] for name in names}
+        fields = {name: value[name] for name in names if name in value}
+        fields.setdefault("panel", "contract")
         fields["universes"] = tuple(fields["universes"])
         result = cls(**fields)
-        if result.default_universe not in result.universes or result.target_horizon_bars < 1:
+        if (
+            result.default_universe not in result.universes
+            or result.target_horizon_bars < 1
+            or result.panel not in {"contract", "product"}
+        ):
             raise ValueError("invalid universe or target horizon in asset profile")
         return result
 
@@ -196,6 +202,7 @@ class SearchContext:
     target: TargetDefinition
     metric: str
     remaining_attempts: int
+    panel: str = "contract"
 
 
 class SearchMethod(Protocol):

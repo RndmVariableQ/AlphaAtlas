@@ -121,6 +121,29 @@ class ParqMarketData:
                     and f not in {f"exchange_{leg}", f"instrument_id_{leg}"}
                 ],
             )
+            if "product_segment_id" in result.columns:
+                product_group = ["exchange", "product"]
+                identity_changed = pl.any_horizontal(
+                    (
+                        pl.col(f"{key}_{leg}") != pl.col(f"{key}_{leg}").shift().over(product_group)
+                    ).fill_null(True)
+                    for key in ("exchange", "instrument_id")
+                )
+                product_breaks = (
+                    (
+                        pl.col("product_segment_id")
+                        != pl.col("product_segment_id").shift().over(product_group)
+                    ).fill_null(True)
+                    | identity_changed
+                    | ~valid
+                    | ~valid.shift().over(product_group).fill_null(False)
+                )
+                result = result.with_columns(
+                    product_breaks.cast(pl.Int64)
+                    .cum_sum()
+                    .over(product_group)
+                    .alias(f"product_segment_id_{leg}")
+                )
         frequency = self.manifest.get("frequency")
         if frequency in {"5m", "1d"}:
             result = result.with_columns(
@@ -201,9 +224,43 @@ class ParqMarketData:
             | ~valid
             | ~valid.shift().over(group).fill_null(False)
         )
-        return result.with_columns(
+        result = result.with_columns(
             breaks.cast(pl.Int64).cum_sum().over(group).alias("segment_id")
         ).drop("__daily_segment")
+        if "product" in result.columns:
+            product_group = ["exchange", "product"]
+            product_days = (
+                result.select(*product_group, "trading_day")
+                .unique()
+                .join(calendar, on="trading_day", how="left")
+                .sort(product_group + ["trading_day"])
+                .with_columns(
+                    (pl.col("__day").diff().over(product_group) != 1)
+                    .fill_null(True)
+                    .cast(pl.Int64)
+                    .cum_sum()
+                    .over(product_group)
+                    .alias("__product_daily_segment")
+                )
+            )
+            result = result.join(
+                product_days.select(*product_group, "trading_day", "__product_daily_segment"),
+                on=product_group + ["trading_day"],
+                validate="m:1",
+            ).sort(product_group + ["timestamp"])
+            product_valid = pl.col("target_eligible").fill_null(False)
+            product_breaks = (
+                (pl.col("__product_daily_segment").diff().over(product_group) != 0).fill_null(True)
+                | ~product_valid
+                | ~product_valid.shift().over(product_group).fill_null(False)
+            )
+            result = result.with_columns(
+                product_breaks.cast(pl.Int64)
+                .cum_sum()
+                .over(product_group)
+                .alias("product_segment_id")
+            ).drop("__product_daily_segment")
+        return result
 
     def close(self) -> None:
         self._db.close()

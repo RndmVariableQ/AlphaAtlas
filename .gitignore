@@ -3,6 +3,10 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .ruff_cache/
+.uv-cache/
+.test-tmp/
+.tmp/
+/tmp/
 .env
 data/**
 !data/.gitkeep

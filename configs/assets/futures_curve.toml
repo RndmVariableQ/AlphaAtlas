@@ -9,6 +9,7 @@ bar_time_label = "end"
 price_field = "close"
 target_horizon_bars = 12
 metric = "time_series_weighted_pearson_ic"
+panel = "product"
 min_train_val_ic = 0.005
 fundamentals = false
 start = 2015-01-01

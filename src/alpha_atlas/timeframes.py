@@ -53,7 +53,9 @@ def frequency_scopes(root: Expression) -> dict[Expression, str | None]:
     return scopes
 
 
-def timeframe_panel(frame: pl.DataFrame, fields: set[str], interval: str) -> pl.DataFrame:
+def timeframe_panel(
+    frame: pl.DataFrame, fields: set[str], interval: str, *, panel: str = "contract"
+) -> pl.DataFrame:
     """Natural-clock intraday ends; a daily bar is confirmed by the next trading day's bar.
 
     Group all observed rows, including invalid ones: a null/invalid input or a continuity
@@ -61,23 +63,30 @@ def timeframe_panel(frame: pl.DataFrame, fields: set[str], interval: str) -> pl.
     Scheduled breaks need no invented 6/12-row requirement. A missing *whole* native bar
     cannot be distinguished from a break without an exchange schedule (as in MarketData).
     """
-    source = frame.sort(GROUP + ["timestamp"])
-    main_segment = ["segment_id"]
+    if panel not in {"contract", "product"}:
+        raise ValueError("panel must be 'contract' or 'product'")
+    identity = GROUP if panel == "contract" else ["exchange", "product"]
+    if panel == "product" and "instrument_id" not in frame.columns:
+        raise ValueError("product timeframe panel requires instrument_id metadata")
+    main_name = "segment_id" if panel == "contract" else "product_segment_id"
+    leg_name = "segment_id_{leg}" if panel == "contract" else "product_segment_id_{leg}"
+    source = frame.sort(identity + ["timestamp"])
+    main_segment = [main_name]
     legs = {f"p{i}" for i in (1, 2) if any(f.endswith(f"_p{i}") for f in fields)}
-    segments = main_segment + [f"segment_id_{leg}" for leg in sorted(legs)]
+    segments = main_segment + [leg_name.format(leg=leg) for leg in sorted(legs)]
     if missing := set(segments) - set(source.columns):
         raise ValueError(f"timeframes require continuity metadata: {sorted(missing)}")
     if interval == "1d":
         # The next observed day's first timestamp is known at publication, never before.
         # In contrast, max(timestamp) of a truncated current day is not a close schedule.
         publication = (
-            source.group_by(GROUP + ["trading_day"])
+            source.group_by(identity + ["trading_day"])
             .agg(pl.col("timestamp").min().alias("__first"))
-            .sort(GROUP + ["trading_day"])
-            .with_columns(pl.col("__first").shift(-1).over(GROUP).alias("__end"))
+            .sort(identity + ["trading_day"])
+            .with_columns(pl.col("__first").shift(-1).over(identity).alias("__end"))
             .drop("__first")
         )
-        source = source.join(publication, on=GROUP + ["trading_day"], validate="m:1")
+        source = source.join(publication, on=identity + ["trading_day"], validate="m:1")
     else:
         minutes = INTERVALS[interval]
         source = source.with_columns(
@@ -88,7 +97,9 @@ def timeframe_panel(frame: pl.DataFrame, fields: set[str], interval: str) -> pl.
         )
     aggregates = [pl.col(c).last() for c in segments]
     aggregates += [pl.col("eligible").last(), pl.col("trading_day").last()]
-    stable_main = pl.col("segment_id").n_unique() == 1
+    if panel == "product":
+        aggregates.append(pl.col("instrument_id").last())
+    stable_main = pl.col(main_name).n_unique() == 1
     if "valid_bar" in source.columns:
         stable_main = stable_main & pl.col("valid_bar").fill_null(False).all()
     for field in sorted(fields):
@@ -96,38 +107,44 @@ def timeframe_panel(frame: pl.DataFrame, fields: set[str], interval: str) -> pl.
         valid = stable_main & pl.col(field).is_finite().fill_null(False).all()
         for leg in legs:
             if field.endswith(f"_{leg}"):
-                valid = valid & (pl.col(f"segment_id_{leg}").n_unique() == 1)
+                valid = valid & (pl.col(leg_name.format(leg=leg)).n_unique() == 1)
                 if f"valid_bar_{leg}" in source.columns:
                     valid = valid & pl.col(f"valid_bar_{leg}").fill_null(False).all()
         aggregates.append(
             pl.when(valid).then(getattr(pl.col(field), AGGREGATIONS[base])()).alias(field)
         )
     return (
-        source.group_by(GROUP + ["__end"], maintain_order=True)
+        source.group_by(identity + ["__end"], maintain_order=True)
         .agg(aggregates)
         .filter(pl.col("__end").is_not_null())
         .rename({"__end": "timestamp"})
-        .sort(GROUP + ["timestamp"])
+        .sort(identity + ["timestamp"])
         .with_row_index("row_id")
     )
 
 
-def execute_timeframes(compiled, frame, fields, registry, scopes):
+def execute_timeframes(compiled, frame, fields, registry, scopes, *, panel="contract"):
     from alpha_atlas.expressions import execute
 
-    required = {"bar_interval_minutes", "trading_day", "segment_id", "eligible"}
+    if panel not in {"contract", "product"}:
+        raise ValueError("panel must be 'contract' or 'product'")
+    panel_mode = panel
+    identity = GROUP if panel == "contract" else ["exchange", "product"]
+    main_name = "segment_id" if panel == "contract" else "product_segment_id"
+    leg_name = "segment_id_{leg}" if panel == "contract" else "product_segment_id_{leg}"
+    required = {"bar_interval_minutes", "trading_day", main_name, "eligible", *identity}
     if missing := required - set(frame.columns):
         raise ValueError(f"timeframes require native frequency/day/continuity metadata: {missing}")
     if frame.height and frame["bar_interval_minutes"].unique().to_list() != [5]:
         raise ValueError("@15m/@30m/@60m/@1d require native 5m input")
-    if frame.select(GROUP + ["timestamp"]).is_duplicated().any():
+    if frame.select(identity + ["timestamp"]).is_duplicated().any():
         raise ValueError("duplicate native observation keys")
     if frame.select(
-        pl.any_horizontal(pl.col(*GROUP, "timestamp", "trading_day").is_null()).any()
+        pl.any_horizontal(pl.col(*identity, "timestamp", "trading_day").is_null()).any()
     ).item():
         raise ValueError("null native observation keys or trading days")
-    work = frame.sort(GROUP + ["timestamp"])
-    if work.select((pl.col("trading_day").diff().over(GROUP).dt.total_days() < 0).any()).item():
+    work = frame.sort(identity + ["timestamp"])
+    if work.select((pl.col("trading_day").diff().over(identity).dt.total_days() < 0).any()).item():
         raise ValueError("trading days must not move backward within a contract")
     generated = {}
     panels = {}
@@ -155,13 +172,13 @@ def execute_timeframes(compiled, frame, fields, registry, scopes):
         names = field_names(node)
         key = (interval, tuple(sorted(names)))
         if key not in panels:
-            panels[key] = timeframe_panel(frame, names, interval)
+            panels[key] = timeframe_panel(frame, names, interval, panel=panel_mode)
         panel = panels[key]
         # Preserve the original registry dependencies, without creating new factor identities.
         native = replace(compiled, expression=strip(node), fields=tuple(sorted(names)))
-        values = execute(native, panel, names, registry)
+        values = execute(native, panel, names, registry, panel=panel_mode)
         used_legs = set().union(*(field_legs[f] for f in names))
-        keys = GROUP + ["segment_id"] + [f"segment_id_{leg}" for leg in sorted(used_legs)]
+        keys = identity + [main_name] + [leg_name.format(leg=leg) for leg in sorted(used_legs)]
         name = f"__timeframe_{len(generated)}"
         field_legs[name] = used_legs
         right = (
@@ -194,5 +211,6 @@ def execute_timeframes(compiled, frame, fields, registry, scopes):
         work,
         fields | expanded_fields,
         registry,
+        panel=panel_mode,
         _field_legs=field_legs,
     )

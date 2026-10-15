@@ -85,9 +85,9 @@ def factor_panel(features, frozen, spec, registry):
         if compiled.factor_id in identities or item["report"]["direction"] not in {-1, 1}:
             raise ValueError("invalid frozen factor identity or direction")
         identities.append(compiled.factor_id)
-        values = execute(compiled, features, fields, registry).select(
-            "row_id", (pl.col("value") * item["report"]["direction"]).alias(f"factor_{index}")
-        )
+        values = execute(
+            compiled, features, fields, registry, panel=profile.get("panel", "contract")
+        ).select("row_id", (pl.col("value") * item["report"]["direction"]).alias(f"factor_{index}"))
         panel = panel.join(values, on="row_id", how="left", validate="1:1")
     return panel, identities
 

@@ -9,6 +9,7 @@ bar_time_label = "end"
 price_field = "close"
 target_horizon_bars = 12
 metric = "time_series_weighted_pearson_ic"
+panel = "product"
 # Both full splits must exceed this IC after fixing direction from train.
 min_train_val_ic = 0.005
 # Pool contracts per product; report Spearman and Pearson, weighted and equal-product.

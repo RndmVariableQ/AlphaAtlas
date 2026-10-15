@@ -53,8 +53,8 @@ Alpha Atlas 的定位是 **AI 辅助的开放式金融发现（Open-ended Financ
 
 上述内容是项目的研究方向与设计愿景。目前以固定 train/val 区间内的因子搜索为基础，
 已提供统一数据接口、表达式 DSL、数值评估、因子库、运行恢复与冻结后的样本外评估。
-搜索方法包括 Random、GP、符号 MCTS、区域 UCB 原型，以及 AlphaPROBE、MCTS-LLM 和
-ReAct 的方法接入。三模态学习地图与自动开放式假说生成仍属后续研究，方法接入也不代表
+搜索方法包括 Random、GP、符号 MCTS、区域 UCB 原型，以及 AlphaPROBE、MCTS-LLM、
+三 Agent 区域退火搜索和 ReAct 的方法接入。三模态学习地图与自动开放式假说生成仍属后续研究，方法接入也不代表
 已复现原论文收益。具体边界见[方法目录](docs/methods/README.md)与[知识地图设计](docs/design.md)。
 
 ## 项目安装
@@ -75,7 +75,9 @@ uv sync --extra ricequant
 ```
 
 LLM 方法还需要配置模型服务。使用前参阅各方法说明：
-[AlphaPROBE](docs/methods/alphaprobe.md)、[MCTS-LLM](docs/methods/mcts_llm.md)、[ReAct](docs/methods/react.md)。
+[AlphaPROBE](docs/methods/alphaprobe.md)、[MCTS-LLM](docs/methods/mcts_llm.md)、
+[三 Agent 区域退火搜索](docs/methods/annealing.md)、
+[V1 Explorer 更新版](docs/methods/v1.md)、[V1 异步版](docs/methods/v1_async.md)、[ReAct](docs/methods/react.md)。
 下方最小运行示例使用无需模型服务的 Random 基线。
 
 ## 数据准备与校验

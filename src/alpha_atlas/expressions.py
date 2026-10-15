@@ -24,13 +24,14 @@ STRUCTURAL = {
     "eligible",
     "valid_bar",
     "segment_id",
+    "product_segment_id",
     "snapshot_id",
     "bar_interval_minutes",
 }
 STRUCTURAL.update(
     f"{name}_p{leg}"
     for leg in (1, 2)
-    for name in ("exchange", "instrument_id", "segment_id", "valid_bar")
+    for name in ("exchange", "instrument_id", "segment_id", "product_segment_id", "valid_bar")
 )
 _BINARY = {ast.Add: "ADD", ast.Sub: "SUBTRACT", ast.Mult: "MULTIPLY", ast.Div: "DIVIDE"}
 _COMPARE = {ast.Lt: "LT", ast.LtE: "LE", ast.Gt: "GT", ast.GtE: "GE", ast.Eq: "EQ", ast.NotEq: "NE"}
@@ -257,11 +258,14 @@ def execute(
     fields: set[str],
     registry: OperatorRegistry | None = None,
     *,
+    panel: str = "contract",
     _field_legs: dict[str, set[str]] | None = None,
 ) -> pl.DataFrame:
     from alpha_atlas.operators.builtin import build_expression, window_array
 
     registry = registry or OperatorRegistry()
+    if panel not in {"contract", "product"}:
+        raise ValueError("panel must be 'contract' or 'product'")
     compiled = expr if isinstance(expr, CompiledFactor) else compile_factor(expr, fields, registry)
     if isinstance(expr, CompiledFactor):
         if not set(compiled.fields) <= fields:
@@ -278,19 +282,29 @@ def execute(
 
     scopes = frequency_scopes(compiled.expression)
     if any(scope not in {None, "base"} for scope in scopes.values()):
-        return execute_timeframes(compiled, frame, fields, registry, scopes)
+        return execute_timeframes(compiled, frame, fields, registry, scopes, panel=panel)
+    if panel == "product":
+        if "product" not in frame.columns or "product_segment_id" not in frame.columns:
+            raise ValueError("product panel requires product and product_segment_id metadata")
+        identity = ["exchange", "product"]
+        main_segment = "product_segment_id"
+        leg_segment = "product_segment_id_p{leg}"
+    else:
+        identity = GROUP
+        main_segment = "segment_id"
+        leg_segment = "segment_id_p{leg}"
     field_legs = _field_legs or {
         field: {f"p{i}" for i in (1, 2) if field.endswith(f"_p{i}")} for field in compiled.fields
     }
-    group = GROUP + (["segment_id"] if "segment_id" in frame.columns else [])
+    group = identity + ([main_segment] if main_segment in frame.columns else [])
     far_segments = {
-        f"p{leg}": f"segment_id_p{leg}"
+        f"p{leg}": leg_segment.format(leg=leg)
         for leg in (1, 2)
         if any(f"p{leg}" in legs for legs in field_legs.values())
     }
     if missing := set(far_segments.values()) - set(frame.columns):
         raise ValueError(f"far-contract fields require continuity metadata: {sorted(missing)}")
-    work = frame.lazy().sort(GROUP + ["timestamp"])
+    work = frame.lazy().sort(identity + ["timestamp"])
     memo: dict[Expression, str] = {}
     legs: dict[Expression, set[str]] = {}
 

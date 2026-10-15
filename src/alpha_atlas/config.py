@@ -23,5 +23,6 @@ def asset_config(root: Path, asset: str) -> dict:
     if not re.fullmatch(r"[a-z][a-z0-9_]*", asset):
         raise ValueError(f"invalid asset id: {asset}")
     result = load_toml(root / "configs/assets" / f"{asset}.toml")
+    result.setdefault("panel", "contract")
     AssetProfile.from_mapping(result)
     return result

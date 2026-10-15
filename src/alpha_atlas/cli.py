@@ -20,7 +20,18 @@ def main() -> None:
     run.add_argument("--fold", choices=["fold1", "fold2"], required=True)
     run.add_argument(
         "--method",
-        choices=["random", "gp", "mcts", "atlas", "alphaprobe", "react", "mcts_llm"],
+        choices=[
+            "random",
+            "gp",
+            "mcts",
+            "atlas",
+            "alphaprobe",
+            "react",
+            "mcts_llm",
+            "annealing",
+            "v1",
+            "v1_async",
+        ],
         default="random",
     )
     run.add_argument("--seed", type=int, default=42)
@@ -41,7 +52,7 @@ def main() -> None:
         "--test", action="store_true", help="Evaluate saved models on test; no refit"
     )
     for command in (run, resume, oos, model):
-        command.add_argument("--quiet", action="store_true", help="Hide progress and model streams")
+        command.add_argument("--quiet", action="store_true", help="Hide progress output")
     report = commands.add_parser("report", help="Rebuild the Markdown run report from records")
     report.add_argument("run_dir", type=Path)
     report.add_argument(

@@ -22,7 +22,7 @@ DIMENSIONS = ("effectiveness", "stability", "turnover", "diversity", "overfittin
 
 
 @dataclass(frozen=True)
-class MCTSLLMConfig:
+class LLMSearchConfig:
     chat_model: str = ""
     chat_base_url: str = "http://127.0.0.1:8001/v1"
     chat_key_env: str = "ALPHA_ATLAS_LLM_API_KEY"
@@ -30,26 +30,17 @@ class MCTSLLMConfig:
     repair_temperature: float = 0.8
     risk_temperature: float = 0.1
     timeout_seconds: float = 120.0
-    exploration: float = 1.0
-    dimension_temperature: float = 1.0
-    tree_budget: int = 3
-    budget_increment: int = 1
-    fsa_top_k: int = 3
     max_formula_repairs: int = 3
     max_dialogue_rounds: int = 8
-    tree_selection: bool = True
 
     def __post_init__(self):
-        for key in ("tree_budget", "max_dialogue_rounds"):
-            if type(getattr(self, key)) is not int or getattr(self, key) < 1:
-                raise ValueError(f"{key} must be a positive integer")
-        for key in ("budget_increment", "fsa_top_k", "max_formula_repairs"):
+        if type(self.max_dialogue_rounds) is not int or self.max_dialogue_rounds < 1:
+            raise ValueError("max_dialogue_rounds must be a positive integer")
+        for key in ("max_formula_repairs",):
             if type(getattr(self, key)) is not int or getattr(self, key) < 0:
                 raise ValueError(f"{key} must be a nonnegative integer")
         for key in (
             "timeout_seconds",
-            "dimension_temperature",
-            "exploration",
             "temperature",
             "repair_temperature",
             "risk_temperature",
@@ -61,15 +52,13 @@ class MCTSLLMConfig:
                 or not math.isfinite(value)
             ):
                 raise ValueError(f"{key} must be finite")
-        if self.timeout_seconds <= 0 or self.dimension_temperature <= 0:
-            raise ValueError("timeout and dimension temperature must be positive")
-        if self.exploration < 0 or any(
+        if self.timeout_seconds <= 0:
+            raise ValueError("timeout must be positive")
+        if any(
             not 0 <= t <= 2
             for t in (self.temperature, self.repair_temperature, self.risk_temperature)
         ):
-            raise ValueError("invalid exploration or model temperature")
-        if type(self.tree_selection) is not bool:
-            raise ValueError("tree_selection must be boolean")
+            raise ValueError("invalid model temperature")
         url = urlsplit(self.chat_base_url)
         if (
             url.scheme not in {"http", "https"}
@@ -84,6 +73,43 @@ class MCTSLLMConfig:
     @classmethod
     def from_mapping(cls, value):
         return cls(**value)
+
+
+@dataclass(frozen=True)
+class MCTSLLMConfig(LLMSearchConfig):
+    exploration: float = 1.0
+    dimension_temperature: float = 1.0
+    tree_budget: int = 3
+    budget_increment: int = 1
+    fsa_top_k: int = 3
+    tree_selection: bool = True
+
+    def __post_init__(self):
+        super().__post_init__()
+        for key in ("tree_budget",):
+            if type(getattr(self, key)) is not int or getattr(self, key) < 1:
+                raise ValueError(f"{key} must be a positive integer")
+        for key in ("budget_increment",):
+            if type(getattr(self, key)) is not int or getattr(self, key) < 0:
+                raise ValueError(f"{key} must be a nonnegative integer")
+        if type(self.fsa_top_k) is not int or self.fsa_top_k < 0:
+            raise ValueError("fsa_top_k must be a nonnegative integer")
+        if (
+            isinstance(self.dimension_temperature, bool)
+            or not isinstance(self.dimension_temperature, (int, float))
+            or not math.isfinite(self.dimension_temperature)
+            or self.dimension_temperature <= 0
+        ):
+            raise ValueError("dimension_temperature must be finite and positive")
+        if (
+            isinstance(self.exploration, bool)
+            or not isinstance(self.exploration, (int, float))
+            or not math.isfinite(self.exploration)
+            or self.exploration < 0
+        ):
+            raise ValueError("exploration must be finite and nonnegative")
+        if type(self.tree_selection) is not bool:
+            raise ValueError("tree_selection must be boolean")
 
 
 def relative_score(value, reference, *, higher=True):
@@ -264,6 +290,30 @@ class MCTSLLMSearch:
                 break
             current = selected
         return current
+
+    def _select_parent(self):
+        if self.tree_remaining <= 0:
+            self.root = None
+        return self.select_node() if self.root else None
+
+    def _work_metadata(self, context, parent):
+        return {}
+
+    def _record_node(self, identity, node, parent, reward):
+        self.nodes[identity] = node
+        if parent is None:
+            self.root = identity
+            self.tree_remaining = self.config.tree_budget
+            self.trees_started += 1
+            return
+        if reward > self.nodes[self.root]["q"]:
+            self.tree_remaining += self.config.budget_increment
+        self.nodes[parent]["children"].append(identity)
+        current = parent
+        while current is not None:
+            self.nodes[current]["visits"] += 1
+            self.nodes[current]["q"] = max(self.nodes[current]["q"], reward)
+            current = self.nodes[current]["parent"]
 
     def _portrait(self, identity):
         node = self.nodes[identity]
@@ -471,9 +521,7 @@ class MCTSLLMSearch:
         if self.context["evaluation_rules"]["search_diagnostics"]["version"] != "icir_turnover_v1":
             raise ValueError("MCTS-LLM requires shared icir_turnover_v1 diagnostics")
         if self.work is None:
-            if self.tree_remaining <= 0:
-                self.root = None
-            parent = self.select_node() if self.root else None
+            parent = self._select_parent()
             dimension = (
                 self.rng.choices(
                     DIMENSIONS,
@@ -495,6 +543,7 @@ class MCTSLLMSearch:
                 "responses": {},
                 "validation": {},
                 "risk": None,
+                **self._work_metadata(context, parent),
             }
             self._checkpoint()
         try:
@@ -549,7 +598,7 @@ class MCTSLLMSearch:
             reason = "duplicate_search_node"
         else:
             reward = sum(scores.values()) / len(DIMENSIONS)
-            self.nodes[identity] = {
+            node = {
                 "candidate": self.pending,
                 "parent": parent,
                 "children": [],
@@ -560,19 +609,7 @@ class MCTSLLMSearch:
                 "raw": raw,
                 "refinement": self.work["responses"]["suggestion"][-1]["result"]["suggestion"],
             }
-            if parent is None:
-                self.root = identity
-                self.tree_remaining = self.config.tree_budget
-                self.trees_started += 1
-            else:
-                if reward > self.nodes[self.root]["q"]:
-                    self.tree_remaining += self.config.budget_increment
-                self.nodes[parent]["children"].append(identity)
-                current = parent
-                while current is not None:
-                    self.nodes[current]["visits"] += 1
-                    self.nodes[current]["q"] = max(self.nodes[current]["q"], reward)
-                    current = self.nodes[current]["parent"]
+            self._record_node(identity, node, parent, reward)
         if feedback.accepted:
             self.members[identity] = {"raw": raw}
             for pattern in root_genes(report.canonical_expression):

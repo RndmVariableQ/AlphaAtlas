@@ -23,7 +23,7 @@ from alpha_atlas.checkpoint import (
     tracked_run,
 )
 from alpha_atlas.config import asset_config, load_fold, load_toml
-from alpha_atlas.contracts import Expression, fingerprint
+from alpha_atlas.contracts import Expression, Region, fingerprint
 from alpha_atlas.evaluation import (
     FUTURES_METRICS,
     EvaluationService,
@@ -121,12 +121,15 @@ def run(
     fields = list(dict.fromkeys([profile["price_field"], *requested_fields]))
     options = (
         load_toml(root / f"configs/{method_name}.toml")
-        if method_name in {"alphaprobe", "react", "mcts_llm"}
+        if method_name in {"alphaprobe", "react", "mcts_llm", "annealing", "v1", "v1_async"}
         else None
     )
     method = method_impl if method_impl is not None else make_method(method_name, seed, options)
-    if method_name == "mcts_llm" and rules.get("search_diagnostics") != "icir_turnover_v1":
-        raise ValueError("MCTS-LLM requires shared icir_turnover_v1 diagnostics")
+    if (
+        method_name in {"mcts_llm", "annealing", "v1", "v1_async"}
+        and rules.get("search_diagnostics") != "icir_turnover_v1"
+    ):
+        raise ValueError(f"{method_name} requires shared icir_turnover_v1 diagnostics")
     resumable = not hasattr(method, "run") and all(
         callable(getattr(method, name, None)) for name in ("dump_state", "load_state")
     )
@@ -156,13 +159,19 @@ def run(
             if method_name == "alphaprobe"
             else "mcts_llm_atlas_v1"
             if method_name == "mcts_llm"
+            else "atlas_explorer_v1_async"
+            if method_name == "v1_async"
+            else "atlas_explorer_v1"
+            if method_name == "v1"
+            else "annealing_llm_atlas_v1"
+            if method_name == "annealing"
             else "finite_grammar_baseline_v2"
         ),
         "source_fingerprint": source_fingerprint(),
         "resumable": resumable,
         "method_type": _method_type(method) if resumable else None,
-        "continuity": "observed_native_bars; reset known gaps and dominant re-entry; "
-        "unknown intraday missing bars are not detected",
+        "continuity": "targets reset at actual contract/gap boundaries; factor windows follow "
+        "the configured panel; unknown intraday missing bars are not detected",
     }
     if hasattr(method, "configuration"):
         spec["method_config"] = method.configuration
@@ -228,7 +237,8 @@ def _search(directory, spec, method, progress, features, fold, runtime, checkpoi
             "max_nodes": rules["max_expression_nodes"],
             "max_depth": rules["max_expression_depth"],
         },
-        retain_training=hasattr(method, "correlation_pairs") or spec["method"] == "mcts_llm",
+        retain_training=hasattr(method, "correlation_pairs")
+        or spec["method"] in {"mcts_llm", "annealing", "v1", "v1_async"},
         diagnostics=rules.get("search_diagnostics", ""),
     )
     library = FactorLibrary(
@@ -251,9 +261,12 @@ def _search(directory, spec, method, progress, features, fold, runtime, checkpoi
     atlas = FactorAtlas()
     for region in default_regions():
         atlas.register_hypothesis(region)
+    if hasattr(method, "set_atlas_context"):
+        method.set_atlas_context(atlas.to_dict)
     pending = None
     if checkpoint is not None:
         method.load_state(checkpoint["method_state"])
+        _sync_method_regions(method, atlas)
         pending = checkpoint["pending"]
         for trial in trials[: checkpoint["completed"]]:
             atlas.observe(feedback_from_dict(trial["feedback"]))
@@ -269,40 +282,47 @@ def _search(directory, spec, method, progress, features, fold, runtime, checkpoi
     if hasattr(method, "set_checkpoint"):
         method.set_checkpoint(save)
 
-    if hasattr(method, "run"):
-        progress.stage = "method_run"
-        method.run(session)
-    else:
-        while pending is not None or session.remaining_budget():
-            if pending is None:
-                progress.stage = "ask"
-                terminal_progress("生成候选", 进度=f"{session.trial_count + 1}/{spec['attempts']}")
-                step = time.perf_counter()
-                context = session.get_context()
-                candidate = method.ask(context, count=1)[0]
-                pending = {
-                    "trial_index": session.trial_count + 1,
-                    "candidate": asdict(candidate),
-                    "generation_seconds": time.perf_counter() - step,
-                }
+    try:
+        if hasattr(method, "run"):
+            progress.stage = "method_run"
+            method.run(session)
+        else:
+            while pending is not None or session.remaining_budget():
+                if pending is None:
+                    progress.stage = "ask"
+                    terminal_progress(
+                        "生成候选", 进度=f"{session.trial_count + 1}/{spec['attempts']}"
+                    )
+                    step = time.perf_counter()
+                    context = session.get_context()
+                    candidate = method.ask(context, count=1)[0]
+                    _sync_method_regions(method, atlas)
+                    pending = {
+                        "trial_index": session.trial_count + 1,
+                        "candidate": asdict(candidate),
+                        "generation_seconds": time.perf_counter() - step,
+                    }
+                    progress.stage = "checkpoint"
+                    save(pending)
+                progress.stage = "evaluate"
+                index = pending["trial_index"]
+                if index <= len(trials):
+                    feedback = feedback_from_dict(trials[index - 1]["feedback"])
+                    terminal_progress("恢复已提交反馈", 候选=index, 结果=feedback.reason)
+                else:
+                    feedback = session.evaluate(
+                        candidate_from_dict(pending["candidate"]),
+                        generation_seconds=pending["generation_seconds"],
+                    )
+                progress.stage = "tell"
+                method.tell([feedback])
+                atlas.observe(feedback)
                 progress.stage = "checkpoint"
-                save(pending)
-            progress.stage = "evaluate"
-            index = pending["trial_index"]
-            if index <= len(trials):
-                feedback = feedback_from_dict(trials[index - 1]["feedback"])
-                terminal_progress("恢复已提交反馈", 候选=index, 结果=feedback.reason)
-            else:
-                feedback = session.evaluate(
-                    candidate_from_dict(pending["candidate"]),
-                    generation_seconds=pending["generation_seconds"],
-                )
-            progress.stage = "tell"
-            method.tell([feedback])
-            atlas.observe(feedback)
-            progress.stage = "checkpoint"
-            save()
-            pending = None
+                save()
+                pending = None
+    finally:
+        if hasattr(method, "close"):
+            method.close()
     progress.stage = "freeze"
     terminal_progress("冻结因子库", 成员=len(library.view().members))
     view = store.library_view()
@@ -345,6 +365,21 @@ def _rebuild_member(evaluator, entry):
     ):
         raise ValueError("rebuilt member differs from committed evaluation")
     return evaluator.observation(report.observation_ref)
+
+
+def _sync_method_regions(method, atlas):
+    if not callable(getattr(method, "atlas_regions", None)):
+        return
+    for value in method.atlas_regions():
+        atlas.register_hypothesis(
+            Region(
+                id=value["id"],
+                continent_ids=tuple(value["continent_ids"]),
+                hypothesis=value["hypothesis"],
+                source=value.get("source", "researcher"),
+                constraints=value.get("constraints", {}),
+            )
+        )
 
 
 def run_model(root: Path, directory: Path, *, test: bool = False) -> dict:
@@ -569,6 +604,21 @@ def _check_config(root, spec):
         current = MCTSLLMConfig.from_mapping(load_toml(root / "configs/mcts_llm.toml"))
         if asdict(current) != spec["method_config"]:
             raise ValueError("MCTS-LLM configuration changed")
+    if spec["implementation"] == "atlas_explorer_v1_async":
+        from alpha_atlas.methods.v1_async import V1AsyncConfig
+
+        current = V1AsyncConfig.from_mapping(load_toml(root / "configs/v1_async.toml"))
+        if asdict(current) != spec["method_config"]:
+            raise ValueError("v1_async configuration changed")
+    if spec["implementation"] in {"annealing_llm_atlas_v1", "atlas_explorer_v1"}:
+        from alpha_atlas.methods.annealing import AnnealingLLMConfig
+        from alpha_atlas.methods.v1 import V1Config
+
+        name = "v1" if spec["implementation"] == "atlas_explorer_v1" else "annealing"
+        config_type = V1Config if name == "v1" else AnnealingLLMConfig
+        current = config_type.from_mapping(load_toml(root / f"configs/{name}.toml"))
+        if asdict(current) != spec["method_config"]:
+            raise ValueError(f"{name} configuration changed")
     return fold, profile
 
 
@@ -640,7 +690,13 @@ def _test_frozen(root: Path, directory: Path) -> dict:
             )
             if compiled.factor_id != item["compiled"]["factor_id"]:
                 raise ValueError("frozen operator dependency identity mismatch")
-            values = execute(compiled, features, set(spec["fields"]), registry)
+            values = execute(
+                compiled,
+                features,
+                set(spec["fields"]),
+                registry,
+                panel=profile.get("panel", "contract"),
+            )
             panel = features.join(targets, on="row_id", validate="1:1").join(
                 values, on="row_id", validate="1:1"
             )

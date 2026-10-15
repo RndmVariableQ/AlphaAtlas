@@ -1,0 +1,14 @@
+# Explorer/Analyst/Miner use the same DeepSeek endpoint as MCTS-LLM.
+# Store the actual key in the environment, never in this file.
+chat_model = "deepseek-flash"
+chat_base_url = "https://api.deepseek.com/v1"
+chat_key_env = "OPENAI_API_KEY"
+temperature = 1.0
+repair_temperature = 0.8
+timeout_seconds = 120.0
+max_formula_repairs = 3
+max_dialogue_rounds = 8
+candidates_per_plan = 5
+analyst_feedback_top_k = 5
+initial_temperature = 0.25
+final_temperature = 0.02

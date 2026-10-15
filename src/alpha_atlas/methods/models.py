@@ -109,7 +109,14 @@ class HTTPModels:
                         if choice.get("index", 0) != 0:
                             continue
                         delta = choice["delta"]
-                        for key in ("reasoning_content", "reasoning", "content"):
+                        for key in (
+                            "reasoning_content",
+                            "reasoning",
+                            "analysis",
+                            "thinking",
+                            "thought",
+                            "content",
+                        ):
                             text = delta.get(key)
                             if text is None:
                                 continue
@@ -134,9 +141,24 @@ class HTTPModels:
                 temperature=temperature,
             )
 
+    def chat_once(self, messages, *, temperature=None):
+        """One silent transport attempt; the async coordinator owns retries and accounting."""
+        return self._chat_response(messages, temperature=temperature, post=self._post_once)
+
     def chat_messages(self, messages, *, max_output_tokens=None, on_delta=None, temperature=None):
+        return self._chat_response(
+            messages,
+            max_output_tokens=max_output_tokens,
+            on_delta=on_delta,
+            temperature=temperature,
+            post=self._post,
+        )
+
+    def _chat_response(
+        self, messages, *, max_output_tokens=None, on_delta=None, temperature=None, post
+    ):
         output_limit = max_output_tokens or getattr(self.config, "max_output_tokens", None)
-        response = self._post(
+        response = post(
             "chat",
             "/chat/completions",
             {

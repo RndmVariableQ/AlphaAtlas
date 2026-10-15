@@ -114,6 +114,9 @@ def tool_examples(tmp_path):
     ]
     train = panel(128).with_columns(
         pl.lit("P").alias("product"),
+        pl.lit(1).alias("product_segment_id"),
+        pl.lit(1).alias("product_segment_id_p1"),
+        pl.lit(1).alias("product_segment_id_p2"),
         *[
             pl.lit(90.0 + 30 * i).alias(f"days_to_maturity{s}")
             for i, s in enumerate(("", "_p1", "_p2"))
@@ -336,6 +339,7 @@ def test_prompt_tools_and_budget_follow_actual_session(tmp_path):
         "frequency",
         "target",
         "metric",
+        "panel",
         "remaining_attempts",
     }
     rules = current.get_evaluation_rules()
@@ -730,7 +734,7 @@ def test_stream_is_incremental_preserves_unicode_usage_and_think_tags(monkeypatc
             yield from sse({"content": "nk>检查量价关系"}).splitlines(keepends=True)
             # This assertion runs before the remaining response has been delivered.
             shown = capsys.readouterr()
-            assert "检查量价关系" in shown.err and "流式" in shown.err and shown.out == ""
+            assert "检查量价关系" not in shown.err and shown.out == ""
             yield from sse({"content": "</thi"}).splitlines(keepends=True)
             yield from sse({"content": 'nk>{"tool":"evaluate"}'}).splitlines(keepends=True)
             yield b'data: {"choices": [], "usage": {"prompt_tokens": 20, "completion_tokens": 8}}\n'
@@ -749,8 +753,7 @@ def test_stream_is_incremental_preserves_unicode_usage_and_think_tags(monkeypatc
     assert text == '<think>检查量价关系</think>{"tool":"evaluate"}'
     assert usage == {"prompt_tokens": 20, "completion_tokens": 8}
     output = capsys.readouterr()
-    assert "[模型输出 · 流式]" in output.err and "<think>" not in output.err
-    assert "</thi" not in output.err and output.out == ""
+    assert "检查量价关系" not in output.err and "tool" not in output.err and output.out == ""
 
 
 @pytest.mark.parametrize("key", ["reasoning_content", "reasoning"])
@@ -768,7 +771,7 @@ def test_separate_reasoning_stream_and_quiet(monkeypatch, capsys, caplog, key, q
     assert text == "{}" and usage is None
     output = capsys.readouterr()
     assert output.out == "" and "\x1b" not in output.err
-    assert ("独立思考" in output.err) == (not quiet)
+    assert "独立思考" not in output.err and "独立思考" not in caplog.text
     if quiet:
         assert output.err == ""
 
@@ -823,8 +826,8 @@ def test_failed_trial_commit_never_prints_admission(tmp_path, monkeypatch, caplo
     with caplog.at_level(logging.INFO, logger="alpha_atlas.progress"):
         with pytest.raises(OSError, match="disk failure"):
             step(method, current)
-    assert "价格信号" in caplog.text and "$x" in caplog.text
-    assert "[因子入库]" not in caplog.text and "候选完成" not in caplog.text
+    assert "价格信号" in caplog.text and "$x" not in caplog.text
+    assert "[1/1]" not in caplog.text and "[因子入库]" not in caplog.text
 
 
 def test_react_rejects_invalid_name_without_using_budget(tmp_path):

@@ -185,10 +185,10 @@ def test_training_statistics_ignore_validation_and_rebuild_only_requested(tmp_pa
 
     calls = []
 
-    def compute(compiled, frame, *args):
+    def compute(compiled, frame, *args, **kwargs):
         calls.append(compiled.factor_id)
         assert frame["trading_day"].max() == second._evaluator.fold.train.end
-        return execute(compiled, frame, *args)
+        return execute(compiled, frame, *args, **kwargs)
 
     monkeypatch.setattr("alpha_atlas.evaluation.execute", compute)
     assert second.factor_correlations([(a, b)]) == results[1]
@@ -411,6 +411,7 @@ def test_end_to_end_llm_stages_graph_and_frozen_oos(project):
             assert set(payload["context"]) == {
                 "asset",
                 "frequency",
+                "panel",
                 "target",
                 "metric",
                 "fields",
@@ -461,6 +462,7 @@ class QueryModels(FakeModels):
             assert set(payload["context"]) == {
                 "asset",
                 "frequency",
+                "panel",
                 "target",
                 "metric",
                 "fields",

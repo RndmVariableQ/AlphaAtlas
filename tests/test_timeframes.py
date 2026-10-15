@@ -115,6 +115,34 @@ def test_intraday_aggregation_and_exact_publication(interval, size, suffix, fiel
     )
 
 
+def test_product_timeframe_crosses_contract_switch_with_product_continuity():
+    data = panel(6).with_columns(
+        pl.when(pl.col("row_id") < 3)
+        .then(pl.lit("M"))
+        .otherwise(pl.lit("N"))
+        .alias("instrument_id"),
+        pl.when(pl.col("row_id") < 3).then(pl.lit(1)).otherwise(pl.lit(2)).alias("segment_id"),
+        pl.lit("P").alias("product"),
+        pl.lit(1).alias("product_segment_id"),
+        pl.when(pl.col("row_id") < 3)
+        .then(pl.lit("A"))
+        .otherwise(pl.lit("B"))
+        .alias("instrument_id_p1"),
+        pl.when(pl.col("row_id") < 3)
+        .then(pl.lit(1))
+        .otherwise(pl.lit(2))
+        .alias("product_segment_id_p1"),
+    )
+    product_values = execute("$close@15m", data, FIELDS, panel="product")
+    assert product_values["value"].to_list() == [None, None, 102.0, 102.0, 102.0, 105.0]
+    product_far = execute("$close_p1@15m", data, FIELDS, panel="product")
+    assert product_far["value"].to_list() == [None, None, 112.0, None, None, 115.0]
+
+    coarse = timeframe_panel(data, {"close"}, "15m", panel="product")
+    assert coarse["instrument_id"].to_list() == ["M", "N"]
+    assert coarse["product_segment_id"].to_list() == [1, 1]
+
+
 @pytest.mark.parametrize("interval,size", [("15m", 3), ("30m", 6), ("60m", 12)])
 def test_windows_run_on_coarse_bars_before_broadcast_and_mixed_windows_on_5m(interval, size):
     data = panel()

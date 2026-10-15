@@ -53,7 +53,7 @@ and your own proposals. For documentation, the equivalent tool arguments are:
 | Tool call | Purpose and result |
 | --- | --- |
 | `evaluate(expression, hypothesis="", name=null)` | Evaluate one DSL expression and return metrics, coverage, admission feedback and remaining budget. Supply a short name and rationale. |
-| `get_context()` | Read all stable research metadata in one call: asset, frequency, target, metric, permitted fields, full operator definitions, expression and evaluation rules, and reference-library settings. |
+| `get_context()` | Read all stable research metadata in one call: asset, frequency, panel, target, metric, permitted fields, full operator definitions, expression and evaluation rules, and reference-library settings. |
 | `library_search(query="", source="all", offset=0, limit=10)` | Search admitted factors and/or optional reference definitions. Empty query browses; limit is 1–20. |
 | `library_list(offset=0, limit=20)` | Page through admitted factors in this run and their primary validation scores. Limit is 1–100. |
 | `library_get(factor_id)` | Read an admitted factor's expression, train/validation report and direction; null if absent. |
@@ -113,13 +113,23 @@ DSL_GUIDE = """### 5.1 Syntax and numerical conventions
 - **Cross-sectional operators:** use eligible finite inputs at the same timestamp.
   `CS_SCALE` divides by the sum of absolute values.
 - **Missing values:** unknown conditions stay unknown. Filling an expression does not change
-  market eligibility or target validity. Futures windows and targets never cross contracts or
-  known continuity breaks.
+  market eligibility or target validity. Targets stay within their actual contract and
+  continuity segment. Factor windows follow the configured panel; product-panel futures windows
+  continue across dominant-contract changes and reset at known product gaps or invalid bars.
+  Windows using a later-maturity contract also reset when that leg changes actual contract.
 """
 
 PROPERTY_MEANINGS = {
     "asset": "Research asset and market configuration.",
     "frequency": "Native bar interval; unsuffixed fields and windows use this frequency.",
+    "panel": (
+        "Factor-series grouping: contract-local or continuous by product; target boundaries stay "
+        "contract-local."
+    ),
+    "panel_semantics": (
+        "How the configured panel groups factor windows and continuity; auxiliary-leg windows "
+        "reset on that leg's contract change."
+    ),
     "target.price_field": "Price input used by the platform to calculate forward returns.",
     "target.horizon_bars": "Forward return horizon in native bars, not wall-clock time.",
     "target.return_type": "Return definition; log_return means ln(future price / current price).",

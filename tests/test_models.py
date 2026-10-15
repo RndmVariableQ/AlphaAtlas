@@ -106,8 +106,171 @@ def test_incomplete_stream_restarts_content_usage_and_terminal_state(client, mon
     monkeypatch.setattr("alpha_atlas.methods.models.time.sleep", lambda _: None)
     with TerminalStream() as stream:
         text, measured = client.chat_messages([], on_delta=stream.delta)
-        assert not stream.thinking and stream.buffer == ""
     assert text == "{}" and measured == usage
+
+
+def test_terminal_stream_refreshes_one_redacted_tty_line(monkeypatch, caplog):
+    import time
+
+    class Terminal(io.StringIO):
+        def isatty(self):
+            return True
+
+    terminal = Terminal()
+    monkeypatch.setattr("alpha_atlas.reporting.sys.stderr", terminal)
+    monkeypatch.setattr("alpha_atlas.reporting._PROGRESS_TEXT", "[Miner · round 2]")
+    with caplog.at_level(logging.INFO, logger="alpha_atlas.progress"):
+        with TerminalStream() as stream:
+            stream.delta("reasoning", "private reasoning")
+            time.sleep(0.35)
+    output = terminal.getvalue()
+    assert output.count("\r") >= 2
+    assert "Miner · round 2" in output and "生成中" in output
+    assert "private reasoning" not in output
+
+
+def test_terminal_stream_renders_only_reply_as_one_rewritten_line(client, monkeypatch, caplog):
+    class Terminal(io.StringIO):
+        def isatty(self):
+            return True
+
+    def event(delta):
+        return ("data: " + json.dumps({"choices": [{"delta": delta}]}) + "\n\n").encode()
+
+    terminal = Terminal()
+    monkeypatch.setattr("alpha_atlas.reporting.sys.stderr", terminal)
+    monkeypatch.setattr("alpha_atlas.reporting._PROGRESS_TEXT", "[Explorer · round 1]")
+    monkeypatch.setattr(
+        "alpha_atlas.reporting.shutil.get_terminal_size",
+        lambda **_: SimpleNamespace(columns=80, lines=24),
+    )
+
+    data = event({"reasoning_content": "separate private thought"})
+    data += event({"analysis": "separate analysis channel"})
+    data += event({"content": "<thinking>marked private thought</thinking>"})
+    data += event({"content": "<analysis>another private thought</analysis>"})
+    data += event({"content": "<thi"})
+    data += event({"content": "nk>private thought</think>"})
+    data += event({"content": '{"direction":"study '})
+    data += event({"content": 'volatility"}'})
+    data += b"data: [DONE]\n\n"
+    monkeypatch.setattr("alpha_atlas.methods.models.urlopen", lambda *a, **k: io.BytesIO(data))
+
+    with caplog.at_level(logging.INFO, logger="alpha_atlas.progress"), TerminalStream() as stream:
+        text, _ = client.chat_messages([], on_delta=stream.delta)
+
+    output = terminal.getvalue()
+    assert text == (
+        "<thinking>marked private thought</thinking>"
+        "<analysis>another private thought</analysis>"
+        '<think>private thought</think>{"direction":"study volatility"}'
+    )
+    assert output.count("\n") == 1 and output.count("\r") > 1
+    assert "study volatility" in output
+    assert "private thought" not in output and "separate" not in output
+
+
+def test_noninteractive_stream_logs_only_the_completed_reply_tail(monkeypatch, caplog):
+    class Terminal(io.StringIO):
+        def isatty(self):
+            return False
+
+    terminal = Terminal()
+    monkeypatch.setattr("alpha_atlas.reporting.sys.stderr", terminal)
+    monkeypatch.setattr(
+        "alpha_atlas.reporting._PROGRESS_TEXT", "退火 │ 进度=12/500 │ Agent=Explorer"
+    )
+    with caplog.at_level(logging.INFO, logger="alpha_atlas.progress"), TerminalStream() as stream:
+        stream.delta("content", "<think>hidden thought</think>")
+        stream.delta("content", "x" * 120 + "VISIBLE_TAIL")
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert "hidden thought" not in "\n".join(messages)
+    assert "VISIBLE_TAIL" in messages[-1]
+    assert "Agent=Explorer" in messages[-1]
+    assert "\r" not in messages[-1]
+
+
+def test_terminal_stream_keeps_progress_and_latest_reply_visible(monkeypatch, caplog):
+    from alpha_atlas.reporting import _display_width, _stream_display_width
+
+    class Terminal(io.StringIO):
+        def isatty(self):
+            return True
+
+    terminal = Terminal()
+    monkeypatch.setattr("alpha_atlas.reporting.sys.stderr", terminal)
+    monkeypatch.setattr(
+        "alpha_atlas.reporting._PROGRESS_TEXT",
+        "区域退火 │ 进度=12/500 │ Agent=Miner",
+    )
+    monkeypatch.setattr(
+        "alpha_atlas.reporting.shutil.get_terminal_size",
+        lambda **_: SimpleNamespace(columns=73, lines=24),
+    )
+
+    with caplog.at_level(logging.INFO, logger="alpha_atlas.progress"), TerminalStream() as stream:
+        stream.delta("content", "x" * 120)
+        stream.delta("content", "tail")
+
+    line = terminal.getvalue().split("\r")[-1].split("\x1b", maxsplit=1)[0]
+    assert _display_width(line) <= 72
+    assert _stream_display_width(line) <= 72
+    assert "进度=12/500" in line and "tail" in line
+
+
+def test_terminal_stream_reply_ticker_stays_bounded_on_wide_terminals(monkeypatch, caplog):
+    from alpha_atlas.reporting import _stream_display_width
+
+    class Terminal(io.StringIO):
+        def isatty(self):
+            return True
+
+    terminal = Terminal()
+    monkeypatch.setattr("alpha_atlas.reporting.sys.stderr", terminal)
+    monkeypatch.setattr(
+        "alpha_atlas.reporting._PROGRESS_TEXT",
+        "退火 │ 进度=117/500 │ Agent=Miner │ 轮次=24 │ 模式=breadth │ 计划候选=2/5 │ 修复=1/4",
+    )
+    monkeypatch.setattr(
+        "alpha_atlas.reporting.shutil.get_terminal_size",
+        lambda **_: SimpleNamespace(columns=240, lines=24),
+    )
+
+    with caplog.at_level(logging.INFO, logger="alpha_atlas.progress"), TerminalStream() as stream:
+        stream.delta("content", "x" * 240)
+
+    line = terminal.getvalue().split("\r")[-1].split("\x1b", maxsplit=1)[0]
+    ticker = line.rsplit(" → ", maxsplit=1)[1]
+    assert _stream_display_width(ticker) <= 32
+    assert ticker.endswith("x" * 30)
+
+
+def test_progress_notices_refresh_the_active_response_row(monkeypatch, caplog):
+    from alpha_atlas.reporting import terminal_progress
+
+    class Terminal(io.StringIO):
+        def isatty(self):
+            return True
+
+    terminal = Terminal()
+    monkeypatch.setattr("alpha_atlas.reporting.sys.stderr", terminal)
+    monkeypatch.setattr("alpha_atlas.reporting._PROGRESS_TEXT", "退火 │ 进度=8/500 │ Agent=Miner")
+    monkeypatch.setattr(
+        "alpha_atlas.reporting.shutil.get_terminal_size",
+        lambda **_: SimpleNamespace(columns=80, lines=24),
+    )
+
+    with caplog.at_level(logging.INFO, logger="alpha_atlas.progress"), TerminalStream() as stream:
+        stream.delta("content", "partial")
+        terminal_progress("模型请求重试", 重试="1/3", 等待="2s")
+        stream.delta("restart", "")
+        stream.delta("content", "回复完成")
+
+    output = terminal.getvalue()
+    final_line = output.split("\r")[-1].split("\x1b", maxsplit=1)[0]
+    assert output.count("\n") == 1 and "模型请求重试" in output
+    assert "模型请求重试" not in final_line and "回复完成" in final_line
 
 
 def test_interrupt_during_retry_wait_stops_immediately(client, monkeypatch):

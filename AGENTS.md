@@ -49,7 +49,8 @@ AlphaAtlas 是 train/val 因子搜索与研究评估平台。方法负责搜索�
 - 特征与目标分离，研究只通过 `MarketData` 访问。供应商 API／Parquet 仅限资产适配与导出层；`.parq` 存于
   `data/` 并排除 Git。采集显式发起，manifest 如实记录来源、覆盖和缺失。
 - 数据与其他工作区隔离，不改仓库外数据或数据库。期货使用用户指定的 RiceQuant 原生 5m，不重采样或合成连续价。
-- 资产身份为 `(exchange, instrument_id)`；期货窗口和目标不跨真实合约或连续段，`product` 仅用于聚合，映射代码留在适配层。
+- 资产身份为 `(exchange, instrument_id)`。期货目标不跨真实合约或连续段；因子窗口按 profile 的
+  `panel` 计算，`product` panel 可跨主力切换并在已知缺口重置。`product` 也用于指标聚合，映射代码留在适配层。
 - A 股使用 PIT 逐日成员；1800 是 HS300、ZZ500、ZZ1000 逐日并集。基本面保留公告／生效日期和修订来源，披露修订限制，不造缺失数据。
 - 每个 `(asset, dataset, universe, fold, method, seed, run_id)` 独立维护因子库与地图。
 - 不记录凭据；测试只用合成数据与模拟服务，不访问真实凭据、供应商或模型服务。项目不提供交易／下单 API。

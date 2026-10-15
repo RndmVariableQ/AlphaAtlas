@@ -115,8 +115,12 @@ def test_far_leg_switch_only_resets_dependent_windows_and_never_targets(tmp_path
     data = load_panel(tmp_path, wide, fields)
     assert data["segment_id"].n_unique() == 1
     assert data["segment_id_p1"].n_unique() == 2
+    assert data["product_segment_id"].n_unique() == 1
+    assert data["product_segment_id_p1"].n_unique() == 2
     ordinary = execute("TS_MEAN($close, 3)", data, set(fields))["value"]
     assert ordinary[6] == pytest.approx(105)
+    product_far = execute("TS_MEAN($close_p1,2)", data, set(fields), panel="product")["value"]
+    assert product_far[6] is None and product_far[7] is not None
     for expression in [
         "TS_MEAN($close_p1, 3)",
         "TS_MEAN($close / $close_p1, 3)",

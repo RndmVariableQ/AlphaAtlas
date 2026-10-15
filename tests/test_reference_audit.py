@@ -38,6 +38,7 @@ def test_fixed_audit_freezes_all_definitions_and_reports_test_after_rejection(
                         "instrument_id": f"{year}-{product}",
                         "product": str(product),
                         "segment_id": 1,
+                        "product_segment_id": year,
                         "eligible": True,
                         "target_eligible": True,
                         "close": close,

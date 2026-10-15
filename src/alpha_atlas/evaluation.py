@@ -157,7 +157,7 @@ def metric(frame: pl.DataFrame, name: str, split: str, *, correlation=None, weig
     return metrics(frame, name, split, correlation=correlation, weights=weights)[0]
 
 
-def search_diagnostics(panel, period, name, direction, weights=None):
+def search_diagnostics(panel, period, name, direction, weights=None, *, factor_panel="contract"):
     """Train-only stability and explicit holdings turnover; never substitute missing statistics.
 
     ICIR uses daily primary IC (futures: first pool within product/day), sample std,
@@ -166,6 +166,8 @@ def search_diagnostics(panel, period, name, direction, weights=None):
     Both turnovers are half the absolute change, excluding initial positions.
     """
     futures = name in FUTURES_METRICS
+    if factor_panel not in {"contract", "product"}:
+        raise ValueError("panel must be 'contract' or 'product'")
     result = {
         "version": "icir_turnover_v1",
         "split": "train",
@@ -212,9 +214,11 @@ def search_diagnostics(panel, period, name, direction, weights=None):
     holdings = panel.filter(pl.col("trading_day").is_between(period.start, period.end))
     finite = pl.col("eligible").fill_null(False) & pl.col("value").is_finite().fill_null(False)
     if futures:
-        group = GROUP + (["segment_id"] if "segment_id" in panel.columns else [])
+        identity = GROUP if factor_panel == "contract" else ["exchange", "product"]
+        segment = "segment_id" if factor_panel == "contract" else "product_segment_id"
+        group = identity + ([segment] if segment in panel.columns else [])
         holdings = (
-            holdings.sort(GROUP + ["timestamp"])
+            holdings.sort(identity + ["timestamp"])
             .with_columns(pl.when(finite).then(pl.col("value").sign()).alias("position"))
             .with_columns(
                 ((pl.col("position") - pl.col("position").shift().over(group)).abs() / 2).alias(
@@ -297,7 +301,12 @@ class EvaluationService:
         compile_options: dict | None = None,
         retain_training: bool = False,
         diagnostics: str = "",
+        training_cache_factors: int = 208,
     ):
+        if type(training_cache_factors) is not int or training_cache_factors < 1:
+            raise ValueError("training_cache_factors must be a positive integer")
+        # Keep 200 library members plus a small allowance for parents and pending candidates.
+        self._training_cache_factors = training_cache_factors
         latest = features["trading_day"].max()
         if latest is not None and latest > fold.val.end:
             raise ValueError("search evaluator cannot receive OOS features")
@@ -315,6 +324,11 @@ class EvaluationService:
         self.diagnostics = diagnostics
         self.fold = fold
         self.profile = json.loads(json.dumps(profile, default=str))
+        self.panel = self.profile.get("panel", "contract")
+        if self.panel not in {"contract", "product"}:
+            raise ValueError("panel must be 'contract' or 'product'")
+        if self.panel == "product" and "product" not in features.columns:
+            raise ValueError("product panel requires a product feature column")
         self.fields = set(fields)
         self.snapshot_id = snapshot_id or fingerprint(features.hash_rows().to_list())
         self.context_id = fingerprint((context or {}, self.profile, sorted(fields), "quality-v2"))
@@ -344,11 +358,9 @@ class EvaluationService:
         keys = ["row_id", "trading_day", "exchange", "instrument_id", "value"]
         if "product" in frame.columns:
             keys.append("product")
-        self._training[identity] = frame.select(keys)
+        self._training[identity] = frame.select(keys).sort("row_id")
         self._training.move_to_end(identity)
-        while sum(f.estimated_size() for f in self._training.values()) > self.cache_bytes:
-            if len(self._training) <= 1:
-                break
+        while len(self._training) > self._training_cache_factors:
             self._training.popitem(last=False)
 
     def _training_values(self, identity, candidate):
@@ -360,7 +372,7 @@ class EvaluationService:
                 raise ValueError("training statistic factor identity mismatch")
             # Rebuild only requested missing values, using the existing MarketData panel.
             features = self.features.filter(pl.col("trading_day") <= self.fold.train.end)
-            values = execute(compiled, features, self.fields, self.registry)
+            values = execute(compiled, features, self.fields, self.registry, panel=self.panel)
             panel = features.join(self.targets, on="row_id", validate="1:1").join(
                 values, on="row_id", validate="1:1"
             )
@@ -377,7 +389,11 @@ class EvaluationService:
             rhs = self._training_values(right, candidates[right]).select(
                 "row_id", pl.col("value").alias("target")
             )
-            overlap = lhs.join(rhs, on="row_id", validate="1:1")
+            # Cached panels are sorted once; equal row IDs need no repeated hash join.
+            if lhs["row_id"].equals(rhs["row_id"], check_dtypes=True, null_equal=False):
+                overlap = lhs.with_columns(rhs["target"])
+            else:
+                overlap = lhs.join(rhs, on="row_id", validate="1:1")
             result = metric(
                 overlap,
                 self.profile["metric"],
@@ -436,10 +452,11 @@ class EvaluationService:
             self._cache.move_to_end(evaluation_id)
             return replace(report, cache_hit=True, elapsed_seconds=time.perf_counter() - started)
         try:
-            values = execute(compiled, self.features, self.fields, self.registry)
+            values = execute(compiled, self.features, self.fields, self.registry, panel=self.panel)
             keys = ["row_id", "trading_day", "exchange", "instrument_id", "eligible"]
             if self.diagnostics:
-                keys += [k for k in ("timestamp", "segment_id") if k in self.features.columns]
+                segment = "product_segment_id" if self.panel == "product" else "segment_id"
+                keys += [k for k in ("timestamp", segment) if k in self.features.columns]
             if "product" in self.features.columns:
                 keys.append("product")
             panel = self.features.select(keys).join(self.targets, on="row_id", validate="1:1")
@@ -504,6 +521,7 @@ class EvaluationService:
                     self.profile["metric"],
                     direction,
                     self.weights.get("train"),
+                    factor_panel=self.panel,
                 )
                 if self.diagnostics
                 else {},
