@@ -17,7 +17,13 @@ def main() -> None:
     audit.add_argument("--asset", required=True)
     run = commands.add_parser("run")
     run.add_argument("--asset", required=True)
-    run.add_argument("--fold", choices=["fold1", "fold2"], required=True)
+    #run.add_argument("--fold", choices=["fold1", "fold2"], required=True)
+    run.add_argument(
+        "--fold",
+        type=str,
+        required=True,
+        help="Fold ID defined in configs/folds.toml",
+    )
     run.add_argument(
         "--method",
         choices=[

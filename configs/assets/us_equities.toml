@@ -1,0 +1,40 @@
+
+# US Equities — WRDS / CRSP
+
+asset_id = "us_equities"
+frequency = "1d"
+provider = "wrds"
+data_dir = "data/us_equities"
+
+# Universe
+default_universe = "r1000"
+universes = ["all", "r1000"]
+
+# Market information
+timezone = "America/New_York"
+bar_time_label = "end"
+
+# Factor evaluation
+price_field = "close"
+target_horizon_bars = 5
+metric = "cross_sectional_spearman"
+panel = "contract"
+
+# Optional acceptance threshold
+min_train_val_ic = 0.005
+
+# Fundamentals are not yet available
+fundamentals = false
+
+# Intended research coverage
+start = 2015-01-01
+end = 2025-12-31
+
+[acquisition]
+frequency = "1d"
+source = "crsp.dsf_v2"
+membership_source = "ftse_russell_us.idx_holdings_us"
+security_info_source = "crsp.stksecurityinfohist"
+
+price_adjustment = "none"
+universe_method = "historical_russell_holdings"

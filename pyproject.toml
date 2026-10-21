@@ -20,6 +20,10 @@ dependencies = [
 
 [project.optional-dependencies]
 ricequant = ["rqdatac==3.6.3", "pandas>=2.2,<3"]
+wrds = [
+    "sqlalchemy>=2.0.36,<3",
+    "wrds>=3.1.6",
+]
 
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.12"]
