@@ -1,7 +1,7 @@
 import json
 import logging
 import math
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 
 import pytest
@@ -15,7 +15,6 @@ from alpha_atlas.config import load_toml
 from alpha_atlas.contracts import Candidate, EvaluationReport, TrialFeedback
 from alpha_atlas.methods.annealing import AnnealingLLMConfig, AnnealingLLMSearch
 from alpha_atlas.methods.baselines import default_regions
-from alpha_atlas.methods.mcts_llm import MCTSLLMConfig
 from alpha_atlas.runner import resume, run
 from alpha_atlas.runner import test_frozen as evaluate_frozen
 
@@ -141,14 +140,11 @@ def test_invalid_region_annealing_config_fails(kwargs):
         AnnealingLLMConfig(**kwargs)
 
 
-def test_config_uses_shared_deepseek_settings_without_mcts_tree_controls():
+def test_config_uses_shared_generation_settings_without_mcts_tree_controls():
     root = Path(__file__).resolve().parents[1]
     annealing = load_toml(root / "configs/annealing.toml")
     mcts = load_toml(root / "configs/mcts_llm.toml")
     shared = (
-        "chat_model",
-        "chat_base_url",
-        "chat_key_env",
         "temperature",
         "repair_temperature",
         "timeout_seconds",
@@ -159,7 +155,6 @@ def test_config_uses_shared_deepseek_settings_without_mcts_tree_controls():
     assert "tree_budget" not in annealing and "exploration" not in annealing
     assert AnnealingLLMConfig.from_mapping(annealing).candidates_per_plan == 5
     assert AnnealingLLMConfig.from_mapping(annealing).analyst_feedback_top_k == 5
-    assert MCTSLLMConfig.from_mapping(mcts).chat_model == annealing["chat_model"]
 
 
 def test_three_agents_run_in_order_and_plan_spans_candidate_budget(tmp_path, caplog):
@@ -186,6 +181,28 @@ def test_three_agents_run_in_order_and_plan_spans_candidate_budget(tmp_path, cap
     assert method.active_region_id == "mean"
     assert method.region_scores["mean"] == {"accepted": 2, "attempts": 2}
     assert method.steps[-1]["annealing_result"]["reason"] == "initialize_or_continue_region"
+
+
+def test_miner_preserves_allowed_adjusted_timeframes_and_rejects_other_base_fields(tmp_path):
+    base = make_session(tmp_path)
+    base._context = replace(base._context, frequency="5m", panel="product")
+    base._fields = ("adj_close", "adj_vwap", "volume", "amount")
+    expression = "TS_MEAN($adj_close@30m / $adj_vwap@30m - 1,20)"
+    models = AgentModels(expressions=[expression])
+    method, current = setup_method(tmp_path, models=models, session=base)
+
+    candidate = method.ask(current.base.get_context())[0]
+    assert candidate.expression == expression
+    miner = next(call[0] for call in models.calls if "Factor Miner Agent" in call[0])
+    assert "$adj_close@30m / $adj_vwap@30m - 1" in miner
+    assert "adj_close_zscore_15m_64" in miner and "$close@" not in miner
+    assert not current.base.attempts_used
+    method.round_state["plan"]["allowed_fields"] = ["adj_close", "adj_vwap"]
+    assert method._validate_miner({"expression": expression})["expression"] == expression
+    with pytest.raises(ValueError, match="outside the Analyst plan: volume"):
+        method._validate_miner({"expression": "$adj_close@30m + $volume@30m"})
+    with pytest.raises(ValueError, match="invalid feature field: adj_close_p1"):
+        method._validate_miner({"expression": "$adj_close_p1@30m"})
 
 
 def test_miner_conversation_includes_all_prior_candidates_and_evaluations(tmp_path):

@@ -1,13 +1,14 @@
 # AlphaPROBE search under Atlas's numerical/data/admission protocol.
 # Configure actual models before running. No keys belong in this file.
-chat_model = "gpt-5.5"
+chat_model = "deepseek-flash"
 embedding_model = "Qwen3-Embedding-0.6B"
-chat_base_url = "http://127.0.0.1:27483/codex/v1"
+chat_base_url = "https://api.deepseek.com/v1"
 embedding_base_url = "http://127.0.0.1:8003/v1"
 chat_key_env = "OPENAI_API_KEY"
 embedding_key_env = "ALPHA_ATLAS_EMBEDDING_API_KEY"
 temperature = 1.0
-max_output_tokens = 4096
+# Reasoning and final JSON share this output budget.
+max_output_tokens = 65536
 timeout_seconds = 120.0
 
 pool_capacity = 50

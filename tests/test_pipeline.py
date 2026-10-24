@@ -57,6 +57,107 @@ def test_market_restricts_labels_and_preserves_warmup(project):
             market.load_features(fields=["label_return"], end=date(2020, 1, 1))
 
 
+def test_market_field_catalog_uses_numeric_schema_and_excludes_metadata(project):
+    path = project / "data/ashare/bars/fixture.parq"
+    frame = pl.read_parquet(path).with_columns(
+        pl.lit(None, dtype=pl.Float64).alias("funda_missing"),
+        pl.lit(12).alias("custom_indicator"),
+        pl.lit(1.0).alias("adjfactor"),
+        pl.lit(1.0).alias("adj_cum_factor"),
+        pl.lit(5).alias("source_bars"),
+        pl.lit(0).alias("vwap_proxy_bars"),
+        pl.lit(0).alias("vwap_clamped_bars"),
+        pl.lit(0).alias("vwap_no_trade_bars"),
+        pl.lit(5).alias("bar_interval_minutes"),
+        pl.lit(1).alias("segment_id"),
+        pl.lit(1).alias("product_segment_id_p1"),
+        pl.lit(1).alias("in_extra"),
+        pl.lit(0).alias("is_st"),
+        pl.lit(False).alias("is_suspended"),
+        pl.lit(99.0).alias("target_future"),
+        pl.lit(99.0).alias("labelfuture"),
+        pl.lit(99.0).alias("__internal"),
+        pl.lit("note").alias("source_note"),
+        pl.lit(date(2020, 1, 1)).alias("fundamentals_source_day"),
+    )
+    atomic_parq(frame, path)
+    with ParqMarketData(project / "data/ashare", "union1800") as market:
+        assert market.get_fields() == (
+            "close",
+            "adj_close",
+            "volume",
+            "amount",
+            "funda_missing",
+            "custom_indicator",
+        )
+
+
+@pytest.mark.parametrize("field_names", [None, ["volume"]])
+def test_runner_defaults_to_all_kernel_features_and_keeps_explicit_subsets(project, field_names):
+    from alpha_atlas.contracts import Candidate
+
+    frame = pl.read_parquet(project / "data/ashare/bars/fixture.parq").select(
+        "row_id",
+        "timestamp",
+        "trading_day",
+        "exchange",
+        "instrument_id",
+        "adj_close",
+        pl.col("adj_close").alias("adj_open"),
+        (pl.col("adj_close") + 1).alias("adj_high"),
+        (pl.col("adj_close") - 1).alias("adj_low"),
+        (pl.col("adj_close") * 0.99).alias("adj_vwap"),
+        "volume",
+        "amount",
+        pl.lit(1234.0).alias("open_interest"),
+        pl.col("instrument_id").alias("product"),
+        pl.lit(1.0).alias("adj_cum_factor"),
+        pl.lit(5).alias("source_bars"),
+    )
+    atomic_parq(frame, project / "data/futures_kernel_5m/bars/fixture.parq")
+    atomic_json(
+        project / "data/futures_kernel_5m/manifest.json",
+        {"status": "complete", "snapshot_id": "synthetic-kernel", "frequency": "5m"},
+    )
+    expected = (
+        (
+            "adj_close",
+            "adj_open",
+            "adj_high",
+            "adj_low",
+            "adj_vwap",
+            "volume",
+            "amount",
+            "open_interest",
+        )
+        if field_names is None
+        else ("adj_close", "volume")
+    )
+
+    class InspectFields:
+        def run(self, session):
+            assert session.get_fields() == expected
+            context = session.query("get_context", {})
+            assert context["fields"] == expected
+            error = session.validate_expression("$adj_close@30m / $adj_vwap@30m - 1")["error"]
+            assert (error is None) == (field_names is None)
+            session.evaluate(Candidate("$adj_close"))
+
+    path = run(
+        project,
+        "futures_kernel_5m",
+        "fold1",
+        "inspect",
+        42,
+        attempts=1,
+        field_names=field_names,
+        method_impl=InspectFields(),
+    )
+    spec = json.loads((path / "run.json").read_text())
+    assert spec["status"] == "frozen"
+    assert spec["fields"] == list(expected)
+
+
 def test_bad_ohlc_and_trading_flags_are_quarantined_without_dropping_rows(project):
     path = project / "data/ashare/bars/fixture.parq"
     frame = pl.read_parquet(path).with_columns(

@@ -3,14 +3,19 @@
 import html
 import json
 import logging
+import math
+import re
 import shutil
+import statistics
 import sys
 import threading
 import time
 import unicodedata
 import warnings
 from collections import Counter
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from alpha_atlas.assets.common import atomic_json
 from alpha_atlas.checkpoint import read_json
@@ -583,6 +588,11 @@ def write_report(directory: Path) -> Path:
                 f"{profile['price_field']}，未来 {profile['target_horizon_bars']} Bar 对数收益",
             ),
             ("主指标", profile["metric"]),
+            *(
+                ([("上下文重置 trial", spec["context_reset_at_trial"])])
+                if "context_reset_at_trial" in spec
+                else []
+            ),
         ],
     )
     lines += ["## 进度与成本", ""]
@@ -659,6 +669,13 @@ def write_report(directory: Path) -> Path:
         f"查重共同有限行 ≥ {rules['min_corr_overlap']}；绝对 Spearman < {rules['max_abs_corr']}。",
         "",
     ]
+    if "clip_quantiles" in rules:
+        lower, upper = rules["clip_quantiles"]
+        lines += [
+            f"评分裁剪：因子值与标签分别使用 train 的 {100 * lower:g}%–{100 * upper:g}% "
+            "线性分位边界；val 与 OOS 沿用冻结边界，不重新拟合。",
+            "",
+        ]
     if accepted:
         rows = []
         for trial in accepted:
@@ -793,6 +810,54 @@ def write_report(directory: Path) -> Path:
         else:
             lines += ["OOS 已执行，冻结因子库为空。", ""]
         lines += ["OOS 是冻结方向下的 IC 审计，不代表可交易收益。", ""]
+    lines += ["## 组合模型 Test", ""]
+    model_test_path = directory / "model/test.json"
+    if model_test_path.exists():
+        tested = read_json(model_test_path)
+        lines += _table(
+            ["模型", "指标", "IC", "有效样本", "覆盖率"],
+            [
+                (
+                    name,
+                    metric_title(metric["name"]),
+                    metric["value"],
+                    metric["n_obs"],
+                    model["coverage"],
+                )
+                for name, model in tested["reports"]["test"].items()
+                for metric in model["metrics"]
+            ],
+        )
+        lines += ["拟合与模型详情：[模型报告](model/report.md)。", ""]
+    elif spec["status"] == "frozen" and not accepted:
+        lines += ["冻结因子库为空，组合模型不适用。", ""]
+    else:
+        lines += ["尚未完成组合模型 Test；atlas finish 会补齐后自动填表。", ""]
+    similarity_path = directory / "library_similarity.json"
+    lines += ["## Val 库内因子相似度", ""]
+    if similarity_path.exists():
+        similarity = read_json(similarity_path)
+        lines += [
+            f"窗口：{similarity['panel']}；共同有限行重新排名，所有不同因子对等权。",
+            "",
+        ]
+        lines += _table(
+            ["因子数", "有效 / 总配对", "均值", "中位数", "P90", "最大值", "≥ 0.7"],
+            [
+                (
+                    similarity["factor_count"],
+                    f"{similarity['valid_pairs']} / {similarity['pair_count']}",
+                    similarity["mean_absolute_spearman"],
+                    similarity["median_absolute_spearman"],
+                    similarity["p90_absolute_spearman"],
+                    similarity["max_absolute_spearman"],
+                    similarity["pairs_at_least_0_7"],
+                )
+            ],
+        )
+        lines += ["完整结果：[library_similarity.json](library_similarity.json)。", ""]
+    else:
+        lines += ["尚未完成 Val 全库相似度；atlas finish 会补齐后自动填表。", ""]
     lines += [
         "## 数据边界与记录",
         "",
@@ -820,6 +885,232 @@ def refresh_report(directory: Path) -> None:
             RuntimeWarning,
             stacklevel=2,
         )
+
+
+def _overview_row(text, heading, headers, row, identity, description):
+    """Update one run's linked row, preserving handwritten rows and surrounding prose."""
+    lines = text.splitlines()
+    title = f"### {heading}"
+    if title not in lines:
+        section = "\n".join([title, "", description, "", *_table(headers, [row])]) + "\n"
+        marker = "## 待开展实验"
+        return (
+            text.replace(marker, section + "\n" + marker, 1)
+            if marker in text
+            else text.rstrip() + "\n\n" + section
+        )
+    start = lines.index(title)
+    end = next(
+        (i for i in range(start + 1, len(lines)) if re.match(r"#{1,3} ", lines[i])), len(lines)
+    )
+    table = next((i for i in range(start + 1, end) if lines[i].startswith("| ")), None)
+    if table is None or lines[table] != "| " + " | ".join(headers) + " |":
+        raise ValueError(f"overview table headers changed: {heading}")
+    stop = table + 2
+    while stop < end and lines[stop].startswith("| "):
+        stop += 1
+    matches = [i for i in range(table + 2, stop) if identity in lines[i]]
+    if len(matches) > 1:
+        raise ValueError("duplicate run rows in experiment overview")
+    rendered = _table(headers, [row])[2]
+    if matches:
+        if headers[0] == "实验人" and row[0] is None:
+            rendered = lines[matches[0]].partition(" | ")[0] + " | " + rendered.partition(" | ")[2]
+        lines[matches[0]] = rendered
+    else:
+        lines.insert(stop, rendered)
+        stop += 1
+        end += 1
+    today = datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
+    for i in range(start + 1, end):
+        lines[i] = re.sub(
+            r"截至 \d{4}-\d{2}-\d{2}，下表 \d+ 组结果",
+            f"截至 {today}，下表 {stop - table - 2} 组结果",
+            lines[i],
+        )
+        lines[i] = lines[i].replace("其余五组使用原生 5m 快照", "原生 5m 各组使用对应快照")
+    return "\n".join(lines) + "\n"
+
+
+def update_experiment_overview(root, directory, spec, oos, tested, similarity):
+    """Publish both tables together only from complete, matching frozen-run outputs."""
+    from alpha_atlas.checkpoint import run_lock
+
+    identities = [item["expression_id"] for item in oos["results"]]
+    count = spec["library_size"]
+    if (
+        len(identities) != count
+        or len(set(identities)) != count
+        or any(item["status"] != "success" for item in oos["results"])
+        or similarity["factor_ids"] != identities
+        or similarity["valid_pairs"] != count * (count - 1) // 2
+        or (count and (tested is None or set(tested["reports"]["test"]) != {"linear", "lightgbm"}))
+    ):
+        raise ValueError(
+            "all single-factor, model and similarity results are required before publishing"
+        )
+    futures = spec["profile"]["metric"].startswith("time_series_")
+    primary = "time_series_weighted_pearson_ic" if futures else spec["profile"]["metric"]
+    spearman = "time_series_weighted_spearman_ic" if futures else "cross_sectional_spearman"
+
+    def value(report, name):
+        return next(
+            item["value"]
+            for item in report["metrics"]
+            if item["name"] == name and item["split"] == "test"
+        )
+
+    scores = [value(item, primary) for item in oos["results"]]
+    finite = [score for score in scores if score is not None and math.isfinite(score)]
+    secondary = [value(item, spearman) for item in oos["results"]]
+    secondary = [score for score in secondary if score is not None and math.isfinite(score)]
+    average = f"{statistics.mean(finite):.6f} / {statistics.median(finite):.6f}" if finite else "—"
+    if len(finite) != count:
+        average += f"，有效 {len(finite)} / {count}"
+    positive = (
+        f"{sum(score > 0 for score in finite)} / {len(finite)}，{sum(score > 0 for score in finite) / len(finite):.2%}"
+        if finite
+        else "—"
+    )
+    methods = {
+        "alphaprobe": "AlphaPROBE",
+        "react": "ReAct",
+        "mcts_llm": "MCTS-LLM",
+        "v1_async": "AlphaAtlas+Annealing V1 Async",
+        "random": "Random",
+        "gp": "GP",
+        "mcts": "UCT MCTS",
+    }
+    method = methods.get(spec["method"], spec["method"])
+    relative = directory.relative_to(root).as_posix()
+    identity = f"({relative}/report.md)"
+    method_link = f"[{method}]{identity}"
+    asset = spec["asset"]
+    if asset.startswith("futures_kernel_"):
+        fields = {4: "四", 8: "八"}.get(len(spec["fields"]), str(len(spec["fields"])))
+        data = f"Kernel {fields}字段"
+    else:
+        data = f"原生 {spec['profile']['frequency']}" if asset == "futures" else asset
+    clipping = spec["rules"].get("clip_quantiles")
+    policy = f"{clipping[0] * 100:g}%–{clipping[1] * 100:g}%" if clipping else "无"
+    data += f" / {spec['universe']} / 裁剪 {policy}"
+    model = (spec.get("method_config") or {}).get("chat_model", "—")
+    attempts = sum(
+        trial["feedback"]["reason"] != "budget_rejected" for trial in RunStore(directory).trials()
+    )
+    combined = [
+        value(tested["reports"]["test"][name], primary) if count else None
+        for name in ("linear", "lightgbm")
+    ]
+
+    def number(item):
+        return f"{item:.6f}" if item is not None else "—"
+
+    scope = "期货" if futures else "A 股" if asset == "ashare" else asset
+    main_headers = [
+        "实验人",
+        "方法",
+        "数据",
+        "模型",
+        "Fold / seed",
+        "尝试次数",
+        "TEST 单因子加权 Pearson（均值 / 中位数）"
+        if futures
+        else "TEST 单因子主 IC（均值 / 中位数）",
+        "正 IC",
+        "单因子加权 Spearman 均值" if futures else "单因子 Spearman 均值",
+        "Linear 加权 Pearson" if futures else "Linear 主 IC",
+        "LightGBM 加权 Pearson" if futures else "LightGBM 主 IC",
+    ]
+    main_row = [
+        spec.get("researcher"),
+        method_link,
+        data,
+        model,
+        f"{spec['fold']['id']} / {spec['seed']}",
+        attempts,
+        average,
+        positive,
+        number(statistics.mean(secondary) if secondary else None),
+        *map(number, combined),
+    ]
+    pair_headers = [
+        "方法 / 模型",
+        "数据",
+        "尝试次数",
+        "因子数",
+        "因子对数",
+        "平均绝对 Spearman",
+        "中位数",
+        "P90",
+        "最大值",
+        "≥ 0.7 的对数",
+    ]
+    pair_row = [
+        f"{method_link} / {model} / {spec['fold']['id']} / {spec['seed']}",
+        data,
+        attempts,
+        count,
+        similarity["pair_count"],
+        *[
+            number(similarity[key])
+            for key in (
+                "mean_absolute_spearman",
+                "median_absolute_spearman",
+                "p90_absolute_spearman",
+                "max_absolute_spearman",
+            )
+        ],
+        similarity["pairs_at_least_0_7"],
+    ]
+    panel = similarity["panel"]
+    fold = spec["fold"]
+    main_heading = (
+        f"{scope}因子搜索"
+        if futures and fold["id"] == "fold1"
+        else f"{scope}因子搜索：{fold['id']}"
+    )
+    pair_heading = (
+        "期货库内因子相似度：统一 product 窗口"
+        if futures and panel == "product" and fold["id"] == "fold1"
+        else f"{scope}库内因子相似度：{fold['id']} / {panel} 窗口"
+    )
+    periods = "；".join(
+        f"{name}：{fold[key]['start']}–{fold[key]['end']}"
+        for name, key in (("Train", "train"), ("Val", "val"), ("Test", "test"))
+    )
+    # Reuse the existing single-writer lock for the shared derived Markdown document.
+    with run_lock(root / "artifacts"):
+        path = root / "experiment_overview.md"
+        text = path.read_text(encoding="utf-8") if path.exists() else "# 实验总览\n"
+        text = _overview_row(text, main_heading, main_headers, main_row, identity, periods + "。")
+        text = _overview_row(
+            text,
+            pair_heading,
+            pair_headers,
+            pair_row,
+            identity,
+            f"Val：{fold['val']['start']}–{fold['val']['end']}；共同有限观测重新排名，全部配对等权。",
+        )
+        if "## 待开展实验" in text:
+            before, pending = text.split("## 待开展实验", 1)
+            lines, current_fold = [], None
+            for line in pending.splitlines():
+                if line.startswith("### "):
+                    current_fold = line[4:].strip().lower()
+                cells = [cell.strip() for cell in line.strip("|").split("|")]
+                if (
+                    current_fold == spec["fold"]["id"].lower()
+                    and len(cells) == 4
+                    and cells[:2] == [scope, methods.get(spec["method"], spec["method"])]
+                ):
+                    continue
+                lines.append(line)
+            text = before + "## 待开展实验" + "\n".join(lines) + "\n"
+        temporary = path.with_suffix(".md.tmp")
+        temporary.write_text(text, encoding="utf-8")
+        temporary.replace(path)
+        return path
 
 
 def write_model_report(directory: Path, fitted: dict, tested: dict | None = None):

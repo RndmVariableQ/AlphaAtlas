@@ -1,4 +1,5 @@
 import copy
+import io
 import json
 import threading
 from concurrent.futures import wait
@@ -7,7 +8,7 @@ from dataclasses import replace
 import pytest
 from test_annealing import setup_method
 from test_pipeline import project as project
-from test_v1 import proposals
+from test_v1 import V1Models, proposals
 
 from alpha_atlas.checkpoint import read_json
 from alpha_atlas.contracts import EvaluationReport, TrialFeedback
@@ -304,6 +305,64 @@ def test_active_proposal_duplicate_requires_repair_before_registering_regions(se
     assert not method.proposed_regions
 
 
+@pytest.mark.parametrize("count", [1, 2])
+def test_async_partial_batch_creates_only_validated_groups(setup_async, count):
+    method, current = setup_async(attempts=12)
+    method.context = current.query("get_context", {})
+    method._start_explorer(context(current))
+    raw = proposals()
+    raw["proposals"] = raw["proposals"][:count]
+    method.explorer["round"]["responses"]["explorer"] = [{"text": json.dumps(raw)}]
+    before = method.rng.getstate()
+    method._advance_explorer(context(current))
+    assert method.explorer is None
+    assert len(method.groups) == count
+    assert not method._requests
+    expected = ["mean"] if count == 1 else ["std", "mean"]
+    assert [g["round"]["exploration"]["region_id"] for g in method.groups.values()] == expected
+    assert method.rng.getstate() == before
+    assert current.remaining_budget() == 12
+
+
+def test_saved_unresolved_with_one_free_slot_can_request_one_direction(setup_async):
+    config = V1AsyncConfig(candidates_per_plan=2)
+    method, current = setup_async(attempts=12, config=config)
+    method.context = current.query("get_context", {})
+    method._start_explorer(context(current))
+    batch = proposals()
+    batch["proposals"] = batch["proposals"][:2]
+    method.explorer["round"]["responses"]["explorer"] = [{"text": json.dumps(batch)}]
+    method._advance_explorer(context(current))
+    method._start_explorer(context(current))
+    assert len(method.explorer["quotas"]) == 1
+    unresolved = {"summary": "Two groups active", "unresolved": "Cannot invent a third direction"}
+    record = {"text": json.dumps(unresolved), "processed": True, **unresolved}
+    method.explorer["round"]["responses"]["explorer"] = [record]
+    saved = copy.deepcopy(method.dump_state())
+    complete = proposals()
+    complete["proposals"] = complete["proposals"][2:]
+    models = V1Models([complete])
+    restored, target = setup_async(attempts=12, config=config, models=models)
+    restored.load_state(saved)
+    for _ in range(5):
+        restored._advance_explorer(context(target))
+        if restored.explorer is None:
+            break
+        wait([job["future"] for job in restored._requests.values()], timeout=5)
+    assert restored.explorer is None
+    assert len(restored.groups) == 3
+    for key, group in saved["groups"].items():
+        assert restored.groups[key] == group
+    calls = [call for call in models.calls if "Atlas Explorer Agent" in call[0]]
+    assert len(calls) == 1
+    assert calls[0][1]["available_slots"] == 1
+    assert len(calls[0][1]["active_proposals"]) == 2
+    assert "一至三条" in calls[0][0]
+    assert restored.usage["chat_requests"] == saved["usage"]["chat_requests"] + 1
+    assert restored.completed_attempts == saved["completed_attempts"]
+    assert target.remaining_budget() == 12
+
+
 def test_chat_once_uses_one_silent_attempt_without_retry_callback(monkeypatch):
     models = HTTPModels(V1AsyncConfig(chat_model="mock"))
     attempts = []
@@ -392,6 +451,27 @@ def test_transient_failures_stop_after_four_requests_without_spending_budget(
         method.ask(context(current))
     assert current.remaining == 3 and method.completed_attempts == 0
     assert method.usage["chat_requests"] == method.usage["unknown_usage_requests"] == 4
+
+
+def test_empty_http_200_response_retries_in_coordinator_without_spending_budget(
+    setup_async, monkeypatch
+):
+    calls = []
+
+    def request(*args, **kwargs):
+        calls.append(threading.get_ident())
+        return io.BytesIO(b'{"choices":[{"message":{"content":null},"finish_reason":"stop"}]}')
+
+    monkeypatch.setattr("alpha_atlas.methods.models.urlopen", request)
+    ticks = iter(range(10000))
+    monkeypatch.setattr("alpha_atlas.methods.v1_async.time.monotonic", lambda: 10 * next(ticks))
+    config = V1AsyncConfig(chat_model="synthetic")
+    method, current = setup_async(attempts=3, config=config, models=HTTPModels(config))
+    with pytest.raises(RuntimeError, match="empty message content; failed after 4 requests"):
+        method.ask(context(current))
+    assert len(calls) == 4 and threading.get_ident() not in calls
+    assert method.usage["chat_requests"] == method.usage["unknown_usage_requests"] == 4
+    assert current.remaining == 3 and method.completed_attempts == 0
 
 
 @pytest.mark.parametrize("parallel_plans", [0, -1, True, 1.5])

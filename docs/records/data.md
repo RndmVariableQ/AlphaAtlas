@@ -2,6 +2,98 @@
 
 历史采集证据；通用约定见[实验规范](../research_protocol.md)，流程验收见[实验记录](experiments.md)。
 
+## 2026-10-23 Research kernel 完整字段导出
+
+按用户要求补齐 Kernel 中已有的 `adj_open`、`adj_high`、`adj_low` 和 `open_interest`，
+新增独立资产 [futures_kernel_5m_full](../../configs/assets/futures_kernel_5m_full.toml)，
+数据保存在 `data/futures_kernel_5m_full/`。默认输入为快照中全部八个数值特征：
+
+```text
+adj_open, adj_high, adj_low, adj_close, adj_vwap, volume, amount, open_interest
+```
+
+通过 Kernel 的只读 `/api/dataset`、`/api/query` 核对源 schema 并导出，
+来源仍为 `market.bars_1m` 的 RiceQuant final 主力真实合约；没有直接打开源数据库或重新调用供应商。
+保留按 `received_at`、`ingest_seq` 取最新观测、连续五根 1m 分桶、缺口重置、
+真实合约与交易日隔离、夜盘归属、尾部不足五根保留及末根时间标签的原有口径。
+
+| 字段 | 五分钟聚合 |
+| --- | --- |
+| adj_open | 第一根的值，保留首值缺失 |
+| adj_high / adj_low | 全部源值有限时取最大 / 最小，否则为 null |
+| adj_close | 最后一根的值，保留末值缺失 |
+| adj_vwap | 对有限价格和正成交量做量加权；无正权重时为 null |
+| volume / amount | 分别汇总 volume / turnover |
+| open_interest | 最后一根持仓量，保留末值缺失；不求和、不做价格复权 |
+
+实际导出覆盖 2012-01-04 至 2026-09-28，177 个月、97 个品种、4,758 个真实合约，
+原始来源 67,795,608 行，输出 13,559,126 行。全量复权 OHLC、volume、amount 和 OI
+均无空值或非有限值；`adj_vwap` 的 1,381,618 个源口径缺失按原样保留，没有填补。
+MarketData 快照为：
+`73db06c2d7223ce5829b8d3d9846a27b35e59e0d621a11a4a94d99dcc6ec0e87`。
+
+标准 `atlas audit-data` 检查通过，`passed=true`、`research_ready=true`；
+分区哈希不一致、重复 row_id、空主键、异常 OHLC 和缺失 OHLC 均为 0。
+MarketData 与审计在没有完整原始 OHLC 时，按复权 OHLC 执行同样的有限性、价格区间和异常隔离规则。
+在 2016-01-04 的实际训练期观测上验证了八字段读取，以及复权价格和 `open_interest@60m` 的编译执行。
+
+```bash
+uv run python -m alpha_atlas.assets.research_kernel \
+  --url http://127.0.0.1:8791 --output data/futures_kernel_5m_full
+uv run atlas audit-data --asset futures_kernel_5m_full
+uv run --env-file .env atlas run --asset futures_kernel_5m_full --universe all \
+  --fold fold1 --method mcts_llm --seed 42 --attempts 1000
+```
+
+新运行省略 `--fields` 即使用全部八字段。原 `data/futures_kernel_5m/` 与其资产配置保留，
+既有 AlphaPROBE 的配置和四字段 MarketData 快照核对仍有效；旧运行继续沿用冻结字段，
+完整字段实验使用新资产和新运行。导出器拒绝将完整字段任务写入已有四字段目录，防止混用。
+合成测试覆盖最新记录选择、OHLC 手算、OI 末值与空值、非有限价格、缺口、合约隔离、
+夜盘、异常隔离、默认字段和按月恢复。
+实际数据、分区校验与缺失计数见该目录 `manifest.json`、`audit.json`；
+过程日志见 `artifacts/monitors/kernel_full_20261023.log` 和对应 `_audit.log`。
+
+## 2026-10-19 Research kernel 复权五分钟导出
+
+用户明确要求从本机 ChaoticTrader_Future research kernel 保存 `adj_close`、`adj_vwap`，
+并将原生 1m 合并为 5m。来源为 kernel 的 `market.bars_1m`：RiceQuant、final、
+所有品种的逐日主力真实合约。导出前只读核对覆盖 2012-01-04 至 2026-09-28，
+原始主力记录 67,795,608 行；同一观测按 received_at、ingest_seq 保留最新版本。
+
+本节为当时的四字段版本；当前完整字段导出见上方 2026-10-23 记录，使用独立目录与资产。
+
+[导出器](../../src/alpha_atlas/assets/research_kernel.py) 只调用 kernel 的 `/api/dataset`
+和只读 `/api/query`，不直接打开源数据库。输出为独立的 `data/futures_kernel_5m/`，
+逐月 `.parq`、状态、实际覆盖、行数、空值与源质量计数以该目录 `manifest.json` 为准。
+不导出标签，不覆盖既有 `data/futures/` 原生 5m 或历史运行。
+
+```bash
+uv run python -m alpha_atlas.assets.research_kernel \
+  --url http://127.0.0.1:8791 --output data/futures_kernel_5m
+```
+
+独立资产配置为 `configs/assets/futures_kernel_5m.toml`，以 `adj_close` 为目标价格，
+沿用期货 product panel、12 根 5m 目标和 weighted Pearson IC。默认开放全部四个导出特征字段：
+
+```bash
+uv run atlas run --asset futures_kernel_5m --fold fold1 --method v1_async --seed 42
+```
+
+相同参数可将 `--method` 换为 `alphaprobe`；现有原生期货配置仍指向 `data/futures/`。
+
+聚合沿用 kernel 的 session-aware MarketData 口径：每个交易所、品种、真实合约和交易日
+分别按连续五根 1m 分组；间隔不等于一分钟时重置，保留尾部不足五根的组，输出时间为
+组内最后一根已观测分钟的时间。`source_bars` 保留每组实际分钟数；这不是原生 5m 数据。
+
+- `adj_close` 取末值，末值缺失时仍缺失。
+- `adj_vwap` 为 `sum(adj_vwap * volume) / sum(volume)`，仅使用有限价格及正成交量；
+  分母为零时为 null。保留 kernel 已有的 clamped、proxy 和 no_trade 处理及其分钟计数。
+- `volume` 求和，kernel 的 `turnover` 求和后命名为 `amount`；保留复权因子及自然观测键。
+
+复权价格直接使用 kernel 的换月累计比例结果，不在本项目重新调整或补造缺失。
+这是用户另行指定的派生数据快照，不能冒充原生 5m、不复权数据的同口径对照。
+合成数据验证覆盖量加权手算、零成交量、去重、合约隔离、夜盘归属、缺口重置及断点继续。
+
 ## 2026-09-10 远月扩展实际采集
 
 用户授权后通过 RiceQuant 实际下载原生 5m，主力加历史已上市的前两个更远到期合约，

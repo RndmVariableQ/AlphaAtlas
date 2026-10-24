@@ -1,3 +1,4 @@
+import asyncio
 import io
 import json
 from dataclasses import asdict, replace
@@ -64,6 +65,208 @@ def session(tmp_path, budget=10, reference_library=""):
         RunStore(tmp_path),
         budget,
     )
+
+
+@pytest.mark.parametrize("disconnects", [0, 1, 3])
+def test_agentscope_deepseek_tool_loop_preserves_reasoning_and_event_loop(
+    tmp_path, monkeypatch, disconnects
+):
+    import httpx
+    import openai
+
+    current = session(tmp_path, budget=2)
+    requests, loops = [], []
+    broken_streams, delays = [], []
+    completed = 0
+
+    class BrokenStream(httpx.AsyncByteStream):
+        closed = False
+
+        async def __aiter__(self):
+            # A complete-looking tool argument is still unusable before the stream finishes.
+            chunk = {
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "discarded",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "evaluate",
+                                        "arguments": json.dumps({"expression": "$x + 999"}),
+                                    },
+                                }
+                            ]
+                        },
+                        "finish_reason": None,
+                    }
+                ]
+            }
+            yield f"data: {json.dumps(chunk)}\n\n".encode()
+            raise httpx.RemoteProtocolError("Synthetic incomplete chunked read")
+
+        async def aclose(self):
+            self.closed = True
+
+    async def sleep(delay):
+        delays.append(delay)
+
+    def respond(request):
+        nonlocal completed
+        body = json.loads(request.content)
+        requests.append(body)
+        loops.append(asyncio.get_running_loop())
+        assert body["max_tokens"] == 65536 and "max_completion_tokens" not in body
+        assert "test-key" not in json.dumps(body)
+        if completed == 1 and len(broken_streams) < disconnects:
+            stream = BrokenStream()
+            broken_streams.append(stream)
+            return httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=stream)
+        completed += 1
+        if completed % 2:
+            delta = {
+                "role": "assistant",
+                "reasoning_content": "Synthetic reasoning for the mocked tool call",
+                "tool_calls": [
+                    {
+                        "index": 0,
+                        "id": f"evaluation_{completed}",
+                        "type": "function",
+                        "function": {
+                            "name": "evaluate",
+                            "arguments": json.dumps({"expression": f"$x + {completed}"}),
+                        },
+                    }
+                ],
+            }
+            finish = "tool_calls"
+        else:
+            previous = next(m for m in body["messages"] if m.get("tool_calls"))
+            assert previous["reasoning_content"] == "Synthetic reasoning for the mocked tool call"
+            delta, finish = {"role": "assistant", "content": "Wait for platform feedback"}, "stop"
+        chunks = [
+            {"choices": [{"index": 0, "delta": delta, "finish_reason": None}]},
+            {
+                "choices": [{"index": 0, "delta": {}, "finish_reason": finish}],
+                "usage": {"prompt_tokens": 12, "completion_tokens": 4, "total_tokens": 16},
+            },
+        ]
+        text = "".join(f"data: {json.dumps(chunk)}\n\n" for chunk in chunks) + "data: [DONE]\n\n"
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, text=text)
+
+    client_type = openai.AsyncClient
+
+    def client(**kwargs):
+        assert kwargs["timeout"] == 120
+        assert kwargs["max_retries"] == 0
+        return client_type(
+            **kwargs, http_client=httpx.AsyncClient(transport=httpx.MockTransport(respond))
+        )
+
+    monkeypatch.setattr(openai, "AsyncClient", client)
+    monkeypatch.setattr("alpha_atlas.methods.react.asyncio.sleep", sleep)
+    monkeypatch.setenv("ATLAS_TEST_AGENT_KEY", "test-key")
+    method = ReactSearch(
+        42,
+        ReactConfig(
+            framework="agentscope",
+            chat_model="deepseek-flash",
+            chat_base_url="https://api.deepseek.com/v1",
+            chat_key_env="ATLAS_TEST_AGENT_KEY",
+            max_output_tokens=65536,
+        ),
+    )
+    method.set_session(current)
+    try:
+        first = method.ask(current.get_context())[0]
+        assert current.attempts_used == 0
+        assert first.expression == "$x + 1"
+        assert len(method.candidate_queue) == 1
+        method.tell([current.evaluate(first)])
+        second = method.ask(current.get_context())[0]
+        assert second.expression == "$x + 3" and current.attempts_used == 1
+        method.tell([current.evaluate(second)])
+        assert len(requests) == 4 + disconnects and len(set(loops)) == 1
+        assert all(body == requests[1] for body in requests[1 : 2 + disconnects])
+        assert delays == [2**i for i in range(disconnects)]
+        assert all(stream.closed for stream in broken_streams)
+        assert method.usage["chat_requests"] == 4 + disconnects
+        assert method.usage["unknown_usage_requests"] == disconnects
+        assert method.usage["prompt_tokens"] == 48
+        assert method.usage["completion_tokens"] == 16
+        assert len(current._store.trials()) == 2
+        assert method._agent.context_config.compression_prompt == SUMMARY
+        assert not method._agent.context_config.compression_fallback_to_truncation
+        json.dumps(method.dump_state(), allow_nan=False)
+    finally:
+        method.close()
+    assert method._agent_runner is None and loops[0].is_closed()
+
+
+@pytest.mark.parametrize("failure", ["connection", "bad_request", "cancel"])
+def test_agentscope_stream_retry_limit_and_terminal_failures(tmp_path, monkeypatch, failure):
+    import httpx
+    import openai
+    from agentscope.message import ToolCallBlock
+    from agentscope.model import ChatResponse, OpenAIChatModel
+
+    calls, delays = [], []
+    request = httpx.Request("POST", "https://synthetic.invalid/v1/chat/completions")
+    if failure == "connection":
+        error = openai.APIConnectionError(request=request)
+        expected_calls = 4
+    elif failure == "bad_request":
+        error = openai.BadRequestError(
+            "Synthetic invalid request", response=httpx.Response(400, request=request), body=None
+        )
+        expected_calls = 1
+    else:
+        error = asyncio.CancelledError()
+        expected_calls = 1
+
+    async def call_api(model, *args, **kwargs):
+        calls.append(kwargs)
+
+        async def stream():
+            yield ChatResponse(
+                content=[
+                    ToolCallBlock(
+                        id="discarded", name="evaluate", input='{"expression":"$x + 999"}'
+                    )
+                ],
+                is_last=False,
+            )
+            raise error
+
+        return stream()
+
+    async def sleep(delay):
+        delays.append(delay)
+
+    monkeypatch.setattr(OpenAIChatModel, "_call_api", call_api)
+    monkeypatch.setattr("alpha_atlas.methods.react.asyncio.sleep", sleep)
+    monkeypatch.setenv("ATLAS_TEST_AGENT_KEY", "test-key")
+    current = session(tmp_path, budget=2)
+    method = ReactSearch(
+        42, ReactConfig(framework="agentscope", chat_key_env="ATLAS_TEST_AGENT_KEY")
+    )
+    method.set_session(current)
+    method._ensure_agent()
+    method._agent_runner = asyncio.Runner()
+    try:
+        with pytest.raises(type(error)):
+            method._agent_runner.run(method._agent.model(messages=[]))
+        assert len(calls) == expected_calls
+        assert delays == ([1, 2, 4] if failure == "connection" else [])
+        assert method.usage["chat_requests"] == expected_calls
+        assert method.usage["unknown_usage_requests"] == expected_calls
+        assert method.candidate_queue == [] and current.attempts_used == 0
+        assert current._store.trials() == []
+    finally:
+        method.close()
 
 
 def search(current, replies):
@@ -414,7 +617,14 @@ def test_react_only_exposes_context_for_metadata_queries(tmp_path, tool):
 def test_prompt_explains_only_permitted_fields_and_their_timeframes(tmp_path, frequency):
     current = session(tmp_path)
     current._context = replace(current._context, frequency=frequency)
-    current._fields = ("close", "open_interest_p1", "days_to_maturity_p2", "x")
+    current._fields = (
+        "close",
+        "adj_close",
+        "adj_vwap",
+        "open_interest_p1",
+        "days_to_maturity_p2",
+        "x",
+    )
     method = search(current, [])
     method._initialize()
     prompt = method.system_prompt
@@ -428,7 +638,12 @@ def test_prompt_explains_only_permitted_fields_and_their_timeframes(tmp_path, fr
     assert "### 4.3 Second later-maturity contract (_p2)" in prompt
     field_section = prompt.split("## 4. Permitted input fields\n", 1)[1].split("\n## 5.", 1)[0]
     rows = [line for line in field_section.splitlines() if line.startswith("| `$")]
-    assert len(rows) == 4
+    assert len(rows) == 6
+    assert (
+        f"| `$adj_close` | Adjusted closing price supplied by the asset adapter. | {suffixes} |"
+        in prompt
+    )
+    assert "Adjusted volume-weighted average price supplied by the asset adapter" in prompt
     assert all(f"| `${field}` |" in prompt for field in current.get_fields())
     assert rows[-1].endswith(f"| {suffixes} |")
     assert next(row for row in rows if row.startswith("| `$x` |")).endswith("| none |")
@@ -659,7 +874,12 @@ def test_builtin_react_freeze_oos_config_and_report(project, monkeypatch, asset)
     report = (path / "report.md").read_text(encoding="utf-8")
     assert "compressions" in report and "summary_requests" in report
     config = project / "configs/react.toml"
-    config.write_text(config.read_text().replace("temperature = 0.5", "temperature = 0.6"))
+    temperature = spec["method_config"]["temperature"]
+    config.write_text(
+        config.read_text().replace(
+            f"temperature = {temperature}", f"temperature = {temperature + 0.1}"
+        )
+    )
     with pytest.raises(ValueError, match="ReAct configuration changed"):
         evaluate_frozen(project, path)
 

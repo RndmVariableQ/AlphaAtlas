@@ -43,7 +43,10 @@ class _ConcurrentModels:
                 "服务端按 30/30/20/20 加权选择一条交给原 Analyst",
                 "服务端按 30/30/20/20 排序，按 available_slots 选择方向并发交给 Analyst",
             )
-            system += "\nactive_proposals 是正在研究的方向，三条新提案不得重复这些机制和预测。"
+            system += (
+                "\nactive_proposals 是正在研究的方向，新提案不得重复这些机制和预测。"
+                "available_slots 是当前空位数；有一条完整的新方向即可提交，不必为补位凑满三条。"
+            )
             payload = {
                 **payload,
                 "active_proposals": self.method.round_state["active_proposals"],
@@ -236,7 +239,9 @@ class V1AsyncSearch(V1Search):
                 return
             state = self.round_state
             batch = state["explorer_proposals"]
-            order = sorted(range(3), key=lambda i: -batch["proposals"][i]["score"])
+            order = sorted(
+                range(len(batch["proposals"])), key=lambda i: -batch["proposals"][i]["score"]
+            )
             # The validated batch and group creation are committed together, before any Analyst.
             for offset, (selected, quota) in enumerate(
                 zip(order, self.explorer["quotas"], strict=False)

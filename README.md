@@ -118,7 +118,7 @@ uv run atlas audit-data --asset ashare
 [runner.py](src/alpha_atlas/runner.py) 执行。完成数据准备后，可运行一个小预算实验：
 
 ```powershell
-# 搜索使用 train/val；正常完成后冻结本次因子库
+# 搜索使用 train/val；冻结后自动评估单因子、组合模型和 Val 库内相似度，再填表
 $result = uv run atlas run --asset futures --fold fold1 --method random --seed 42 --attempts 10 |
     ConvertFrom-Json
 
@@ -126,8 +126,16 @@ $result = uv run atlas run --asset futures --fold fold1 --method random --seed 4
 uv run atlas report $result.run_dir
 ```
 
-运行结果保存在 `artifacts/runs/<run_id>/`，阅读入口为其中的 `report.md`。
+运行结果保存在 `artifacts/runs/<run_id>/`，阅读入口为其中的 `report.md`；
+三项评估全部完成后自动更新 `experiment_overview.md` 中对应 fold 的结果表和相似度表。
 每个运行独立维护因子库与地图，小预算示例不保证产生入库因子。
+
+默认开放当前数据集的全部可用数值特征字段，并将实际字段列表保存到运行记录。
+`--fields` 仅用于显式缩小输入范围；身份、成员资格、质量、复权因子元数据和标签不属于默认特征。
+
+Research Kernel 的完整字段期货实验使用 `--asset futures_kernel_5m_full`，默认包含复权 OHLC、
+复权 VWAP、成交量、成交额和 `open_interest`。准备数据与来源见[数据验收记录](docs/records/data.md)。
+历史四字段资产 `futures_kernel_5m` 供既有运行恢复与评估；完整字段实验使用新快照和新运行。
 
 中断后可沿用原运行与预算恢复，将占位路径替换为实际运行目录：
 
@@ -135,7 +143,25 @@ uv run atlas report $result.run_dir
 uv run atlas resume artifacts/runs/<run_id>
 ```
 
-研究决策冻结后，再单独评估 test。正式比较应先冻结全部开发决策，再批量查看样本外结果：
+`run`、`resume` 默认执行完整流程。若搜索已冻结而后处理曾中断，`resume` 会继续后处理；
+也可单独补跑完成流程：
+
+```powershell
+uv run atlas finish artifacts/runs/<run_id>
+```
+
+已保存的模型与评估结果会复用；失败不填表，重试补齐未完成阶段，同一运行不会重复新增行。
+无入库因子的运行仍记录空库，组合模型显示不适用。正常收尾不发起模型服务请求。
+
+正式比较先冻结同组全部开发决策，再批量查看样本外结果；用 `--search-only` 推迟后处理：
+
+```powershell
+uv run atlas run --asset futures --fold fold1 --method random --attempts 10 --search-only
+uv run atlas resume artifacts/runs/<run_id> --search-only
+uv run atlas finish artifacts/runs/<run_id>
+```
+
+各单项入口仍可独立使用：
 
 ```powershell
 uv run atlas test $result.run_dir

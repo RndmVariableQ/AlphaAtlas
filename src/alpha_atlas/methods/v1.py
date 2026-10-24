@@ -38,7 +38,8 @@ Valid 已按 Train 符号同向化，不再翻转；结合覆盖、分布和反�
 breadth 比较全图的未解问题，depth 深挖 active_region；保留既有退火的广度/深度选择。
 可借鉴经济学、物理学、生物学、博弈论，但须指出市场现象、可观测痕迹和反驳条件。
 追问没有该条件、方向相反、不同状态下会怎样；将反事实落实为可检验预测。
-提出三条有实质差异的问题、机制或预测，不能只改名字、窗口、符号或硬凑频率。
+提交一至三条完整、可执行且有实质差异的问题、机制或预测；有一条即可提交，
+不为凑满三条硬编方向，不能只改名字、窗口、符号或硬凑频率。
 具体测量路线、字段、窗口、对照和门槛由 Analyst 制定；已有区域适用时不新建 Region。
 每条给出四项 1–5 整数评分和理由；评分是判断，不声称未执行的检验已经通过。
 服务端按 30/30/20/20 加权选择一条交给原 Analyst，评估后仍按原 Metropolis 规则接受 Region。
@@ -47,17 +48,18 @@ breadth 比较全图的未解问题，depth 深挖 active_region；保留既有�
 1. {"tool":"library_search","arguments":{"query":"关键词","source":"all","limit":3}}
    只允许 get_context、library_search、library_get、library_list、library_stats。
    context 已提供，无需重复查询；每次查询解决具体疑点，不重复读取未变化资料。
-2. {"summary":"查证结论","proposals":[三个方向]}。每个方向包含 objective、hypothesis、
+2. {"summary":"查证结论","proposals":[一至三个方向]}。每个方向包含 objective、hypothesis、
    conditions、prediction、alternative、references（ref 字符串数组），以及 region_id 或
    new_region（hypothesis、continent_ids）二选一；review 包含 scores（importance、decision、
    difference、readiness）和 importance、information_gain、difference、readiness 四个理由。
    不生成 ID、scope、policy 或综合分；只引用收到的完整 ref。
-3. {"summary":"查证结论","unresolved":"不足三个方向的具体原因"}，显式结束本次探索。
+3. {"summary":"查证结论","unresolved":"无法提供任何一条完整方向的具体原因"}。
+   只有连一条方向也无法成立时才使用；服务端澄清一次后仍不足则结束探索。
 """
 
-EXPLORER_REMINDER = """收敛提醒：本次查证已经进行了多轮，请整理已收到的证据，优先提交三个
-有实质差异的完整研究方向及四项评分和理由。仅在关键证据仍缺失时继续查询，避免扩大检索范围。
-若无法形成三个方向，请按协议返回 summary 和 unresolved，说明具体缺口，不编造证据。
+EXPLORER_REMINDER = """收敛提醒：本次查证已经进行了多轮，请整理已收到的证据，优先提交一至三个
+完整研究方向及四项评分和理由。有一条即可提交，不必凑满三条。
+仅在关键证据仍缺失时继续查询；若连一条也无法成立，返回 summary 和 unresolved，说明具体缺口。
 只返回一个合法 JSON 对象；查询也必须使用 tool/arguments JSON，不使用 DSML 或其他工具标记。
 """
 
@@ -152,8 +154,8 @@ class V1Search(AnnealingLLMSearch):
     def _validate_proposals(self, raw, catalog, available_refs):
         summary = _text(raw.get("summary"), "summary")
         proposals = raw.get("proposals")
-        if not isinstance(proposals, list) or len(proposals) != 3:
-            raise ValueError("Explorer must submit exactly three distinct proposals")
+        if not isinstance(proposals, list) or not 1 <= len(proposals) <= 3:
+            raise ValueError("Explorer must submit one to three distinct proposals")
         validated = []
         known_continents = {c for region in catalog.values() for c in region["continent_ids"]}
         for proposal in proposals:
@@ -200,7 +202,7 @@ class V1Search(AnnealingLLMSearch):
             )
             validated.append(item)
         # Equal scores keep submission order, with no extra RNG draw before Metropolis.
-        selected = max(range(3), key=lambda i: validated[i]["score"])
+        selected = max(range(len(validated)), key=lambda i: validated[i]["score"])
         return {"summary": summary, "proposals": validated, "selected": selected}
 
     def _explore_round(self, snapshot, catalog):
@@ -266,7 +268,17 @@ class V1Search(AnnealingLLMSearch):
                     proposal, catalog, available_refs, batch["sources"]
                 )
             if records and "unresolved" in records[-1]:
-                raise ValueError("V1 Explorer unresolved: " + records[-1]["unresolved"])
+                if len(records) >= self.config.max_dialogue_rounds or any(
+                    "unresolved" in record for record in records[:-1]
+                ):
+                    raise ValueError("V1 Explorer unresolved: " + records[-1]["unresolved"])
+                if "error" not in records[-1]:
+                    records[-1]["error"] = (
+                        "可以提交一至三个完整且不重复的方向，有一条即可，不要求补满三条。"
+                        "请在已有字段和工具边界内重新判断；若连一条也无法成立，"
+                        "再次返回 summary 和 unresolved，服务端将停止探索。"
+                    )
+                    self._checkpoint()
             if len(records) >= self.config.max_dialogue_rounds:
                 raise ValueError(f"V1 Explorer dialogue limit exhausted ({len(records)} replies)")
             reminder = EXPLORER_REMINDER if len(records) >= 20 else ""
@@ -278,9 +290,17 @@ class V1Search(AnnealingLLMSearch):
                 提醒="优先收敛并提交方向" if reminder else None,
             )
             self._start_request("chat")
+            payload = {**state["explorer_input"], "dialogue": records}
+            # Concurrent plans interleave their trials; identical direction entries add no facts.
+            payload["previous_directions"] = list(
+                {
+                    (item["region_id"], item["direction"]): item
+                    for item in payload["previous_directions"]
+                }.values()
+            )
             text, usage = self.models.chat(
                 EXPLORER_PROMPT + reminder,
-                {**state["explorer_input"], "dialogue": records},
+                payload,
                 temperature=(
                     self.config.repair_temperature
                     if records and "error" in records[-1]

@@ -37,13 +37,24 @@ def main() -> None:
     run.add_argument("--seed", type=int, default=42)
     run.add_argument("--attempts", type=int)
     run.add_argument("--universe")
-    run.add_argument("--fields", help="Comma-separated explicit input field allowlist")
+    run.add_argument(
+        "--fields",
+        help="Comma-separated input field subset; default: all available numeric feature fields",
+    )
     run.add_argument("--allow-incomplete", action="store_true")
     oos = commands.add_parser("test")
     oos.add_argument("run_dir", type=Path)
     oos.add_argument("--json", action="store_true", help="Print JSON instead of the result table")
     resume = commands.add_parser("resume", help="Continue a checkpointed ask/tell run")
     resume.add_argument("run_dir", type=Path)
+    finish = commands.add_parser(
+        "finish", help="Evaluate a frozen experiment and update its tables"
+    )
+    finish.add_argument("run_dir", type=Path)
+    for command in (run, resume):
+        command.add_argument(
+            "--search-only", action="store_true", help="Freeze search without opening Test"
+        )
     model = commands.add_parser(
         "model", help="Train linear and LightGBM on a frozen factor library"
     )
@@ -51,7 +62,7 @@ def main() -> None:
     model.add_argument(
         "--test", action="store_true", help="Evaluate saved models on test; no refit"
     )
-    for command in (run, resume, oos, model):
+    for command in (run, resume, oos, model, finish):
         command.add_argument("--quiet", action="store_true", help="Hide progress output")
     report = commands.add_parser("report", help="Rebuild the Markdown run report from records")
     report.add_argument("run_dir", type=Path)
@@ -60,7 +71,7 @@ def main() -> None:
     )
     commands.add_parser("compare")
     args = parser.parse_args()
-    if args.command in {"run", "resume", "test", "model"}:
+    if args.command in {"run", "resume", "test", "model", "finish"}:
         logger = logging.getLogger("alpha_atlas.progress")
         logger.setLevel(logging.CRITICAL + 1 if args.quiet else logging.INFO)
         logger.propagate = False
@@ -111,10 +122,27 @@ def main() -> None:
             args.fields.split(",") if args.fields else None,
         )
         result = {"run_dir": str(path)}
+        if not args.search_only:
+            from alpha_atlas.experiment import finish_experiment
+
+            result.update(finish_experiment(root, path))
     elif args.command == "resume":
+        from alpha_atlas.checkpoint import read_json
         from alpha_atlas.runner import resume
 
-        result = {"run_dir": str(resume(root, args.run_dir.resolve()))}
+        path = args.run_dir.resolve()
+        if args.search_only or read_json(path / "run.json")["status"] != "frozen":
+            resume(root, path)
+        result = {"run_dir": str(path)}
+        if not args.search_only:
+            from alpha_atlas.experiment import finish_experiment
+
+            result.update(finish_experiment(root, path))
+    elif args.command == "finish":
+        from alpha_atlas.experiment import finish_experiment
+
+        result = {"run_dir": str(args.run_dir.resolve())}
+        result.update(finish_experiment(root, args.run_dir.resolve()))
     elif args.command == "model":
         from alpha_atlas.runner import run_model
 

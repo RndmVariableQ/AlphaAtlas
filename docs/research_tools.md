@@ -29,10 +29,20 @@ get_context 一次返回：asset、frequency、panel、target、metric、fields�
 expression_rules、evaluation_rules、reference_library。算子含签名、语义、默认值、
 作用域、输出、最小窗口、历史需求、版本与别名；成功注册的运行内算子也在目录中。
 
+`expression_rules.timeframes` 按当前字段和频率给出允许的后缀、聚合与窗口单位；
+允许 `adj_close` 的 5m 运行会明确展示 `$adj_close@30m` 和 20 根已完成 30m Bar 的例子。
+高周期权限仍按基础字段检查，不因后缀扩大字段范围。具体数值语义见 [DSL](dsl.md)。
+
+V1 与 V1 Async 的 Explorer、Analyst、Miner 均可使用上述五个公共只读查询工具。
+角色交接和有界查询见 [V1](methods/v1.md)，查询不替代候选评估或扩大计划权限。
+
 目标说明包含价格字段、Bar 期限、收益定义与边界，不包含标签数组。日期、fold、universe、
 运行／快照 ID 留在平台内部。remaining_attempts 仅在评估结果中出现，不进固定提示词。
 平台内部 `get_context()` 仍包含预算，不直接序列化给模型；模型入口是 `query("get_context", {})`。
 查询返回独立副本，不能修改平台状态。get_context 不加载参考公式，普通评估扣预算不改变元数据。
+
+`evaluation_rules.clipping` 向所有方法提供统一分位配置与 train 拟合／冻结规则，
+不返回因子或标签数组。评分裁剪与缺失语义见[实验规范](research_protocol.md#统一评估与准入)。
 
 ```python
 # session 由平台绑定，示例只查询已有研究信息
@@ -52,7 +62,7 @@ references = session.query("library_search", {"source": "reference", "limit": 5}
 反馈包含 candidate、factor_id、status、metrics、direction、coverage、failure_reason、
 diagnostics，以及 accepted、reason、max_abs_corr、nearest_factor、comparison_complete、
 library_version、trial_index、remaining_attempts。无法计算的值保留 null。
-train 保留原始方向，val 为训练方向调整后的指标，val_raw 保留原值。
+train 为裁剪后的原始方向指标，val 再按训练方向调整；val_raw 为未调整方向的裁剪后指标。
 
 表达式计算成功不等于入库；准入与查重遵循[实验规范](research_protocol.md)。每次实际提交
 均计尝试，重复、非法与质量拒绝也计数；只读查询不计数。evaluate 不返回标签或 test 结果。
@@ -67,6 +77,7 @@ train 保留原始方向，val 为训练方向调整后的指标，val_raw 保�
   按训练期品种 SQRT 成交额加权。
 - 使用共同有限值、既有 eligible、目标有效性和训练 split；每组至少 5 个观测，
   总重叠至少为 `min_corr_overlap`，未知相关不能当零。
+- 训练与验证因子值缓存均使用统一 train 边界裁剪后的评分值；缺失缓存重建沿用同一口径。
 - 不返回因子数组或标签，不产生新 trial 或准入；耗时计入运行，缓存缺失仅重建请求因子。
 
 任务进程默认缓存 208 个训练值面板，支持约 200 个库成员并为父节点和当前候选留余量。

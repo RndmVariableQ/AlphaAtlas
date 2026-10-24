@@ -55,6 +55,31 @@ def split_panel(frame: pl.DataFrame, period: DateRange) -> pl.DataFrame:
     )
 
 
+def clip_bounds(frame: pl.DataFrame, column: str, quantiles) -> list[float] | None:
+    """Linear quantiles of one finite training column, independent of other missingness."""
+    values = pl.col(column).filter(pl.col(column).is_finite().fill_null(False))
+    bounds = frame.select(
+        values.quantile(q, interpolation="linear").alias(str(i)) for i, q in enumerate(quantiles)
+    ).row(0)
+    return list(bounds) if all(v is not None and math.isfinite(v) for v in bounds) else None
+
+
+def apply_clipping(frame: pl.DataFrame, clipping: dict) -> pl.DataFrame:
+    """Apply fitted bounds only; never turn nonfinite observations into finite scores."""
+    if not clipping:
+        return frame
+    expressions = []
+    for column in ("value", "target"):
+        bounds = clipping[column]
+        finite = pl.when(pl.col(column).is_finite()).then(pl.col(column))
+        expressions.append(
+            (finite.clip(*bounds) if bounds is not None else pl.lit(None, dtype=pl.Float64)).alias(
+                column
+            )
+        )
+    return frame.with_columns(expressions)
+
+
 FUTURES_METRICS = (
     "time_series_equal_pearson_ic",
     "time_series_weighted_pearson_ic",
@@ -157,7 +182,9 @@ def metric(frame: pl.DataFrame, name: str, split: str, *, correlation=None, weig
     return metrics(frame, name, split, correlation=correlation, weights=weights)[0]
 
 
-def search_diagnostics(panel, period, name, direction, weights=None, *, factor_panel="contract"):
+def search_diagnostics(
+    panel, period, name, direction, weights=None, *, factor_panel="contract", clipping=None
+):
     """Train-only stability and explicit holdings turnover; never substitute missing statistics.
 
     ICIR uses daily primary IC (futures: first pool within product/day), sample std,
@@ -179,7 +206,10 @@ def search_diagnostics(panel, period, name, direction, weights=None, *, factor_p
     }
     if direction is None:
         return result
-    scored = split_panel(panel, period).filter(pl.col("value").is_finite())
+    scored = split_panel(panel, period)
+    if clipping is not None:
+        scored = apply_clipping(scored, clipping)
+    scored = scored.filter(pl.col("value").is_finite())
     groups = ["trading_day", "product"] if futures else ["trading_day"]
     daily = (
         scored.group_by(groups)
@@ -302,9 +332,18 @@ class EvaluationService:
         retain_training: bool = False,
         diagnostics: str = "",
         training_cache_factors: int = 208,
+        clip_quantiles=(0.01, 0.99),
     ):
         if type(training_cache_factors) is not int or training_cache_factors < 1:
             raise ValueError("training_cache_factors must be a positive integer")
+        if clip_quantiles is not None and (
+            not isinstance(clip_quantiles, (tuple, list))
+            or len(clip_quantiles) != 2
+            or any(type(q) not in {int, float} for q in clip_quantiles)
+            or not 0 <= clip_quantiles[0] < clip_quantiles[1] <= 1
+        ):
+            raise ValueError("clip_quantiles must satisfy 0 <= lower < upper <= 1")
+        self.clip_quantiles = tuple(clip_quantiles) if clip_quantiles is not None else None
         # Keep 200 library members plus a small allowance for parents and pending candidates.
         self._training_cache_factors = training_cache_factors
         latest = features["trading_day"].max()
@@ -331,11 +370,28 @@ class EvaluationService:
             raise ValueError("product panel requires a product feature column")
         self.fields = set(fields)
         self.snapshot_id = snapshot_id or fingerprint(features.hash_rows().to_list())
-        self.context_id = fingerprint((context or {}, self.profile, sorted(fields), "quality-v2"))
+        self.context_id = fingerprint(
+            (
+                context or {},
+                self.profile,
+                sorted(fields),
+                "quality-v3",
+                self.clip_quantiles,
+                asdict(fold.train),
+            )
+        )
         self.registry = registry or OperatorRegistry()
         self.compile_options = dict(compile_options or {})
         self.targets = build_targets(
             features, profile["price_field"], profile["target_horizon_bars"]
+        )
+        target_panel = features.select("row_id", "trading_day", "eligible").join(
+            self.targets, on="row_id", validate="1:1"
+        )
+        self._target_clip_bounds = (
+            clip_bounds(split_panel(target_panel, fold.train), "target", self.clip_quantiles)
+            if self.clip_quantiles is not None
+            else None
         )
         self.weights = (
             {s: product_weights(features, getattr(fold, s)) for s in ("train", "val")}
@@ -353,6 +409,17 @@ class EvaluationService:
         self._disk: dict[str, str] = {}
         self.retain_training = retain_training
         self._training: OrderedDict[str, pl.DataFrame] = OrderedDict()
+
+    def _fit_clipping(self, train):
+        if self.clip_quantiles is None:
+            return {}
+        return {
+            "quantiles": list(self.clip_quantiles),
+            "value": clip_bounds(train, "value", self.clip_quantiles),
+            "target": list(self._target_clip_bounds)
+            if self._target_clip_bounds is not None
+            else None,
+        }
 
     def _remember_training(self, identity, frame):
         keys = ["row_id", "trading_day", "exchange", "instrument_id", "value"]
@@ -376,7 +443,8 @@ class EvaluationService:
             panel = features.join(self.targets, on="row_id", validate="1:1").join(
                 values, on="row_id", validate="1:1"
             )
-            self._remember_training(identity, split_panel(panel, self.fold.train))
+            train = split_panel(panel, self.fold.train)
+            self._remember_training(identity, apply_clipping(train, self._fit_clipping(train)))
         self._training.move_to_end(identity)
         return self._training[identity]
 
@@ -445,7 +513,7 @@ class EvaluationService:
             )
         observation_id = fingerprint((compiled.factor_id, self.snapshot_id, self.context_id))
         evaluation_id = fingerprint(
-            (observation_id, asdict(self.fold), self.profile, "ic-v4", self.diagnostics)
+            (observation_id, asdict(self.fold), self.profile, "ic-v5", self.diagnostics)
         )
         if evaluation_id in self._cache:
             report, _ = self._cache[evaluation_id]
@@ -469,6 +537,11 @@ class EvaluationService:
                 raise ValueError("observation row identity mismatch")
             panel = panel.join(values, on="row_id", validate="1:1")
             train, valid = split_panel(panel, self.fold.train), split_panel(panel, self.fold.val)
+            coverage = (
+                float(valid["value"].is_finite().fill_null(False).mean()) if valid.height else None
+            )
+            clipping = self._fit_clipping(train)
+            train, valid = apply_clipping(train, clipping), apply_clipping(valid, clipping)
             if self.retain_training:
                 self._remember_training(compiled.factor_id, train)
             train_metrics = metrics(
@@ -488,9 +561,6 @@ class EvaluationService:
                 for m in raw_metrics
             )
             directed = directed_metrics[0]
-            coverage = (
-                float(valid["value"].is_finite().fill_null(False).mean()) if valid.height else None
-            )
             status = "success" if direction is not None else "undefined_train_metric"
             if direction is not None and directed.value is None:
                 status = "undefined_val_metric"
@@ -522,9 +592,11 @@ class EvaluationService:
                     direction,
                     self.weights.get("train"),
                     factor_panel=self.panel,
+                    clipping=clipping,
                 )
                 if self.diagnostics
                 else {},
+                clipping,
             )
             observation = FactorValues(
                 compiled.factor_id,

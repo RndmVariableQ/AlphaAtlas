@@ -167,6 +167,73 @@ def test_windows_run_on_coarse_bars_before_broadcast_and_mixed_windows_on_5m(int
     )
 
 
+@pytest.mark.parametrize(
+    "field,expected",
+    [("adj_open", 199.0), ("adj_high", 214.0), ("adj_low", 196.0), ("adj_close", 210.0)],
+)
+def test_adjusted_ohlc_uses_the_same_completed_bucket_rules(field, expected):
+    data = panel(12).with_columns((pl.col(field.removeprefix("adj_")) * 2).alias(field))
+    result = execute(f"${field}@30m", data, {field})["value"].to_list()
+    assert result[:5] == [None] * 5
+    assert result[5:11] == [expected] * 6
+
+
+@pytest.mark.parametrize("suffix", ["", "_p1"])
+@pytest.mark.parametrize("unusable", [None, float("nan"), float("inf")])
+def test_adjusted_vwap_weights_usable_prices_and_publishes_zero_volume_nulls(suffix, unusable):
+    field = f"adj_vwap{suffix}"
+    data = panel(18).with_columns(
+        pl.Series(field, [10.0, 20.0, unusable, None, None, None] + [100.0] * 6 + [70.0, 80.0] * 3),
+        pl.Series(f"volume{suffix}", [1.0, 3.0, 5.0, 0, 0, 0] + [0.0] * 6 + [2.0, 2.0, 0, 0, 0, 0]),
+    )
+    compiled = compile_factor(f"${field}@30m", {field})
+    assert compiled.fields == (field,)
+    result = execute(compiled, data, {field})["value"].to_list()
+    assert result == [None] * 5 + [17.5] * 6 + [None] * 6 + [75.0]
+    with pytest.raises(ValueError, match=f"requires volume{suffix}"):
+        execute(compiled, data.drop(f"volume{suffix}"), {field})
+
+
+def test_adjusted_vwap_coarse_windows_do_not_observe_future_prices_or_weights():
+    data = panel(18).with_columns(
+        pl.col("close").alias("adj_vwap"),
+        pl.Series("volume", [1.0, 2.0, 1.0] * 6),
+    )
+    expression = "TS_MEAN($adj_vwap@15m,2)"
+    full = execute(expression, data, {"adj_vwap"})["value"].to_numpy()
+    # First two 15m VWAPs: (100 + 2*101 + 102)/4 = 101; second = 104.
+    assert full[5] == 102.5
+    for stop in (2, 3, 5, 6, 11, 15):
+        prefix = execute(expression, data.head(stop), {"adj_vwap"})["value"].to_numpy()
+        changed = data.with_columns(
+            pl.when(pl.col("row_id") >= stop)
+            .then(pl.col("adj_vwap") * 100)
+            .otherwise(pl.col("adj_vwap"))
+            .alias("adj_vwap"),
+            pl.when(pl.col("row_id") >= stop)
+            .then(pl.col("volume") * 1000)
+            .otherwise(pl.col("volume"))
+            .alias("volume"),
+        )
+        np.testing.assert_allclose(prefix, full[:stop], equal_nan=True)
+        np.testing.assert_allclose(
+            execute(expression, changed, {"adj_vwap"})["value"].to_numpy()[:stop],
+            full[:stop],
+            equal_nan=True,
+        )
+
+
+def test_adjusted_daily_vwap_uses_trading_day_weights_and_next_day_confirmation():
+    data = daily_panel().with_columns((pl.col("close") * 2).alias("adj_vwap"))
+    result = execute("$adj_vwap@1d", data, {"adj_vwap"})["value"].to_numpy()
+    np.testing.assert_allclose(
+        result,
+        [np.nan] * 4 + [204.0] * 4 + [5496.0 / 26] * 4,
+        equal_nan=True,
+    )
+    assert execute("$adj_vwap@1d", data.head(4), {"adj_vwap"})["value"].null_count() == 4
+
+
 @pytest.mark.parametrize("suffix", ["", "_p1", "_p2"])
 def test_daily_night_weekend_and_confirmation_without_last_row_guess(suffix):
     data = daily_panel()
@@ -384,7 +451,7 @@ def test_ast_roundtrip_identity_metadata_and_empty_input():
     for column in ("bar_interval_minutes", "trading_day", "segment_id", "segment_id_p1"):
         with pytest.raises(ValueError, match="metadata"):
             execute(compiled, data.drop(column), FIELDS)
-    with pytest.raises(ValueError, match="native 5m"):
+    with pytest.raises(ValueError, match="base 5m"):
         values("$close@30m", data.with_columns(pl.lit(1440).alias("bar_interval_minutes")))
     with pytest.raises(ValueError, match="duplicate"):
         values("$close@30m", pl.concat([data, data.head(1)]))

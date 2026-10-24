@@ -101,6 +101,17 @@ class SearchSession:
         from alpha_atlas.timeframes import AGGREGATIONS, INTERVALS
 
         options = self._evaluator.compile_options
+        timeframe_fields = tuple(
+            f for f in self._fields if f.removesuffix("_p1").removesuffix("_p2") in AGGREGATIONS
+        )
+        price = next(
+            (f for f in ("adj_close", "close", *timeframe_fields) if f in timeframe_fields), None
+        )
+        timeframe_example = (
+            f"Use ${price}@30m; TS_MEAN(${price}@30m,20) uses 20 completed 30m bars. "
+            if price and self._context.frequency == "5m"
+            else "Use a field suffix only when allowed for the current frequency and field. "
+        )
         return {
             "max_nodes": options.get("max_nodes", 100),
             "max_depth": options.get("max_depth", 20),
@@ -123,19 +134,21 @@ class SearchSession:
                 "suffixes": tuple(f"@{i}" for i in INTERVALS)
                 if self._context.frequency == "5m"
                 else (),
-                "fields": tuple(
-                    f
-                    for f in self._fields
-                    if f.removesuffix("_p1").removesuffix("_p2") in AGGREGATIONS
-                ),
-                "semantics": "Use $close@15m or $close_p1@1d; field permissions use the base "
-                "name. Same-frequency subtrees run on coarse bars, including TS windows; "
-                "mixed-frequency subtrees run on native 5m after backward broadcasting. "
-                "Constants inherit scope. Intraday buckets publish at natural clock ends; "
+                "fields": timeframe_fields,
+                "semantics": timeframe_example
+                + "Field permissions and Analyst allowed_fields use base names without @interval. "
+                "Same-frequency subtrees run on coarse bars, including TS windows; "
+                "mixed-frequency subtrees run on the base 5m panel after backward broadcasting. "
+                "Constants inherit scope. Do not replace explicit coarser scopes with rolling "
+                "native-bar sums or means; they do not reproduce completed clock buckets. "
+                "OHLC and adjusted OHLC aggregate first/max/min/last; volume and amount sum. "
+                "adj_vwap uses sum(adj_vwap*volume)/sum(volume) over finite prices and finite "
+                "positive volume; no positive weight yields null. The platform loads weights. "
+                "Intraday buckets publish at natural clock ends; "
                 "daily buckets use trading_day, confirmed at the next trading day's first "
                 "observed bar. No inferred last-row close or future values. Null buckets "
                 "replace older values. Broadcast and TS obey the configured panel continuity. "
-                "Only observed native bars are aggregated; unknown whole-bar omissions "
+                "Only observed input bars are aggregated; unknown whole-bar omissions "
                 "cannot be distinguished from scheduled breaks without a session calendar.",
             },
             "numeric_rules": "Float64; nonfinite results and division near zero yield null. "
@@ -144,8 +157,11 @@ class SearchSession:
             "insufficient history yields null. "
             + (
                 "TS groups by (exchange, product) and crosses dominant-contract changes, "
-                "resetting at known product gaps or invalid bars. Futures price fields are "
-                "unadjusted, so price-derived windows include roll gaps. "
+                "resetting at known product gaps or invalid bars. Prefer available adj_* prices "
+                "for returns and rolling price statistics across contract changes. Raw OHLC is "
+                "unadjusted and includes roll gaps; do not mix raw and adjusted price levels in "
+                "a spread or ratio. Volume, amount and open_interest are unadjusted and can "
+                "jump at a roll; normalize their changes over a suitable history. "
                 if self._context.panel == "product"
                 else "TS groups by (exchange, instrument_id, continuity segment). "
             )
@@ -164,7 +180,8 @@ class SearchSession:
             "panel_semantics": (
                 "Factor windows group by exchange and product, continuing across dominant-contract "
                 "changes and resetting at known product gaps or invalid bars. Auxiliary-leg windows "
-                "also reset when that leg changes actual contract. Price fields remain unadjusted. "
+                "also reset when that leg changes actual contract. Raw price fields are unadjusted; "
+                "adj_* retain the adapter-supplied adjustment. "
                 "Targets still stay within one actual contract and continuity segment."
                 if self._context.panel == "product"
                 else "Factor windows group by exchange, actual instrument and continuity segment."
@@ -177,6 +194,23 @@ class SearchSession:
                 if self._context.metric.startswith("time_series_")
                 else "Daily cross-sectional Spearman and Pearson IC, equally weighted by day; "
                 "require >=5 finite pairs and nonconstant series."
+            ),
+            **(
+                {
+                    "clipping": {
+                        "quantiles": self._evaluator.clip_quantiles,
+                        "fit_split": "train",
+                        "semantics": "Fit separate linear-quantile bounds for factor values "
+                        "and labels on pooled eligible train scoring rows, excluding warmup "
+                        "and split-crossing targets. Each column uses its own finite "
+                        "observations; label bounds do not depend on factor missingness. "
+                        "Apply the same bounds before all train/val/OOS Pearson/Spearman IC "
+                        "and train ICIR; never refit on val/OOS. Nonfinite values remain "
+                        "missing. Turnover uses the original factor values.",
+                    }
+                }
+                if self._evaluator.clip_quantiles is not None
+                else {}
             ),
             "direction": "Train primary IC <0: -1; >=0: +1; undefined: reject. "
             "Apply this direction to all val metrics; val_raw remains unadjusted.",

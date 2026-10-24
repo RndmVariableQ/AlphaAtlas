@@ -7,7 +7,7 @@ from urllib.error import HTTPError, URLError
 
 import pytest
 
-from alpha_atlas.methods.models import ContextLimitError, HTTPModels
+from alpha_atlas.methods.models import ContextLimitError, HTTPModels, _RetryableError
 from alpha_atlas.reporting import TerminalStream
 
 
@@ -32,6 +32,7 @@ def client(monkeypatch):
 @pytest.mark.parametrize("kind", ["chat", "embedding"])
 def test_transient_http_retries_same_request_then_succeeds(client, monkeypatch, status, kind):
     bodies, waits, retries, errors = [], [], [], []
+    success = {"choices": [{"message": {"content": "{}"}}]} if kind == "chat" else {"ok": True}
 
     def request(req, **kwargs):
         bodies.append(req.data)
@@ -39,15 +40,146 @@ def test_transient_http_retries_same_request_then_succeeds(client, monkeypatch, 
             error = HTTPError("private-url", status, "private-body", {}, io.BytesIO(b"private"))
             errors.append(error)
             raise error
-        return io.BytesIO(b'{"ok":true}')
+        return io.BytesIO(json.dumps(success).encode())
 
     monkeypatch.setattr("alpha_atlas.methods.models.urlopen", request)
     monkeypatch.setattr("alpha_atlas.methods.models.time.sleep", waits.append)
     client.on_retry = retries.append
-    assert client._post(kind, "/synthetic", {"model": "synthetic"}) == {"ok": True}
+    assert client._post(kind, "/synthetic", {"model": "synthetic"}) == success
     assert len(bodies) == 4 and len(set(bodies)) == 1
     assert waits == [1, 2, 4] and retries == [kind] * 3
     assert all(e.fp.closed for e in errors)
+
+
+@pytest.mark.parametrize("content", [None, "", "  "])
+@pytest.mark.parametrize("streaming", [False, True])
+def test_empty_http_200_reply_retries_the_same_request_then_recovers(
+    client, monkeypatch, content, streaming
+):
+    calls, waits, retries, deltas = [], [], [], []
+    usage = {"prompt_tokens": 7, "completion_tokens": 3}
+
+    def request(req, **kwargs):
+        calls.append(req.data)
+        text = content if len(calls) == 1 else "{}"
+        choice = {"delta" if streaming else "message": {"content": text}, "finish_reason": "stop"}
+        body = json.dumps({"choices": [choice], "usage": usage})
+        return io.BytesIO((f"data: {body}\n\ndata: [DONE]\n\n" if streaming else body).encode())
+
+    monkeypatch.setattr("alpha_atlas.methods.models.urlopen", request)
+    monkeypatch.setattr("alpha_atlas.methods.models.time.sleep", waits.append)
+    client.on_retry = retries.append
+    result = client.chat_messages(
+        [], on_delta=(lambda *args: deltas.append(args)) if streaming else None
+    )
+    assert result == ("{}", usage)
+    assert len(calls) == 2 and calls[0] == calls[1]
+    assert waits == [1] and retries == ["chat"]
+    if streaming:
+        assert ("restart", "") in deltas
+
+
+def test_chat_once_empty_response_is_one_retryable_attempt(client, monkeypatch):
+    calls = []
+
+    def request(*args, **kwargs):
+        calls.append(1)
+        return io.BytesIO(b'{"choices":[{"message":{"content":null}}]}')
+
+    monkeypatch.setattr("alpha_atlas.methods.models.urlopen", request)
+    monkeypatch.setattr(
+        "alpha_atlas.methods.models.time.sleep", lambda _: pytest.fail("worker sleep")
+    )
+    client.on_retry = lambda _: pytest.fail("worker retry")
+    with pytest.raises(_RetryableError, match="empty message content"):
+        client.chat_once([])
+    assert calls == [1]
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        {},
+        {"choices": []},
+        {"choices": None},
+        {"choices": [{"message": None}]},
+        {"choices": [{"message": {}}]},
+    ],
+)
+def test_empty_response_shapes_exhaust_the_bounded_retry_budget(client, monkeypatch, response):
+    calls, waits = [], []
+
+    def request(*args, **kwargs):
+        calls.append(1)
+        return io.BytesIO(json.dumps(response).encode())
+
+    monkeypatch.setattr("alpha_atlas.methods.models.urlopen", request)
+    monkeypatch.setattr("alpha_atlas.methods.models.time.sleep", waits.append)
+    with pytest.raises(RuntimeError, match="empty message content; failed after 4 requests"):
+        client.chat_messages([])
+    assert calls == [1] * 4 and waits == [1, 2, 4]
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+@pytest.mark.parametrize("finish_reason", ["length", "content_filter", "tool_calls"])
+def test_explicit_empty_completion_failures_are_not_retried(
+    client, monkeypatch, streaming, finish_reason
+):
+    calls = []
+
+    def request(*args, **kwargs):
+        calls.append(1)
+        choice = {
+            "delta" if streaming else "message": {"content": None},
+            "finish_reason": finish_reason,
+        }
+        body = json.dumps({"choices": [choice]})
+        return io.BytesIO((f"data: {body}\n\ndata: [DONE]\n\n" if streaming else body).encode())
+
+    monkeypatch.setattr("alpha_atlas.methods.models.urlopen", request)
+    client.on_retry = lambda _: pytest.fail("explicit failure must not retry")
+    with pytest.raises(RuntimeError) as error:
+        client.chat_messages([], on_delta=(lambda *args: None) if streaming else None)
+    assert not isinstance(error.value, _RetryableError)
+    assert calls == [1]
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+@pytest.mark.parametrize(
+    "error_tag",
+    [
+        {"code": "server_is_overloaded"},
+        {"code": "service_unavailable_error"},
+        {"type": "service_unavailable_error"},
+    ],
+)
+def test_in_band_overload_retries_but_permanent_error_is_redacted(
+    client, monkeypatch, streaming, error_tag, caplog
+):
+    calls, waits = [], []
+    responses = [
+        {"error": {**error_tag, "message": "private provider details"}},
+        {"choices": [{"delta" if streaming else "message": {"content": "{}"}}]},
+        {"error": {"code": "invalid_api_key", "message": "private synthetic-key"}},
+    ]
+
+    def request(*args, **kwargs):
+        calls.append(1)
+        body = json.dumps(responses.pop(0))
+        return io.BytesIO((f"data: {body}\n\ndata: [DONE]\n\n" if streaming else body).encode())
+
+    monkeypatch.setattr("alpha_atlas.methods.models.urlopen", request)
+    monkeypatch.setattr("alpha_atlas.methods.models.time.sleep", waits.append)
+    with caplog.at_level(logging.INFO, logger="alpha_atlas.progress"):
+        assert (
+            client.chat_messages([], on_delta=(lambda *args: None) if streaming else None)[0]
+            == "{}"
+        )
+        with pytest.raises(RuntimeError, match="error response") as error:
+            client.chat_messages([], on_delta=(lambda *args: None) if streaming else None)
+    assert len(calls) == 3 and waits == [1]
+    assert "private" not in str(error.value) + caplog.text
+    assert "synthetic-key" not in caplog.text
 
 
 @pytest.mark.parametrize("failure", [TimeoutError, ConnectionResetError, URLError, IncompleteRead])

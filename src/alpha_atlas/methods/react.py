@@ -1,5 +1,6 @@
 """One resumable AgentScope ReAct agent with the shared research tools."""
 
+import asyncio
 import json
 import math
 import os
@@ -139,6 +140,8 @@ PROPERTY_MEANINGS = {
     "max_depth": "Maximum nesting depth of the compiled expression tree.",
     "timeframes.suffixes": "Allowed coarser field suffixes; an empty list permits no coarser scopes.",
     "primary_metric": "The scoring measure used by the quality gates below.",
+    "clipping.quantiles": "Lower and upper quantiles for separate factor-value and label clipping.",
+    "clipping.fit_split": "Only this split fits clipping bounds; validation and OOS reuse them.",
     "quality.train_and_val_ic_gt": "Direction-adjusted train AND validation primary IC must each be strictly greater than this value.",
     "quality.val_ic_gte": "Direction-adjusted validation primary IC must be at least this value.",
     "min_coverage": "Minimum finite-factor coverage required on eligible validation rows.",
@@ -163,6 +166,7 @@ RULE_TITLES = {
     "deduplication.policy": "6.4 Comparison and rejection policy",
     "search_diagnostics.icir": "6.5 Training stability diagnostic",
     "search_diagnostics.turnover": "6.6 Training holdings turnover diagnostic",
+    "clipping.semantics": "6.7 Training-fitted factor and label clipping",
     "semantics": "7.1 How to use reference definitions",
 }
 
@@ -176,6 +180,10 @@ FIELD_MEANINGS = {
     "open_interest": "Outstanding contract position count at bar end; a level, not a bar flow.",
     "days_to_maturity": "Calendar days from trading_day to the contract's vendor-supplied maturity_date; not a bar count.",
     "adj_close": "Adjusted closing price supplied by the asset adapter.",
+    "adj_open": "Adjusted opening price supplied by the asset adapter.",
+    "adj_high": "Adjusted high price supplied by the asset adapter.",
+    "adj_low": "Adjusted low price supplied by the asset adapter.",
+    "adj_vwap": "Adjusted volume-weighted average price supplied by the asset adapter; coarser scopes are volume weighted.",
 }
 
 SUMMARY = """Summarize the supplied past factor-search cycles and previous summary into one concise
@@ -317,6 +325,7 @@ class ReactSearch:
             )
         )
         self._agent = None
+        self._agent_runner = None
         self._session = None
         self._checkpoint = lambda: None
         self.system_prompt = ""
@@ -397,14 +406,52 @@ class ReactSearch:
         try:
             from agentscope.agent import Agent, ContextConfig, InjectionConfig, ReActConfig
             from agentscope.credential import OpenAICredential
-            from agentscope.formatter import OpenAIChatFormatter
+            from agentscope.formatter import DeepSeekChatFormatter, OpenAIChatFormatter
             from agentscope.message import TextBlock
-            from agentscope.model import OpenAIChatModel
+            from agentscope.model import ChatResponse, FinishedReason, OpenAIChatModel
+            from agentscope.permission import PermissionBehavior, PermissionRule
             from agentscope.tool import FunctionTool, ToolChunk, Toolkit
         except ImportError as exc:
             raise RuntimeError(
                 "ReAct requires AgentScope; install the project dependencies with `uv sync`"
             ) from exc
+
+        class RetryingChatModel(OpenAIChatModel):
+            async def __call__(model, *args, **kwargs):
+                # AgentScope only retries opening a stream. Consume it inside this boundary
+                # so partial tool calls never reach the agent, and completed tools stay intact.
+                for attempt in range(4):
+                    self.usage["chat_requests"] += 1
+                    self.usage["unknown_usage_requests"] += 1
+                    try:
+                        result = await super().__call__(*args, **kwargs)
+                        if not isinstance(result, ChatResponse):
+                            completed = None
+                            async for chunk in result:
+                                if chunk.is_last:
+                                    completed = chunk
+                            if completed is None:
+                                raise RuntimeError(
+                                    "AgentScope model stream has no complete response"
+                                )
+                            result = completed
+                        if result.finished_reason == FinishedReason.INTERRUPTED:
+                            raise asyncio.CancelledError
+                        if result.usage is not None:
+                            self.usage["unknown_usage_requests"] -= 1
+                        return result
+                    except model._get_retryable_exceptions() as exc:
+                        if attempt == 3:
+                            raise
+                        delay = 2**attempt
+                        terminal_progress(
+                            "模型请求重试",
+                            类型="agent",
+                            重试=f"{attempt + 1}/3",
+                            等待秒=delay,
+                            原因=type(exc).__name__,
+                        )
+                        await asyncio.sleep(delay)
 
         def response(value):
             return ToolChunk(content=[TextBlock(type="text", text=_json(value))])
@@ -456,7 +503,8 @@ class ReactSearch:
                 FunctionTool(library_stats, name="library_stats", is_read_only=True),
             ]
         )
-        model = OpenAIChatModel(
+        deepseek = urlsplit(self.config.chat_base_url).hostname == "api.deepseek.com"
+        model = RetryingChatModel(
             credential=OpenAICredential(
                 # OpenAI's client requires a non-empty value even for local
                 # unauthenticated endpoints; the placeholder is never logged.
@@ -465,15 +513,16 @@ class ReactSearch:
             ),
             model=self.config.chat_model,
             parameters=OpenAIChatModel.Parameters(
-                max_tokens=self.config.max_output_tokens,
+                max_tokens=None if deepseek else self.config.max_output_tokens,
                 temperature=self.config.temperature,
                 parallel_tool_calls=True,
             ),
             stream=True,
-            max_retries=3,
-            retry_delay=1.0,
+            max_retries=0,
             context_size=self.config.context_size,
-            formatter=OpenAIChatFormatter(),
+            formatter=DeepSeekChatFormatter() if deepseek else OpenAIChatFormatter(),
+            client_kwargs={"timeout": self.config.timeout_seconds, "max_retries": 0},
+            extra_body={"max_tokens": self.config.max_output_tokens} if deepseek else None,
         )
         self._agent = Agent(
             name="FactorResearchAgent",
@@ -484,12 +533,23 @@ class ReactSearch:
                 trigger_ratio=0.8,
                 reserve_ratio=0.1,
                 tool_result_limit=5000,
+                compression_prompt=SUMMARY,
+                compression_fallback_to_truncation=False,
             ),
             # Permit a small reasoning/tool loop inside each Runner turn;
             # a single model response may still contain multiple calls.
             react_config=ReActConfig(max_iters=4),
             injection_config=InjectionConfig(inject_runtime_state=False),
         )
+        # The user-authorized search only queues candidates here; the runner owns evaluation.
+        self._agent.state.permission_context.allow_rules["evaluate"] = [
+            PermissionRule(
+                tool_name="evaluate",
+                rule_content=None,
+                behavior=PermissionBehavior.ALLOW,
+                source="platform_search_protocol",
+            )
+        ]
         self._checkpoint()
 
     def dump_state(self):
@@ -696,9 +756,9 @@ class ReactSearch:
         self._ensure_agent()
         from agentscope.message import UserMsg
 
-        asyncio = __import__("asyncio")
-        asyncio.run(self._agent.reply(UserMsg(name="user", content=content)))
-        self.usage["chat_requests"] += 1
+        if self._agent_runner is None:
+            self._agent_runner = asyncio.Runner()
+        self._agent_runner.run(self._agent.reply(UserMsg(name="user", content=content)))
         messages = self._agent.state.context
         for message in messages[self.agent_usage_messages :]:
             usage = getattr(message, "usage", None)
@@ -714,6 +774,14 @@ class ReactSearch:
         self.agent_usage_messages = len(messages)
         self.agent_started = True
         self._checkpoint()
+
+    def close(self):
+        if self._agent_runner is not None:
+            try:
+                self._agent_runner.run(self._agent.model.client.close())
+            finally:
+                self._agent_runner.close()
+                self._agent_runner = None
 
     def _observe(self, text, result):
         self.rounds.append(

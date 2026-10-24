@@ -14,6 +14,11 @@ AGGREGATIONS = {
     "high": "max",
     "low": "min",
     "close": "last",
+    "adj_open": "first",
+    "adj_high": "max",
+    "adj_low": "min",
+    "adj_close": "last",
+    "adj_vwap": "volume_weighted",
     "volume": "sum",
     "amount": "sum",
     "open_interest": "last",
@@ -58,8 +63,9 @@ def timeframe_panel(
 ) -> pl.DataFrame:
     """Natural-clock intraday ends; a daily bar is confirmed by the next trading day's bar.
 
-    Group all observed rows, including invalid ones: a null/invalid input or a continuity
-    change invalidates that field's entire bucket. No synthetic bars or missing-value fills.
+    Group all observed rows: continuity changes and invalid bars invalidate the bucket.
+    Ordinary fields require finite quotes; adjusted VWAP weights finite quotes with positive
+    finite volume. No synthetic bars or missing-value fills.
     Scheduled breaks need no invented 6/12-row requirement. A missing *whole* native bar
     cannot be distinguished from a break without an exchange schedule (as in MarketData).
     """
@@ -104,15 +110,26 @@ def timeframe_panel(
         stable_main = stable_main & pl.col("valid_bar").fill_null(False).all()
     for field in sorted(fields):
         base = field.removesuffix("_p1").removesuffix("_p2")
-        valid = stable_main & pl.col(field).is_finite().fill_null(False).all()
+        rule = AGGREGATIONS[base]
+        valid = stable_main
+        if rule == "volume_weighted":
+            weight_name = "volume" + field[len(base) :]
+            if weight_name not in source.columns:
+                raise ValueError(f"{field}@{interval} requires {weight_name} for aggregation")
+            price, weight = pl.col(field), pl.col(weight_name).cast(pl.Float64)
+            usable = price.is_finite() & weight.is_finite() & (weight > 0)
+            numerator = pl.when(usable).then(price * weight).otherwise(0.0).sum()
+            denominator = pl.when(usable).then(weight).otherwise(0.0).sum()
+            aggregate = pl.when(denominator > 0).then(numerator / denominator)
+        else:
+            valid = valid & pl.col(field).is_finite().fill_null(False).all()
+            aggregate = getattr(pl.col(field), rule)()
         for leg in legs:
             if field.endswith(f"_{leg}"):
                 valid = valid & (pl.col(leg_name.format(leg=leg)).n_unique() == 1)
                 if f"valid_bar_{leg}" in source.columns:
                     valid = valid & pl.col(f"valid_bar_{leg}").fill_null(False).all()
-        aggregates.append(
-            pl.when(valid).then(getattr(pl.col(field), AGGREGATIONS[base])()).alias(field)
-        )
+        aggregates.append(pl.when(valid).then(aggregate).alias(field))
     return (
         source.group_by(identity + ["__end"], maintain_order=True)
         .agg(aggregates)
@@ -136,7 +153,7 @@ def execute_timeframes(compiled, frame, fields, registry, scopes, *, panel="cont
     if missing := required - set(frame.columns):
         raise ValueError(f"timeframes require native frequency/day/continuity metadata: {missing}")
     if frame.height and frame["bar_interval_minutes"].unique().to_list() != [5]:
-        raise ValueError("@15m/@30m/@60m/@1d require native 5m input")
+        raise ValueError("@15m/@30m/@60m/@1d require base 5m input")
     if frame.select(identity + ["timestamp"]).is_duplicated().any():
         raise ValueError("duplicate native observation keys")
     if frame.select(

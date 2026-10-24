@@ -125,6 +125,8 @@ class Candidate:
     region_ids: tuple[str, ...] = ()
     hypothesis: str = ""
     name: str | None = None
+    # Existing run artifacts carry this metadata; shared evaluation does not use it.
+    evaluation: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -161,6 +163,7 @@ class EvaluationReport:
     evaluation_id: str | None = None
     canonical_expression: Expression | None = None
     diagnostics: dict = field(default_factory=dict)
+    clipping: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -218,6 +221,7 @@ class ResumableSearchMethod(SearchMethod, Protocol):
 
 
 class MarketData(Protocol):
+    def get_fields(self) -> tuple[str, ...]: ...
     def load_features(
         self, *, fields: list[str], end: date, start: date | None = None
     ) -> pl.DataFrame: ...

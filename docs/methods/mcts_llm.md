@@ -141,7 +141,7 @@ FSA 保留参数抽象后的 root gene、按公式支持度和闭合结构 top-k
 正式入库但搜索诊断不完整的候选保留成员身份并更新 FSA，不能把方法失败当成公共撤库。
 
 ```powershell
-uv run atlas run --asset futures --fold fold1 --method mcts_llm --attempts 100
+uv run --env-file .env atlas run --asset futures_kernel_5m_full --universe all --fold fold1 --method mcts_llm --seed 42 --attempts 1000
 uv run atlas run --asset ashare --fold fold1 --method mcts_llm --attempts 100
 uv run atlas resume artifacts/runs/<run_id>
 uv run atlas report artifacts/runs/<run_id>

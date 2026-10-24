@@ -28,7 +28,7 @@ $close / base - 1
 公共示例的 `$field` 需替换为当前允许字段；示例仅说明语法，不推荐因子或窗口。
 中间变量会展开为规范 AST，等价的单行与多行写法具有相同因子身份，复杂度限制按展开后计算。
 
-原生 5m 可用 `$field@15m/@30m/@60m/@1d` 查询已完成的高周期特征，见下文。
+基础频率为 5m 时，可用 `$field@15m/@30m/@60m/@1d` 查询已完成的高周期特征，见下文。
 外部仍可构造 `Expression`；原 `mean/std/lag/zscore/csrank` AST 名称保留为别名。
 `RANK`、`TS_PCTCHANGE`、`POW` 分别规范化为 `CS_RANK`、`RETURN`、`POWER`。
 
@@ -73,12 +73,16 @@ profile 的 `panel` 决定。
 
 ## 高周期特征与无前视广播
 
-原生 5m 输入支持 `$close@15m`、`$close@30m`、`$close@60m`、`$close@1d`，远月写作
-`$close_p1@30m`、`$volume_p2@1d`。允许字段仍使用基础名称，例如 `close_p1`；
+5m 输入支持 `$close@15m`、`$close@30m`、`$close@60m`、`$close@1d`；数据提供且允许时，
+同样支持 `$adj_close@30m`、`$adj_vwap@30m`。远月写作 `$close_p1@30m`、`$volume_p2@1d`。
+允许字段和 Analyst 的 `allowed_fields` 仍使用基础名称，例如 `adj_close`、`close_p1`；
 MarketData 提供内部频率与连续段元数据，不能从时间戳间隔猜测数据频率。日线输入不支持
 这些后缀，不将高周期聚合结果写回原生数据，也不改变目标的 5m horizon。
 
 ```text
+# 20 根已完成 30m Bar 的复权价格偏离：
+TS_MEAN($adj_close@30m / $adj_vwap@30m - 1,20)
+
 # 20 根已完成 30m Bar 的均值，最后广播到每根 5m：
 TS_MEAN($close_p1@30m,20)
 
@@ -90,16 +94,22 @@ $close / TS_MEAN($close@1d,5) - 1
 ```
 
 每个子树只有一种频率时，算术、条件、TS、CS 及自定义算子都在该频率上执行；
-常数继承所在子树的频率。混合不同频率的子树在原生 5m 上计算，粗周期子树先完成运算再
+常数继承所在子树的频率。混合不同频率的子树在基础 5m 面板上计算，粗周期子树先完成运算再
 向后匹配到 5m，而不是先重复填充原始字段再计算其高周期窗口。赋值和 composite 展开
 不改变这些规则。`TS_MEAN($close@30m-$close@60m,20)` 因而是 20 根 5m 的均值。
 
 | 字段（包括 `_p1/_p2`） | 桶内聚合 |
 | --- | --- |
-| open | 第一根 |
-| high / low | 最大 / 最小 |
-| close / open_interest / days_to_maturity | 最后一根 |
+| open / adj_open | 第一根 |
+| high / adj_high、low / adj_low | 最大 / 最小 |
+| close / adj_close / open_interest / days_to_maturity | 最后一根 |
 | volume / amount | 求和 |
+| adj_vwap | 对有限价格、有限且为正的对应 volume 做量加权；无正权重则为 null |
+
+MarketData 自动读取 `adj_vwap` 聚合所需的 `volume`（远月用同腿 `volume_p1/p2`），
+不会将隐式权重加入模型字段权限或表达式实际字段。其余字段继续要求桶内全部有限。
+零成交量 Bar 的空 VWAP 不影响桶内其他有效成交；不以末值或简单均值代替 VWAP。
+显式高周期聚合也不能替换成滚动的 6/12 根 5m 求和或均值：完成桶、发布时间与窗口单位不同。
 
 `15m/30m/60m` 使用自然时钟切桶和结束时间标签：15m、30m
 桶最早在 09:30 可见，09:25 不能读取。午休等间歇不产生虚构 Bar；端点无观测时，
@@ -114,8 +124,9 @@ $close / TS_MEAN($close@1d,5) - 1
 连续段相同。contract panel 的换约、退出后重新入选和已知缺口，以及两种 panel 的已知缺口，
 都会阻断广播与滚动历史；product panel 跨主力换约延续，但使用远月字段时仍在该腿实际合约
 切换处重置。桶跨越连续段时
-相关聚合置空；桶内相关字段有 null/NaN/Inf 或已知异常，也置空。空桶结果作为一次发布
-保留，不能跳过它继续携带更早的有效值。只涉及 p1 的计算不受 p2 换腿影响。
+相关聚合置空；除上述 VWAP 的有限成交量加权规则外，桶内相关字段有 null/NaN/Inf
+或已知异常也置空。空桶结果作为一次发布保留，不能跳过它继续携带更早的有效值。
+只涉及 p1 的计算不受 p2 换腿影响。
 CS 在相同发布时间的合格观测上计算，其结果再向后广播。
 
 现有源数据如果整根 5m 行缺失且没有日内交易时段表，无法区分它与休市间歇；
@@ -176,8 +187,9 @@ uv run atlas run --asset futures_curve --fold fold1 --method react --attempts 20
   --fields close,volume,open_interest,close_p1,volume_p1,open_interest_p1,close_p2
 ```
 
-默认搜索不会自行扩大字段权限；`get_fields()` 与 ReAct 的固定系统规则会显示明确允许的
-新字段及分段约定。远月字段沿用已有算子、字段查询和冻结机制；高周期后缀扩展见上文。
+新运行默认开放快照中全部可用数值特征，`--fields` 可显式缩小范围；字段在运行开始时确定，
+搜索过程中不扩大权限。`get_fields()` 与 ReAct 的固定系统规则显示实际允许字段及分段约定。
+远月字段沿用已有算子、字段查询和冻结机制；高周期后缀扩展见上文。
 
 ## DSL 组合
 

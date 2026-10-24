@@ -81,15 +81,20 @@ likelihood = max(0, gain)
 环境变量名。服务分别支持 `/chat/completions` 和 `/embeddings`，缺少模型配置时在加载数据前失败。
 密钥只从外部环境变量读取，不写入配置、日志或检查点；无需在文档复制本机部署方案。
 
-```powershell
-uv run atlas run --asset ashare --universe union1800 --fold fold1 --method alphaprobe --seed 42 --attempts 100
+使用思考模型时，`max_output_tokens` 需要同时覆盖推理和最终 JSON；
+额度过小可能得到空内容或截断 JSON，并按生成失败消耗一次候选预算。
+当前模型、服务地址和额度以方法配置为准；历史运行仍以各自保存的模型配置为准。
+
+```bash
+uv run --env-file .env atlas run --asset futures_kernel_5m_full --universe all --fold fold1 --method alphaprobe --seed 42 --attempts 1000
 uv run atlas resume artifacts/runs/<run_id>
 uv run atlas report artifacts/runs/<run_id>
 uv run atlas test artifacts/runs/<run_id>
 ```
 
-默认输入沿用 Runner：`adj_close`、`volume`、`amount`（A 股）；需要其他输入时使用
-既有 `--fields`。LLM 看见本次允许的字段与 60 个基础算子目录。此方法不自行注册新算子。
+默认输入沿用 Runner，开放当前快照全部可用数值特征；需要缩小范围时使用 `--fields`。
+字段识别和冻结规则见[研究协议](../research_protocol.md)。LLM 看见本次允许的字段与
+60 个基础算子目录。此方法不自行注册新算子。
 首批 LLM 根候选默认最多五个，各占一次尝试，预算不足时只生成剩余额度允许的数量。
 非法、重复、零质量或不可定义的根照常计预算，不免费补齐。整批结束后有图则开始演化；
 若仍为空图，沿用现有空图生成流程，后续提交仍扣预算。有图时不周期性重启或补根。

@@ -13,7 +13,6 @@ from pathlib import Path
 import polars as pl
 
 from alpha_atlas.assets.common import atomic_json
-from alpha_atlas.assets.futures import BAR_FIELDS
 from alpha_atlas.assets.market import ParqMarketData
 from alpha_atlas.atlas import FactorAtlas
 from alpha_atlas.checkpoint import (
@@ -23,10 +22,11 @@ from alpha_atlas.checkpoint import (
     tracked_run,
 )
 from alpha_atlas.config import asset_config, load_fold, load_toml
-from alpha_atlas.contracts import Expression, Region, fingerprint
+from alpha_atlas.contracts import Expression, Metric, Region, fingerprint
 from alpha_atlas.evaluation import (
     FUTURES_METRICS,
     EvaluationService,
+    apply_clipping,
     build_targets,
     metrics,
     product_weights,
@@ -114,11 +114,7 @@ def run(
     universe = universe or profile["default_universe"]
     if universe not in profile["universes"]:
         raise ValueError(f"unsupported universe {universe}")
-    if field_names is None and asset == "futures":
-        requested_fields = BAR_FIELDS
-    else:
-        requested_fields = field_names or ["volume", "amount"]
-    fields = list(dict.fromkeys([profile["price_field"], *requested_fields]))
+    fields = list(dict.fromkeys([profile["price_field"], *(field_names or [])]))
     options = (
         load_toml(root / f"configs/{method_name}.toml")
         if method_name in {"alphaprobe", "react", "mcts_llm", "annealing", "v1", "v1_async"}
@@ -188,6 +184,8 @@ def run(
         with ParqMarketData(
             root / profile["data_dir"], universe, allow_incomplete=allow_incomplete
         ) as market:
+            if field_names is None:
+                fields.extend(field for field in market.get_fields() if field not in fields)
             snapshot_id = market.snapshot_id()
             features = market.load_features(
                 fields=_data_fields(fields, profile),
@@ -240,6 +238,7 @@ def _search(directory, spec, method, progress, features, fold, runtime, checkpoi
         retain_training=hasattr(method, "correlation_pairs")
         or spec["method"] in {"mcts_llm", "annealing", "v1", "v1_async"},
         diagnostics=rules.get("search_diagnostics", ""),
+        clip_quantiles=rules.get("clip_quantiles"),
     )
     library = FactorLibrary(
         rules,
@@ -362,6 +361,7 @@ def _rebuild_member(evaluator, entry):
         or report.direction != entry.report.direction
         or report.coverage != entry.report.coverage
         or report.status != entry.report.status
+        or report.clipping != entry.report.clipping
     ):
         raise ValueError("rebuilt member differs from committed evaluation")
     return evaluator.observation(report.observation_ref)
@@ -622,6 +622,28 @@ def _check_config(root, spec):
     return fold, profile
 
 
+def _frozen_scores(spec, item, panel):
+    clipping = item["report"].get("clipping", {})
+    if bool(clipping) != (spec["rules"].get("clip_quantiles") is not None):
+        raise ValueError("frozen clipping policy differs from search configuration")
+    return apply_clipping(panel, clipping).with_columns(
+        pl.col("value") * item["report"]["direction"]
+    )
+
+
+def _frozen_factor_result(spec, item, panel, weights):
+    coverage = panel["value"].is_finite().fill_null(False).mean() if panel.height else None
+    measured = metrics(
+        _frozen_scores(spec, item, panel), spec["profile"]["metric"], "test", weights=weights
+    )
+    return {
+        "expression_id": item["compiled"]["factor_id"],
+        "status": "success",
+        "metrics": [asdict(m) for m in measured],
+        "coverage": coverage,
+    }
+
+
 def test_frozen(root: Path, directory: Path) -> dict:
     from alpha_atlas.reporting import refresh_report
 
@@ -700,18 +722,8 @@ def _test_frozen(root: Path, directory: Path) -> dict:
             panel = features.join(targets, on="row_id", validate="1:1").join(
                 values, on="row_id", validate="1:1"
             )
-            panel = split_panel(panel, fold.test).with_columns(
-                pl.col("value") * item["report"]["direction"]
-            )
-            measured = metrics(panel, profile["metric"], "test", weights=weights)
-            result = {
-                "expression_id": compiled.factor_id,
-                "status": "success",
-                "metrics": [asdict(m) for m in measured],
-                "coverage": panel["value"].is_finite().fill_null(False).mean()
-                if panel.height
-                else None,
-            }
+            panel = split_panel(panel, fold.test)
+            result = _frozen_factor_result(spec, item, panel, weights)
         except (ValueError, RuntimeError, pl.exceptions.PolarsError) as exc:
             result = {
                 "expression_id": item["compiled"]["factor_id"],
@@ -723,7 +735,9 @@ def _test_frozen(root: Path, directory: Path) -> dict:
         terminal_progress(
             "OOS 因子完成",
             进度=f"{index}/{len(frozen['factors'])} / {result['status']}",
-            IC=metric_text(measured) if result["status"] == "success" else None,
+            IC=metric_text(Metric(**m) for m in result["metrics"])
+            if result["status"] == "success"
+            else None,
             覆盖率=f"{coverage:.2%}" if coverage is not None else None,
             耗时=f"{time.perf_counter() - started:.2f} s",
         )

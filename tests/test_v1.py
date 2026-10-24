@@ -1,5 +1,6 @@
 import copy
 import json
+import threading
 from dataclasses import asdict
 
 import pytest
@@ -90,12 +91,205 @@ class V1Models(AgentModels):
         return super()._response(system, payload)
 
 
-def setup_v1(tmp_path, *, models=None, config=None, attempts=4):
+def setup_v1(tmp_path, *, models=None, config=None, attempts=4, asynchronous=False):
     previous, current = setup_method(tmp_path, config=config, attempts=attempts)
-    method = V1Search(42, previous.config, models=models or V1Models())
+    cls = V1AsyncSearch if asynchronous else V1Search
+    method = cls(42, previous.config, models=models or V1Models())
     method.set_session(current)
     method.set_atlas_context(previous._atlas_context)
     return method, current
+
+
+class QueryModels(V1Models):
+    def __init__(self, stage, replies):
+        super().__init__()
+        self.stage = stage
+        self.query_replies = copy.deepcopy(replies)
+
+    def _response(self, system, payload):
+        role = "analyst" if "Research Analyst Agent" in system else "miner"
+        if "Atlas Explorer Agent" not in system and role == self.stage and self.query_replies:
+            return json.dumps(self.query_replies.pop(0)), {
+                "prompt_tokens": 5,
+                "completion_tokens": 3,
+            }
+        return super()._response(system, payload)
+
+
+def query_records(state, stage):
+    group = next(iter(state["groups"].values())) if "groups" in state else None
+    research = group["round"] if group else state["round_state"]
+    work = group["work"] if group else state["work"]
+    return (
+        research["responses"]["analyst"]
+        if stage == "analyst"
+        else (work or {}).get("responses", [])
+    )
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("stage", ["analyst", "miner"])
+def test_analyst_and_miner_share_all_five_read_queries_without_spending_budget(
+    tmp_path, monkeypatch, asynchronous, stage
+):
+    requests = [
+        {"name": "get_context", "arguments": {}},
+        {"name": "library_search", "arguments": {"source": "reference", "query": "tsmom_63"}},
+        {"name": "library_get", "arguments": {"factor_id": "absent"}},
+        {"name": "library_list", "arguments": {}},
+        {"name": "library_stats", "arguments": {}},
+    ]
+    models = QueryModels(stage, [{"queries": requests}])
+    config = V1AsyncConfig(parallel_plans=1, candidates_per_plan=1, max_formula_repairs=0)
+    method, current = setup_v1(
+        tmp_path, config=config, models=models, attempts=3, asynchronous=asynchronous
+    )
+    calls = []
+    query = current.query
+    owner = threading.get_ident()
+
+    def record(name, arguments):
+        assert threading.get_ident() == owner
+        calls.append({"name": name, "arguments": arguments})
+        return query(name, arguments)
+
+    monkeypatch.setattr(current, "query", record)
+    try:
+        candidate = method.ask(current.base.get_context())[0]
+        assert candidate.expression == "$x"
+        assert calls[1:] == requests
+        saved = query_records(method.dump_state(), stage)[0]["query_results"]
+        assert saved["requests"] == requests
+        assert "remaining_attempts" not in json.dumps(saved)
+        assert current.base.attempts_used == 0 and current.remaining_budget() == 3
+        assert method.usage["chat_requests"] == 4
+        for system, _, _ in models.calls:
+            if "Atlas Explorer Agent" not in system:
+                assert all(request["name"] in system for request in requests)
+        feedback = current.base.evaluate(candidate)
+        current.remaining -= 1
+        method.tell([feedback])
+        assert current.base.attempts_used == method.completed_attempts == 1
+        assert current.remaining_budget() == 2
+    finally:
+        if asynchronous:
+            method.close()
+
+
+@pytest.mark.parametrize("stage", ["analyst", "miner"])
+@pytest.mark.parametrize("tool", ["evaluate", "register_operator", "research_products"])
+def test_role_queries_cannot_evaluate_write_or_expand_public_permissions(tmp_path, stage, tool):
+    models = QueryModels(stage, [{"queries": [{"name": tool, "arguments": {}}]}])
+    method, current = setup_v1(tmp_path, models=models)
+    candidate = method.ask(current.base.get_context())[0]
+    result = query_records(method.dump_state(), stage)[0]["query_results"]["results"][0]
+    assert "Unknown tool" in result["error"]
+    assert candidate.expression == "$x"
+    assert current.base.attempts_used == 0 and current.remaining_budget() == 4
+
+
+@pytest.mark.parametrize("stage", ["analyst", "miner"])
+@pytest.mark.parametrize("requests", [[], ["library_stats"], [{"name": "library_stats"}] * 17])
+def test_invalid_query_batches_return_errors_without_dispatch_or_candidate_cost(
+    tmp_path, monkeypatch, stage, requests
+):
+    models = QueryModels(stage, [{"queries": requests}])
+    method, current = setup_v1(tmp_path, models=models)
+    query = current.query
+    names = []
+
+    def record(name, arguments):
+        names.append(name)
+        return query(name, arguments)
+
+    monkeypatch.setattr(current, "query", record)
+    candidate = method.ask(current.base.get_context())[0]
+    assert query_records(method.dump_state(), stage)[0]["error"] == "invalid metadata queries"
+    assert names == ["get_context"]
+    assert candidate.expression == "$x" and current.base.attempts_used == 0
+
+
+@pytest.mark.parametrize("stage", ["analyst", "miner"])
+@pytest.mark.parametrize("rounds", [8, 9])
+@pytest.mark.parametrize("batch_size", [1, 16])
+def test_read_query_rounds_are_bounded_separately_from_miner_formula_repairs(
+    tmp_path, monkeypatch, stage, rounds, batch_size
+):
+    models = QueryModels(stage, [{"queries": [{"name": "library_stats"}] * batch_size}] * rounds)
+    config = V1Config(max_formula_repairs=0 if rounds == 8 else 1)
+    method, current = setup_v1(tmp_path, models=models, config=config)
+    query = current.query
+    calls = []
+
+    def record(name, arguments):
+        calls.append(name)
+        return query(name, arguments)
+
+    monkeypatch.setattr(current, "query", record)
+    candidate = method.ask(current.base.get_context())[0]
+    records = query_records(method.dump_state(), stage)
+    assert calls.count("library_stats") == 8 * batch_size
+    assert sum("query_results" in record for record in records) == 8
+    if rounds == 9:
+        assert records[8]["error"] == "metadata query round budget exhausted"
+    assert candidate.expression == "$x" and current.base.attempts_used == 0
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("stage", ["analyst", "miner"])
+@pytest.mark.parametrize("processed", [False, True])
+def test_saved_role_query_reuses_response_and_results_after_resume(
+    tmp_path, monkeypatch, asynchronous, stage, processed
+):
+    config = V1AsyncConfig(parallel_plans=1, candidates_per_plan=1)
+    models = QueryModels(stage, [{"queries": [{"name": "library_stats"}]}])
+    method, current = setup_v1(
+        tmp_path, config=config, models=models, asynchronous=asynchronous, attempts=1
+    )
+    captured = None
+    calls = []
+    query = current.query
+
+    def record(name, arguments):
+        calls.append(name)
+        return query(name, arguments)
+
+    def interrupt():
+        nonlocal captured
+        state = method.dump_state()
+        if not state.get("round_state") and not state.get("groups"):
+            return
+        records = query_records(state, stage)
+        if records and '"queries"' in records[-1]["text"]:
+            if ("query_results" in records[-1]) == processed:
+                captured = json.loads(json.dumps(state))
+                raise KeyboardInterrupt
+
+    monkeypatch.setattr(current, "query", record)
+    method.set_checkpoint(interrupt)
+    restored = None
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            method.ask(current.base.get_context())
+        if asynchronous:
+            method.close()
+        restored, _ = setup_v1(
+            tmp_path / "restored", config=config, asynchronous=asynchronous, attempts=1
+        )
+        restored.set_session(current)
+        restored.load_state(captured)
+        candidate = restored.ask(current.base.get_context())[0]
+        assert candidate.expression == "$x"
+        assert calls.count("library_stats") == 1
+        assert restored.usage["chat_requests"] == 4
+        assert current.base.attempts_used == 0 and current.remaining_budget() == 1
+        records = query_records(restored.dump_state(), stage)
+        assert len(records) == 2 and "query_results" in records[0]
+    finally:
+        if asynchronous:
+            method.close()
+            if restored is not None:
+                restored.close()
 
 
 def explorer_queries(count):
@@ -192,7 +386,41 @@ def test_v1_scores_three_directions_then_uses_original_annealing(tmp_path):
     assert V1Search.tell is AnnealingLLMSearch.tell
 
 
-@pytest.mark.parametrize("damage", ["count", "duplicate", "score", "reason", "ref", "region"])
+@pytest.mark.parametrize("count", [1, 2])
+def test_v1_accepts_complete_partial_batches_without_extra_rng(tmp_path, count):
+    batch = proposals()
+    batch["proposals"] = batch["proposals"][:count]
+    method, current = setup_v1(tmp_path, models=V1Models([batch]))
+    before = method.rng.getstate()
+    candidate = method.ask(current.base.get_context())[0]
+    assert candidate.region_ids == (("mean",) if count == 1 else ("std",))
+    assert len(method.round_state["explorer_proposals"]["proposals"]) == count
+    assert method.rng.getstate() == before
+    assert current.remaining_budget() == 4
+
+
+def test_explorer_deduplicates_direction_history_without_changing_saved_snapshot(tmp_path):
+    method, current = setup_v1(tmp_path)
+    method.context = current.query("get_context", {})
+    snapshot, catalog = method._catalog()
+    method.round_state = method._new_round(current.base.get_context(), 1)
+    previous = [
+        {"region_id": "mean", "direction": "Inventory pressure"},
+        {"region_id": "std", "direction": "Delayed discovery"},
+        {"region_id": "mean", "direction": "Inventory pressure"},
+    ]
+    method.round_state["explorer_input"] = {
+        "atlas": method._explorer_atlas(snapshot),
+        "previous_directions": previous,
+    }
+    method._explore_round(snapshot, catalog)
+    assert method.models.calls[0][1]["previous_directions"] == previous[:2]
+    assert method.round_state["explorer_input"]["previous_directions"] == previous
+
+
+@pytest.mark.parametrize(
+    "damage", ["count", "too_many", "duplicate", "score", "reason", "ref", "region"]
+)
 def test_v1_rejects_invalid_batches_without_registering_partial_regions(tmp_path, damage):
     method, _ = setup_v1(tmp_path)
     raw = proposals()
@@ -200,7 +428,9 @@ def test_v1_rejects_invalid_batches_without_registering_partial_regions(tmp_path
     first.pop("region_id")
     first["new_region"] = {"hypothesis": "new pressure", "continent_ids": ["price_volume"]}
     if damage == "count":
-        raw["proposals"].pop()
+        raw["proposals"].clear()
+    elif damage == "too_many":
+        raw["proposals"].append(copy.deepcopy(first))
     elif damage == "duplicate":
         raw["proposals"][2] = {**first, "objective": "Only the title changes"}
     elif damage == "score":
@@ -335,6 +565,20 @@ def test_v1_unresolved_and_exhaustion_stop_without_fabricated_trial(tmp_path, re
     assert current.base.remaining_budget() == 4
     assert not method.steps
     assert method.pending is None
+
+
+def test_repeated_unresolved_stops_after_one_clarification_without_spending_budget(tmp_path):
+    unresolved = {"summary": "No complete direction", "unresolved": "No falsifiable question"}
+    models = V1Models([unresolved, unresolved])
+    method, current = setup_v1(tmp_path, models=models)
+    with pytest.raises(ValueError, match="V1 Explorer unresolved"):
+        method.ask(current.base.get_context())
+    records = method.round_state["responses"]["explorer"]
+    assert len(records) == 2
+    assert "一至三个" in records[0]["error"]
+    assert method.usage["chat_requests"] == 2
+    assert current.remaining_budget() == 4
+    assert not method.steps and method.pending is None
 
 
 def test_v1_native_runner_freezes_own_config_and_preserves_old_method(project, monkeypatch):

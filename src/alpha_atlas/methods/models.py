@@ -59,9 +59,12 @@ class HTTPModels:
         )
         try:
             with urlopen(request, timeout=config.timeout_seconds) as response:
-                if on_delta is not None:
-                    return self._stream(response, on_delta)
-                return json.load(response)
+                body = (
+                    self._stream(response, on_delta)
+                    if on_delta is not None
+                    else json.load(response)
+                )
+                return self._validate_chat_response(body) if kind == "chat" else body
         except HTTPError as exc:
             if exc.code in {408, 429, 500, 502, 503, 504}:
                 exc.close()
@@ -87,9 +90,53 @@ class HTTPModels:
             raise RuntimeError(f"{kind} model request failed or returned invalid JSON") from None
 
     @staticmethod
+    def _validate_chat_response(response):
+        """Classify empty proxy replies before the shared transport retry boundary."""
+        if not isinstance(response, dict):
+            raise RuntimeError("chat model response has no message content")
+        if error := response.get("error"):
+            code = (error.get("code") or error.get("type")) if isinstance(error, dict) else None
+            if isinstance(code, str) and code in {
+                "server_is_overloaded",
+                "service_unavailable_error",
+                "server_error",
+                "rate_limit_exceeded",
+            }:
+                raise _RetryableError("chat model service temporarily unavailable")
+            if code == "context_length_exceeded":
+                raise ContextLimitError("model context length exceeded")
+            raise RuntimeError("chat model returned an error response")
+        if (
+            not response
+            or response.get("choices") == []
+            or ("choices" in response and response["choices"] is None)
+        ):
+            raise _RetryableError("chat model returned empty message content")
+        try:
+            choice = response["choices"][0]
+            message = choice["message"] or {}
+            text = message.get("content")
+        except (KeyError, IndexError, TypeError, AttributeError):
+            raise RuntimeError("chat model response has no message content") from None
+        if isinstance(text, str) and text.strip():
+            return response
+        if text is not None and not isinstance(text, str):
+            raise RuntimeError("chat model response has no message content")
+        if choice.get("finish_reason") == "length":
+            raise RuntimeError("chat model output limit reached before any message content")
+        if choice.get("finish_reason") == "content_filter" or message.get("refusal"):
+            raise RuntimeError("chat model refused to return message content")
+        if choice.get("finish_reason") in {"tool_calls", "function_call"} or message.get(
+            "tool_calls"
+        ):
+            raise RuntimeError("chat model returned tool calls without message content")
+        raise _RetryableError("chat model returned empty message content")
+
+    @staticmethod
     def _stream(response, on_delta):
         """Consume SSE events immediately; incomplete streams never become saved replies."""
         content, usage, event = [], None, []
+        finish_reason, refusal, tool_calls = None, False, False
         for raw in response:
             line = raw.decode("utf-8").rstrip("\r\n")
             if line.startswith("data:"):
@@ -98,17 +145,39 @@ class HTTPModels:
                 data = "\n".join(event)
                 event.clear()
                 if data == "[DONE]":
-                    return {"choices": [{"message": {"content": "".join(content)}}], "usage": usage}
+                    return {
+                        "choices": [
+                            {
+                                "message": {
+                                    "content": "".join(content),
+                                    "refusal": refusal,
+                                    "tool_calls": tool_calls,
+                                },
+                                "finish_reason": finish_reason,
+                            }
+                        ],
+                        "usage": usage,
+                    }
                 try:
                     chunk = json.loads(data)
                     if "error" in chunk:
-                        raise ValueError("stream error")
+                        try:
+                            HTTPModels._validate_chat_response(chunk)
+                        except (_RetryableError, ContextLimitError):
+                            raise
+                        except RuntimeError:
+                            raise RuntimeError(
+                                "chat model stream returned an error response"
+                            ) from None
                     if chunk.get("usage") is not None:
                         usage = chunk["usage"]
                     for choice in chunk["choices"]:
                         if choice.get("index", 0) != 0:
                             continue
                         delta = choice["delta"]
+                        finish_reason = choice.get("finish_reason") or finish_reason
+                        refusal = refusal or bool(delta.get("refusal"))
+                        tool_calls = tool_calls or bool(delta.get("tool_calls"))
                         for key in (
                             "reasoning_content",
                             "reasoning",

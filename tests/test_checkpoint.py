@@ -7,6 +7,7 @@ import pytest
 from test_pipeline import project as project
 
 from alpha_atlas.assets.common import atomic_json
+from alpha_atlas.assets.market import ParqMarketData
 from alpha_atlas.checkpoint import Checkpoint, read_json, run_lock
 from alpha_atlas.contracts import (
     Candidate,
@@ -109,6 +110,7 @@ def logical_trials(directory):
                 report["direction"],
                 report["status"],
                 report["coverage"],
+                report.get("clipping", {}),
             )
         )
     return results
@@ -154,6 +156,19 @@ def test_resume_matches_uninterrupted_run(project, monkeypatch, method, boundary
     assert all(r["status"] == "success" for r in evaluate_frozen(project, path)["results"])
     with pytest.raises(ValueError, match="already frozen"):
         resume(project, path)
+
+
+def test_resume_reuses_recorded_fields_without_rediscovering_defaults(project, monkeypatch):
+    with monkeypatch.context() as patch:
+        path = interrupted_run(project, patch, attempts=6)
+    fields = read_json(path / "run.json")["fields"]
+
+    def forbid_discovery(self):
+        raise AssertionError("resume must preserve the original field permissions")
+
+    monkeypatch.setattr(ParqMarketData, "get_fields", forbid_discovery)
+    resume(project, path)
+    assert read_json(path / "run.json")["fields"] == fields
 
 
 @pytest.mark.parametrize("cache_state", ["present", "missing", "unreadable"])
@@ -384,7 +399,16 @@ def test_process_abrupt_exit_then_cli_resume(project):
     assert not (path / "failures.json").exists()
     committed = (path / "trials/00000002.json").read_bytes()
     result = subprocess.run(
-        [sys.executable, "-m", "alpha_atlas.cli", "--root", str(project), "resume", str(path)],
+        [
+            sys.executable,
+            "-m",
+            "alpha_atlas.cli",
+            "--root",
+            str(project),
+            "resume",
+            str(path),
+            "--search-only",
+        ],
         capture_output=True,
         text=True,
         encoding="utf-8",

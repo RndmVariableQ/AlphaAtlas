@@ -401,7 +401,18 @@ def test_cli_progress_stays_on_stderr_and_quiet_preserves_results(project):
         assert result.returncode == 0, result.stderr
         return (json.loads(result.stdout) if parse_json else result.stdout), result.stderr
 
-    args = ("run", "--asset", "ashare", "--fold", "fold1", "--method", "atlas", "--attempts", "3")
+    args = (
+        "run",
+        "--asset",
+        "ashare",
+        "--fold",
+        "fold1",
+        "--method",
+        "atlas",
+        "--attempts",
+        "3",
+        "--search-only",
+    )
     result, output = cli(*args)
     assert "开始搜索 / 加载行情" in output and "行情就绪" in output
     assert output.index("评估候选") < output.index("1/3 · 已入库 ")

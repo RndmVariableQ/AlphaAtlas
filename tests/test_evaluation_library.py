@@ -283,15 +283,25 @@ def test_futures_primary_direction_admission_and_fixed_split_weights():
     assert [m.name for m in report.metrics] == names + [
         n.replace("pearson", "spearman") for n in names
     ]
+    x = np.arange(28, dtype=float)
+    y = 0.0001 * (24 * x + 144)
+    x_bounds = np.quantile(np.tile(x, 6), [0.01, 0.99])
+    y_bounds = np.quantile(np.tile(np.r_[-y, y, y], 2), [0.01, 0.99])
+    negative, positive = (
+        np.corrcoef(np.clip(x, *x_bounds), np.clip(sign * y, *y_bounds))[0, 1] for sign in (-1, 1)
+    )
+    weighted = (4 * negative + 2 * positive) / 6
+    equal = (negative + 2 * positive) / 3
     assert [m.value for m in report.metrics] == pytest.approx(
-        [-1 / 3, 1 / 3, -1 / 3, 1 / 3, -1 / 3, 1 / 3] * 2
+        [weighted, -weighted, weighted, equal, -equal, equal]
+        + [-1 / 3, 1 / 3, -1 / 3, 1 / 3, -1 / 3, 1 / 3]
     )
     assert all(m.n_obs == 168 and m.n_groups == 3 for m in report.metrics)
     library = FactorLibrary(RULES, min_train_val_ic=0.005)
     feedback = library.consider(
         Candidate("$x"), report, service.observation(report.observation_ref)
     )
-    assert feedback.accepted and reward(feedback) == pytest.approx(1 + 1 / 3)
+    assert feedback.accepted and reward(feedback) == pytest.approx(1 - weighted)
     assert len(library.view().list(min_val_ic=0.3)) == 1
     assert library.view().list(min_val_ic=0.4) == ()
     # Secondary IC cannot rescue a failing primary IC or a library-view threshold.
@@ -333,7 +343,10 @@ def test_futures_primary_direction_admission_and_fixed_split_weights():
     )
     opposite_val = EvaluationService(changed, fold, profile, {"x"}).evaluate(Candidate("$x"))
     assert opposite_val.direction == -1
-    assert [m.value for m in opposite_val.metrics[:3]] == pytest.approx([-1 / 3, -7 / 9, 7 / 9])
+    other_weighted = (0.25 * negative + 2 * positive) / 2.25
+    assert [m.value for m in opposite_val.metrics[:3]] == pytest.approx(
+        [weighted, -other_weighted, other_weighted]
+    )
     zero_train = frame.with_columns(
         pl.when(pl.col("trading_day") == fold.train.start)
         .then(0.0)
@@ -342,7 +355,7 @@ def test_futures_primary_direction_admission_and_fixed_split_weights():
     )
     undefined = EvaluationService(zero_train, fold, profile, {"x"}).evaluate(Candidate("$x"))
     assert undefined.direction is None and undefined.status == "undefined_train_metric"
-    assert undefined.metrics[3].value == pytest.approx(1 / 3)
+    assert undefined.metrics[3].value == pytest.approx(equal)
     assert all(m.value is None for m in undefined.metrics if m.split == "val")
     # Opposite signs: Pearson chooses the shared direction, including reported Spearman.
     opposed = frame.with_columns(

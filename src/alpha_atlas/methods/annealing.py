@@ -12,8 +12,21 @@ from alpha_atlas.annealing import acceptance_probability, finite, temperature
 from alpha_atlas.contracts import Candidate, Region, SearchContext
 from alpha_atlas.methods.mcts_llm import LLMSearchConfig
 from alpha_atlas.methods.models import HTTPModels
+from alpha_atlas.methods.prompt_examples import render_factor_examples
 from alpha_atlas.reporting import TerminalStream, terminal_progress
 from alpha_atlas.storage import candidate_from_dict
+from alpha_atlas.timeframes import field_reference
+
+READ_ONLY_QUERY_PROMPT = """For shared read-only tools, return only a JSON object:
+{"queries": [{"name": "library_search", "arguments": {"query": "mechanism", "source": "all"}}]}.
+Available queries: get_context(), library_search(query='', source='all', offset=0, limit=10),
+library_get(factor_id), library_list(offset=0, limit=20), library_stats().
+get_context returns allowed fields, operators, expression and evaluation rules, and reference settings.
+Use query_results as evidence, then return the final JSON required by your role.
+At most 8 query rounds, 16 requests per round. Queries do not submit or evaluate candidates.
+Reference definitions without measured performance must be evaluated by the platform.
+Queries do not change the region, direction, plan, allowed fields or admission rules.
+"""
 
 
 def _one_sentence(value):
@@ -370,14 +383,40 @@ class AnnealingLLMSearch:
             "top_factors": ranked[: self.config.analyst_feedback_top_k],
         }
 
+    def _read_queries(self, raw, records):
+        if sum("query_results" in record for record in records) >= 8:
+            raise ValueError("metadata query round budget exhausted")
+        requests = raw["queries"]
+        if (
+            not isinstance(requests, list)
+            or not 1 <= len(requests) <= 16
+            or any(not isinstance(request, dict) for request in requests)
+        ):
+            raise ValueError("invalid metadata queries")
+        results = []
+        for request in requests:
+            try:
+                result = self._session.query(request["name"], request.get("arguments", {}))
+            except (KeyError, TypeError, ValueError) as exc:
+                result = {"error": str(exc)}
+            results.append(result)
+        return {"requests": requests, "results": results}
+
     def _phase(self, stage, system, payload, validator, records):
+        if stage == "analyst":
+            system += "\n\n" + READ_ONLY_QUERY_PROMPT
         while True:
-            if records and "result" not in records[-1] and "error" not in records[-1]:
+            if records and not any(
+                key in records[-1] for key in ("result", "error", "query_results")
+            ):
                 try:
                     raw = json.loads(records[-1]["text"])
                     if not isinstance(raw, dict):
                         raise ValueError("model response must be a JSON object")
-                    records[-1]["result"] = validator(raw)
+                    if stage == "analyst" and "queries" in raw:
+                        records[-1]["query_results"] = self._read_queries(raw, records)
+                    else:
+                        records[-1]["result"] = validator(raw)
                 except (ValueError, TypeError, KeyError) as exc:
                     records[-1]["error"] = str(exc)
                 self._checkpoint()
@@ -394,6 +433,9 @@ class AnnealingLLMSearch:
                 **payload,
                 "previous_response": records[-1].get("text") if records else None,
                 "validation_error": records[-1].get("error") if records else None,
+                "query_results": [
+                    record["query_results"] for record in records if "query_results" in record
+                ],
             }
             terminal_progress(
                 "退火",
@@ -407,7 +449,9 @@ class AnnealingLLMSearch:
                 system,
                 prompt,
                 temperature=(
-                    self.config.repair_temperature if records else self.config.temperature
+                    self.config.repair_temperature
+                    if records and "error" in records[-1]
+                    else self.config.temperature
                 ),
             )
             self._record_usage(usage)
@@ -513,7 +557,7 @@ class AnnealingLLMSearch:
         fields = set(self.round_state["plan"]["allowed_fields"])
 
         def used_fields(node):
-            values = {node["value"]} if node["op"] == "field" else set()
+            values = {field_reference(node["value"])[0]} if node["op"] == "field" else set()
             for child in node.get("args", []):
                 values.update(used_fields(child))
             return values
@@ -571,7 +615,9 @@ class AnnealingLLMSearch:
                 "analyst",
                 "You are the Research Analyst Agent. Turn the Explorer's fixed direction into a "
                 "testable plan for one Factor Miner candidate at a time. Do not change the region "
-                "or research direction. Choose only available fields. Do not decide whether a "
+                "or research direction. Choose only available base field names in allowed_fields; "
+                "specify any permitted @interval in the measurement plan and Miner instructions. "
+                "Do not decide whether a "
                 "candidate is qualified; the platform does that. Return JSON with hypothesis, "
                 "allowed_fields, measurement_plan and miner_instruction.",
                 analyst_payload,
@@ -646,11 +692,18 @@ class AnnealingLLMSearch:
         system = (
             "You are the Factor Miner Agent in one continuing Miner session. Implement one "
             "concrete factor candidate within the Analyst's plan. Use only allowed fields and "
-            "the supplied DSL/operator rules. The conversation contains every earlier candidate "
+            "the supplied DSL/operator rules. allowed_fields contains base names; append only "
+            "suffixes permitted by the context without changing the base field permission. Follow the "
+            "plan's frequency; do not substitute rolling native bars for completed coarse bars. "
+            "The conversation contains every earlier candidate "
             "you proposed in this plan and the platform evaluation returned for each one. Use "
             "that evidence to propose a materially distinct next candidate; never repeat an "
             "earlier expression. Do not change the region, direction, plan, evaluation, or "
             "admission decision. Return JSON with expression and optional name."
+        )
+        system += "\n\n" + READ_ONLY_QUERY_PROMPT
+        system += "\n\n" + render_factor_examples(
+            plan["allowed_fields"], self.context.get("frequency")
         )
         messages = self.round_state.setdefault("miner_messages", [])
         if not messages:
@@ -668,20 +721,36 @@ class AnnealingLLMSearch:
                 ]
             )
             self._checkpoint()
+        else:
+            messages[0]["content"] = system
         records = self.work["responses"]
         while True:
-            if records and "result" not in records[-1] and "error" not in records[-1]:
+            if records and not any(
+                key in records[-1] for key in ("result", "error", "query_results")
+            ):
                 record = records[-1]
                 try:
                     raw = json.loads(record["text"])
                     if not isinstance(raw, dict):
                         raise ValueError("model response must be a JSON object")
-                    record["result"] = self._validate_miner(raw)
+                    if "queries" in raw:
+                        record["query_results"] = self._read_queries(raw, records)
+                    else:
+                        record["result"] = self._validate_miner(raw)
                 except (ValueError, TypeError, KeyError) as exc:
                     record["error"] = str(exc)
                 if not record.get("assistant_added"):
                     messages.append({"role": "assistant", "content": record["text"]})
                     record["assistant_added"] = True
+                if "query_results" in record:
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": json.dumps(
+                                {"query_results": [record["query_results"]]}, ensure_ascii=False
+                            ),
+                        }
+                    )
                 if "error" in record and not record.get("error_added"):
                     messages.append(
                         {
@@ -700,7 +769,8 @@ class AnnealingLLMSearch:
             if records and "result" in records[-1]:
                 return records[-1]["result"]
             limit = self.config.max_formula_repairs + 1
-            if len(records) >= limit:
+            replies = sum("query_results" not in record for record in records)
+            if replies >= limit:
                 raise ValueError("miner: response repair limit exhausted")
             terminal_progress(
                 "退火",
@@ -709,7 +779,7 @@ class AnnealingLLMSearch:
                 轮次=self.round_state["index"],
                 模式=self.round_state.get("mode"),
                 计划候选=(f"{len(self.round_state['outcomes']) + 1}/{self._plan_limit()}"),
-                修复=f"{len(records) + 1}/{limit}",
+                修复=f"{replies + 1}/{limit}",
             )
             self._start_request("chat")
             if hasattr(self.models, "chat_messages"):
@@ -718,7 +788,9 @@ class AnnealingLLMSearch:
                         messages,
                         on_delta=stream.delta,
                         temperature=(
-                            self.config.repair_temperature if records else self.config.temperature
+                            self.config.repair_temperature
+                            if records and "error" in records[-1]
+                            else self.config.temperature
                         ),
                     )
             else:
@@ -726,7 +798,9 @@ class AnnealingLLMSearch:
                     system,
                     {"conversation": messages[1:]},
                     temperature=(
-                        self.config.repair_temperature if records else self.config.temperature
+                        self.config.repair_temperature
+                        if records and "error" in records[-1]
+                        else self.config.temperature
                     ),
                 )
             self._record_usage(usage)

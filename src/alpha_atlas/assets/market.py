@@ -11,6 +11,7 @@ import duckdb
 import polars as pl
 
 from alpha_atlas.assets.common import KEYS
+from alpha_atlas.expressions import STRUCTURAL
 
 
 class ParqMarketData:
@@ -31,6 +32,25 @@ class ParqMarketData:
             raise ValueError("labels must not be stored in feature partitions")
         if universe != "all" and f"in_{universe}" not in self.columns:
             raise ValueError(f"unknown universe {universe}")
+
+    def get_fields(self) -> tuple[str, ...]:
+        """Available numeric features from schema only, excluding adapter metadata."""
+        metadata = {
+            "adjfactor",
+            "adj_cum_factor",
+            "source_bars",
+            "vwap_proxy_bars",
+            "vwap_clamped_bars",
+            "vwap_no_trade_bars",
+        }
+        schema = self._db.execute("SELECT * FROM bars LIMIT 0").pl().schema
+        return tuple(
+            name
+            for name, dtype in schema.items()
+            if dtype.is_numeric()
+            and name not in STRUCTURAL | metadata
+            and not name.startswith(("label", "target", "__", "in_", "is_"))
+        )
 
     def snapshot_id(self) -> str:
         parts = sorted(p.get("sha256", "") for p in self.manifest.get("partitions", []))
@@ -55,6 +75,17 @@ class ParqMarketData:
         flags = [f"in_{self.universe}"] if self.universe != "all" else []
         trading_flags = [c for c in ["is_st", "is_suspended"] if c in self.columns]
         quality_fields = [c for c in ["open", "high", "low", "close"] if c in self.columns]
+        if len(quality_fields) != 4 and all(
+            name in self.columns for name in ("adj_open", "adj_high", "adj_low", "adj_close")
+        ):
+            quality_fields = ["adj_open", "adj_high", "adj_low", "adj_close"]
+        weights = [
+            "volume" + f[len("adj_vwap") :]
+            for f in fields
+            if f.removesuffix("_p1").removesuffix("_p2") == "adj_vwap"
+        ]
+        if missing := set(weights) - self.columns:
+            raise ValueError(f"adjusted VWAP requires volume weights: {sorted(missing)}")
         legs = [f"p{i}" for i in (1, 2) if any(f.endswith(f"_p{i}") for f in fields)]
         far_columns = [
             f"{name}_{leg}"
@@ -65,7 +96,14 @@ class ParqMarketData:
             raise ValueError(f"far-contract fields require identity and OHLC: {sorted(missing)}")
         columns = list(
             dict.fromkeys(
-                KEYS + extra + flags + trading_flags + quality_fields + fields + far_columns
+                KEYS
+                + extra
+                + flags
+                + trading_flags
+                + quality_fields
+                + fields
+                + weights
+                + far_columns
             )
         )
         quoted = ", ".join('"' + c.replace('"', '""') + '"' for c in columns)
@@ -79,11 +117,12 @@ class ParqMarketData:
         for flag in trading_flags:
             eligible = eligible & (~pl.col(flag).cast(pl.Boolean).fill_null(True))
         valid_bar = pl.lit(True)
-        if set(quality_fields) == {"open", "high", "low", "close"}:
+        if len(quality_fields) == 4:
+            opening, high, low, closing = quality_fields
             valid_bar = (
                 pl.all_horizontal(pl.col(quality_fields).is_finite())
-                & (pl.col("high") >= pl.max_horizontal("open", "close", "low"))
-                & (pl.col("low") <= pl.min_horizontal("open", "close", "high"))
+                & (pl.col(high) >= pl.max_horizontal(opening, closing, low))
+                & (pl.col(low) <= pl.min_horizontal(opening, closing, high))
             ).fill_null(False)
         result = result.with_columns(valid_bar.alias("valid_bar"))
         result = result.with_columns((eligible & pl.col("valid_bar")).alias("eligible"))

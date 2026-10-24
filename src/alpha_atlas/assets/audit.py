@@ -28,15 +28,30 @@ def audit(directory: Path) -> dict:
             "union_by_name=true, hive_partitioning=false)"
         )
         names = [x[0] for x in db.execute("DESCRIBE bars").fetchall()]
-        counts = db.execute("""
+        ohlc_fields = ["open", "high", "low", "close"]
+        if not set(ohlc_fields) <= set(names):
+            ohlc_fields = ["adj_open", "adj_high", "adj_low", "adj_close"]
+        if not set(ohlc_fields) <= set(names):
+            raise ValueError("integrity audit requires complete raw or adjusted OHLC fields")
+        opening, high, low, closing = (f'"{name}"' for name in ohlc_fields)
+        invalid_ohlc = (
+            f"{high} < {low} OR {high} < {opening} OR {high} < {closing} "
+            f"OR {low} > {opening} OR {low} > {closing}"
+        )
+        missing_ohlc = " OR ".join(
+            f'"{name}" IS NULL OR NOT isfinite("{name}")' for name in ohlc_fields
+        )
+        counts = db.execute(f"""
             SELECT count(*) AS row_count, min(trading_day) first_day, max(trading_day) last_day,
                    count(DISTINCT (exchange, instrument_id)) instruments,
                    count(*) - count(DISTINCT row_id) duplicate_row_ids,
                    count(*) FILTER (WHERE exchange IS NULL OR instrument_id IS NULL
                      OR timestamp IS NULL OR trading_day IS NULL) null_keys,
-                   count(*) FILTER (WHERE high < low OR high < open OR high < close
-                     OR low > open OR low > close) invalid_ohlc,
-                   count(*) FILTER (WHERE close IS NULL OR NOT isfinite(close)) missing_close
+                   count(*) FILTER (WHERE {invalid_ohlc}) invalid_ohlc,
+                   count(*) FILTER (
+                       WHERE {closing} IS NULL OR NOT isfinite({closing})
+                   ) missing_close,
+                   count(*) FILTER (WHERE {missing_ohlc}) missing_ohlc
             FROM bars
         """).fetchone()
         result = dict(
@@ -50,11 +65,13 @@ def audit(directory: Path) -> dict:
                     "null_keys",
                     "invalid_ohlc",
                     "missing_close",
+                    "missing_ohlc",
                 ],
                 counts,
                 strict=True,
             )
         )
+        result["ohlc_fields"] = ohlc_fields
         result["label_columns_in_features"] = [c for c in names if c.startswith("label_")]
         result["column_count"] = len(names)
         result["fundamental_columns"] = [c for c in names if c.startswith("funda_")]
@@ -89,9 +106,8 @@ def audit(directory: Path) -> dict:
                 + " OR ".join('"' + name + '" IS NULL' for name in trading_flags)
             ).fetchone()[0]
         result["anomalies"] = db.execute(
-            "SELECT timestamp, exchange, instrument_id, open, high, low, close FROM bars "
-            "WHERE high < low OR high < open OR high < close OR low > open OR low > close "
-            "LIMIT 20"
+            f"SELECT timestamp, exchange, instrument_id, {opening}, {high}, {low}, {closing} "
+            f"FROM bars WHERE {invalid_ohlc} LIMIT 20"
         ).fetchall()
         yearly = db.execute(
             "SELECT year(trading_day), count(*) FROM bars GROUP BY 1 ORDER BY 1"
@@ -108,6 +124,7 @@ def audit(directory: Path) -> dict:
         and not result["null_keys"]
         and not result["invalid_ohlc"]
         and not result["missing_close"]
+        and not result["missing_ohlc"]
         and not result["label_columns_in_features"]
         and not result.get("fundamental_availability_violations", 0)
         and not result.get("missing_trading_flags", 0)
@@ -124,7 +141,7 @@ def audit(directory: Path) -> dict:
         and manifest["status"] == "complete"
     )
     result["quality_policy"] = (
-        "Raw anomalies are preserved. MarketData masks invalid OHLC observations, retains row "
+        "Export anomalies are preserved. MarketData masks invalid OHLC observations, retains row "
         "positions, and excludes them from scoring. passed is strict raw integrity; "
         "research_ready accounts for this explicit quarantine policy."
     )

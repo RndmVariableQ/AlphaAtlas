@@ -12,6 +12,7 @@ Research Analyst 和 Factor Miner 三个角色组成，退火搜索的状态是�
    continent 下提出新 Region；高温阶段更鼓励广度探索，低温阶段更鼓励围绕当前 Region 深挖。
 2. Analyst 将方向变成一个受字段范围约束的可执行计划，不可改写 Explorer 的 Region 或方向。
    同时接收上一计划正式入库候选中按主指标 `abs(val IC)` 排序的前 5 个，作为研究反馈。
+   `allowed_fields` 填基础字段名；所需的已完成高周期写在测量计划和 Miner 指令中。
 3. Miner 在一个持续对话中按计划逐个生成候选，最多尝试 5 个。每个候选都由 AlphaAtlas
    runner 单独评估；评估结果会追加到 Miner 对话，供后续候选参考。`--attempts` 仍只按候选
    计数。
@@ -36,12 +37,26 @@ trial 样例。AlphaAtlas 当前把这份精简全图直接放入 Explorer 输�
 候选仍消耗同一个全局 attempt，并执行相同的编译、Train/Valid 评估、准入、去重、原子记录和
 恢复流程。
 
+Miner 接收按当前计划允许字段生成的公共表达式示例；其高周期权限按基础字段校验，
+因此计划允许 `adj_close` 且公共 context 允许 `@30m` 时，`$adj_close@30m` 不会被误判为
+计划外字段。字段、频率、窗口和广播语义以 [DSL](../dsl.md) 为准。
+
+Analyst 和 Miner 均可调用 `get_context`、`library_search`、`library_get`、`library_list`、
+`library_stats` 五个公共只读工具。使用与 AlphaPROBE 相同的 JSON 查询批次：
+`{"queries":[{"name":"library_search","arguments":{"query":"机制","source":"all"}}]}`。
+每个 Analyst 计划、每个 Miner 候选最多 8 轮查询，每轮最多 16 个请求；结果通过
+`query_results` 返回。Analyst 查询计入既有对话上限，Miner 成功查询不占用公式修复次数。
+查询不生成候选、不扣评估预算、不扩大计划字段或算子权限；实际模型请求仍计成本。
+原始回复、查询结果和 Miner 对话复用已有方法状态，恢复不重发已保存回复或重复已保存查询。
+
 ## 公平对照与运行
 
-`configs/annealing.toml` 与 `configs/mcts_llm.toml` 使用相同的 DeepSeek 模型、端点、通用
-模型温度、修复上限和超时设置。两者使用同一 runner、SearchSession、数据快照、benchmark
-和候选评估预算。退火额外配置计划长度和初末温度；MCTS-LLM 的树参数仅适用于它自己的
-选择器。使用相同资产、universe、fold、seed、fields 和 attempts，只切换 `--method`。
+`configs/annealing.toml`、`configs/v1.toml` 与 `configs/v1_async.toml` 配置三 Agent
+共用的 Chat 模型、端点和凭据环境变量名。模型及连接设置以各自配置为准。
+与 MCTS-LLM 比较时，另需统一两侧模型、端点、通用模型温度、修复上限和超时设置；
+两者使用同一 runner、SearchSession、数据快照、benchmark 和候选评估预算。
+退火额外配置计划长度和初末温度；MCTS-LLM 的树参数仅适用于它自己的选择器。
+使用相同资产、universe、fold、seed、fields 和 attempts，只切换 `--method`。
 
 例如使用期货 fold1、seed 42 和 500 次候选评估：
 
@@ -51,7 +66,7 @@ uv run atlas run --asset futures --fold fold1 --method annealing --seed 42 --att
 
 MCTS-LLM 对照命令只需将 `--method annealing` 换成 `--method mcts_llm`。500 次预算下，
 退火版每个计划最多 5 个候选，最后一轮可以不足 5 个；模型请求次数因此不等于候选预算。
-模型 key 从 `OPENAI_API_KEY` 环境变量读取。
+模型 key 从各方法 `chat_key_env` 指定的环境变量读取；切换模型后新建运行。
 
 ## 实现边界
 

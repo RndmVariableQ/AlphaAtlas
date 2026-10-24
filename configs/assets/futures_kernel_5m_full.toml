@@ -1,0 +1,17 @@
+# Research-kernel adjusted OHLC/VWAP, volume, amount and closing open interest.
+asset_id = "futures_kernel_5m_full"
+frequency = "5m"
+provider = "ricequant"
+data_dir = "data/futures_kernel_5m_full"
+default_universe = "all"
+universes = ["all"]
+timezone = "Asia/Shanghai"
+bar_time_label = "end"
+price_field = "adj_close"
+target_horizon_bars = 12
+metric = "time_series_weighted_pearson_ic"
+panel = "product"
+min_train_val_ic = 0.005
+fundamentals = false
+start = 2012-01-04
+end = 2026-09-28

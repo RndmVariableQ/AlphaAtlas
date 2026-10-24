@@ -19,6 +19,11 @@ uv run atlas model artifacts/runs/<run_id> --test
 early stopping 或模型择优。Linear 直接求解析最小二乘解；LightGBM 固定 50 个 boosting
 rounds。参数在首次训练前固定；重复命令复用保存结果，不发起 LLM 请求。
 
+完整实验的 `atlas run`／`atlas resume` 默认在冻结后串联拟合、Test 和 Val 库内相似度，
+三项成功后自动填表；`atlas finish <run_dir>` 可补跑收尾。
+批量研究先用 `--search-only` 冻结全部运行，再统一执行 finish，见
+[自动评估与填表](research_protocol.md#自动评估与填表)。
+
 ## 模型和数据规则
 
 - `linear`：带截距的普通最小二乘回归，使用
@@ -31,6 +36,8 @@ rounds。参数在首次训练前固定；重复命令复用保存结果，不�
   PIT eligibility、字段、高周期特征、预热和缺失规则复用公共 MarketData／DSL。
 - 因子列顺序采用冻结库顺序；每列乘原训练方向。通过 row_id 对齐计算结果，不按数组位置拼接。
   输入仅包含因子列，不把 instrument_id、product、日期或 target 当作模型特征。
+- 模型输入和标签保持原值，不应用单因子 IC／库内相似度使用的 train 分位裁剪；
+  均值填补与标准化使用下述 train+val 拟合统计。组合预测的 IC 使用原始目标。
 - 仅对符合 train+val 标签和 eligibility 规则的合并观测拟合各列均值、总体标准差。
   全缺失、非有限统计或标准差不超过 `1e-12` 的列移除；移除规则不看 test。
   所有列移除、有效训练行不足两行或目标为常量时明确失败。

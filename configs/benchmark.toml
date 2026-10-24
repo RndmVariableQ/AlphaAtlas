@@ -4,6 +4,8 @@ max_attempts = 100
 reference_library = "futures_cta"
 # Shared train-only diagnostics; identical availability for all methods.
 search_diagnostics = "icir_turnover_v1"
+# Shared factor/label clipping; fit on eligible train scoring rows and freeze for val/OOS.
+clip_quantiles = [0.01, 0.99]
 # Used when the asset profile does not set min_train_val_ic.
 min_abs_val_ic = 0.01
 min_coverage = 0.8
