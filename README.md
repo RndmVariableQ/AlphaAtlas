@@ -154,6 +154,7 @@ train/val 用于开发反馈；test 不参与搜索、入库或因子选择。
 | 重建／查看报告 | `uv run atlas report <run_dir>`、`uv run atlas report <run_dir> --oos` |
 | 多方法配对比较 | `uv run atlas experiment configs/experiments/<plan>/<scope>.json` |
 | 比较只搜索／打开 Test | 上述命令加 `--search-only`；全部 scope 拟合完成后加 `--test` |
+| 观测台（监控、地图回放、研究记录） | `uv run atlas ui`，浏览器打开 http://127.0.0.1:8780/ |
 | 参考因子库 | `uv run python scripts/evaluate_zookeeper.py --fold fold2`、`uv run python scripts/evaluate_reference.py --fold fold1 --bars-per-day 48` |
 
 方法名见[方法目录](docs/methods/README.md)；`random`、`gp`、`mcts`、`atlas` 无需模型服务。

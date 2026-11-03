@@ -40,6 +40,36 @@ information so far. A lens or label earns nothing; only measured residual inform
 )
 
 
+def mechanism_status(values, sea_level, probe_attempts):
+    """One Region's residual information from its attempts in order (None = unmeasured).
+
+    The single definition of map states, shared by the method and the read-only map view.
+    """
+    if not values:
+        return None
+    measured = [value for value in values if value is not None]
+    best = max(measured, default=None)
+    recent = [value or 0.0 for value in values[-probe_attempts:]]
+    if len(values) < probe_attempts:
+        status = "probing"
+    elif best is None or best < sea_level:
+        status = "seabed"
+    elif len(values) >= 2 * probe_attempts and max(recent) < sea_level:
+        status = "saturated"
+    else:
+        status = "land"
+    return {
+        "attempts": len(values),
+        "measured": len(measured),
+        "mean_residual_ic": sum(measured) / len(values),
+        "best_residual_ic": best,
+        "recent_mean_residual_ic": sum(recent) / len(recent),
+        "status": status,
+        "sea_level": sea_level,
+        "probe_attempts": probe_attempts,
+    }
+
+
 @dataclass(frozen=True)
 class V2SyncConfig(V1Config):
     sea_level: float = 0.005
@@ -78,29 +108,11 @@ class V2SyncSearch(V1Search):
         if not records:
             return None
         trials = self._trial_results(records) if trials is None else trials
-        values = [trials[r["factor_trial_index"]].get("residual_ic") for r in records]
-        measured = [value for value in values if value is not None]
-        probe, sea = self.config.probe_attempts, self.config.sea_level
-        best = max(measured, default=None)
-        recent = [value or 0.0 for value in values[-probe:]]
-        if len(values) < probe:
-            status = "probing"
-        elif best is None or best < sea:
-            status = "seabed"
-        elif len(values) >= 2 * probe and max(recent) < sea:
-            status = "saturated"
-        else:
-            status = "land"
-        return {
-            "attempts": len(values),
-            "measured": len(measured),
-            "mean_residual_ic": sum(measured) / len(values),
-            "best_residual_ic": best,
-            "recent_mean_residual_ic": sum(recent) / len(recent),
-            "status": status,
-            "sea_level": sea,
-            "probe_attempts": probe,
-        }
+        return mechanism_status(
+            [trials[r["factor_trial_index"]].get("residual_ic") for r in records],
+            self.config.sea_level,
+            self.config.probe_attempts,
+        )
 
     def _region_score(self, region_id):
         # Metropolis compares mean residual information per attempt in sea-level units.

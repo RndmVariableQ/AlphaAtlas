@@ -1,4 +1,5 @@
 import json
+import math
 from datetime import date
 
 import numpy as np
@@ -7,6 +8,7 @@ import pytest
 from test_annealing import AgentModels
 from test_evaluation_library import RULES, evaluated, futures_frame
 from test_pipeline import project as project
+from test_versions import version as version
 
 from alpha_atlas.contracts import Candidate, DateRange, Fold
 from alpha_atlas.evaluation import FUTURES_METRICS, EvaluationService, library_projection
@@ -53,7 +55,8 @@ def service_and_values():
 
 def test_empty_library_residual_equals_the_directed_valid_ic():
     service, report, values = service_and_values()
-    residual, explained = service.residual_ic(values, [], report.direction)
+    residual, explained, similarity = service.residual_ic(values, [], report.direction)
+    assert similarity == []
     val = next(m.value for m in report.metrics if m.split == "val")
     assert explained == 0.0
     assert residual == pytest.approx(val)
@@ -61,13 +64,21 @@ def test_empty_library_residual_equals_the_directed_valid_ic():
 
 def test_duplicate_member_leaves_no_residual_information():
     service, report, values = service_and_values()
-    residual, explained = service.residual_ic(values, [("member", values)], report.direction)
+    residual, explained, similarity = service.residual_ic(
+        values, [("member", values)], report.direction
+    )
+    assert similarity == [pytest.approx(1.0, abs=1e-3)]
     assert explained == pytest.approx(1.0, abs=1e-5)
     assert abs(residual) < 1e-3
     # A member without variation is skipped instead of failing the projection.
     flat = values.with_columns(pl.lit(1.0).alias("value"))
-    alone, none = service.residual_ic(values, [("flat", flat)], report.direction)
-    assert none == 0.0
+    alone, none, skipped = service.residual_ic(values, [("flat", flat)], report.direction)
+    assert none == 0.0 and skipped == [None]
+    assert service.library_correlations([("a", values), ("flat", flat), ("b", values)]) == [
+        [pytest.approx(1.0, abs=1e-3), None, pytest.approx(1.0, abs=1e-3)],
+        [None, None, None],
+        [pytest.approx(1.0, abs=1e-3), None, pytest.approx(1.0, abs=1e-3)],
+    ]
     assert alone == pytest.approx(service.residual_ic(values, [], report.direction)[0])
 
 
@@ -76,13 +87,14 @@ def test_library_records_residual_only_when_enabled(tmp_path):
 
     def residual(frame, members, direction):
         calls.append(([identity for identity, _ in members], direction))
-        return 0.004, 0.25
+        return 0.004, 0.25, [0.5] * len(members)
 
     enabled = FactorLibrary(RULES, residual=residual)
     first = enabled.consider(*evaluated("a", np.arange(300.0)))
     second = enabled.consider(*evaluated("b", np.sin(np.arange(300.0))))
     assert (first.residual_ic, first.library_r2) == (0.004, 0.25)
     assert calls[0][0] == [] and calls[1][0] == [first.report.expression_id]
+    assert first.library_similarity == () and second.library_similarity == (0.5,)
     duplicate = enabled.consider(*evaluated("a", np.arange(300.0)))
     assert duplicate.reason == "expression_duplicate" and duplicate.residual_ic is None
     assert len(calls) == 2 and second.residual_ic == 0.004
@@ -93,9 +105,12 @@ def test_library_records_residual_only_when_enabled(tmp_path):
     store.record(1, plain, 0, 0, 0, 1)
     store.record(2, first, 0, 0, 0, 1)
     rows = [json.loads(p.read_text()) for p in sorted((tmp_path / "factor_trials").glob("*.json"))]
-    assert "residual_ic" not in rows[0]["feedback"] and "library_r2" not in rows[0]["feedback"]
+    assert not {"residual_ic", "library_r2", "library_similarity"} & rows[0]["feedback"].keys()
     assert rows[1]["feedback"]["residual_ic"] == 0.004
     assert [t["feedback"].get("residual_ic") for t in store.trials()] == [None, 0.004]
+    from alpha_atlas.storage import feedback_from_dict
+
+    assert feedback_from_dict(rows[1]["feedback"]) == first
 
 
 def test_library_residual_rule_is_explicit():
@@ -211,6 +226,13 @@ def test_v2_sync_runner_records_residuals_feeds_the_map_and_resumes(project, mon
     measured = [t["feedback"] for t in trials if t["feedback"]["report"]["status"] == "success"]
     assert measured and all(isinstance(f["residual_ic"], float) for f in measured)
     assert all(0.0 <= f["library_r2"] <= 1.0 for f in measured)
+    # Similarity is recorded against every member that existed when the trial was measured.
+    for trial in trials:
+        feedback = trial["feedback"]
+        if "library_similarity" in feedback:
+            assert len(feedback["library_similarity"]) == trial["library_size"] - int(
+                feedback["accepted"]
+            )
     assert read_json(directory / "checkpoint.json")["method_state"]["version"] == STATE_VERSION
     explorer = [c for c in restored.models.calls if "Atlas Explorer Agent" in c[0]]
     assert explorer and "residual_ic" in explorer[-1][0]
@@ -226,3 +248,157 @@ def test_v2_sync_runner_records_residuals_feeds_the_map_and_resumes(project, mon
     assert [t["feedback"].get("residual_ic") for t in RunStore(baseline).trials()] == [
         t["feedback"].get("residual_ic") for t in trials
     ]
+
+
+def test_seeded_residual_run_records_initial_landmarks_and_trial_similarity(project, version):
+    from test_initial_library import DuplicateSearch, seed_version
+
+    from alpha_atlas.checkpoint import read_json
+    from alpha_atlas.runner import run
+
+    seed_version(project, version)
+    path = project / "configs/versions" / f"{version}.json"
+    value = read_json(path)
+    value["rules"]["library_residual"] = "residual_ic_v1"
+    path.write_text(json.dumps(value))
+    directory = run(
+        project,
+        "ashare",
+        "fold1",
+        "random",
+        42,
+        attempts=2,
+        version=version,
+        method_impl=DuplicateSearch(),
+    )
+    spec = read_json(directory / "run.json")
+    assert spec["initial_library"]["correlations"] == [[pytest.approx(1.0, abs=1e-3)]]
+    behavior = RunStore(directory).trials()[1]["feedback"]
+    assert behavior["reason"] == "behavior_duplicate"
+    # 2 * $close duplicates the initial member: full similarity, no residual information.
+    assert behavior["library_similarity"] == [pytest.approx(1.0, abs=1e-3)]
+    assert behavior["library_r2"] == pytest.approx(1.0, abs=1e-4)
+    assert abs(behavior["residual_ic"]) < 1e-3
+
+
+def test_dashboard_views_read_a_residual_run_without_writing(project, version, tmp_path):
+    from test_initial_library import DuplicateSearch, seed_version
+
+    from alpha_atlas.dashboard import views
+    from alpha_atlas.runner import run
+
+    seed_version(project, version)
+    path = project / "configs/versions" / f"{version}.json"
+    value = json.loads(path.read_text())
+    value["rules"]["library_residual"] = "residual_ic_v1"
+    path.write_text(json.dumps(value))
+    directory = run(
+        project,
+        "ashare",
+        "fold1",
+        "random",
+        42,
+        attempts=2,
+        version=version,
+        method_impl=DuplicateSearch(),
+    )
+    before = {p: p.stat().st_mtime_ns for p in directory.rglob("*") if p.is_file()}
+    index = views.RunIndex(project)
+    listed = views.run_list(index)
+    assert [r["id"] for r in listed] == [directory.name] and listed[0]["residual"] is True
+    summary = views.summary(index, directory.name)
+    assert summary["completed"] == 2 and summary["initial_members"] == 1
+    assert summary["curve"][-1]["information"] == pytest.approx(
+        sum(t["feedback"].get("residual_ic") or 0 for t in RunStore(directory).trials())
+    )
+    mapped = views.map_view(index, directory.name)
+    assert mapped["available"] is True
+    kinds = sorted(p["kind"] for p in mapped["points"])
+    assert kinds.count("initial") == 1
+    # The behavior duplicate lies on top of the initial landmark it duplicates.
+    initial = next(p for p in mapped["points"] if p["kind"] == "initial")
+    duplicate = next(p for p in mapped["points"] if p["trial"] == 2)
+    assert duplicate["offshore"] is False
+    assert math.hypot(initial["x"] - duplicate["x"], initial["y"] - duplicate["y"]) < 0.02
+    assert all(0 <= p["x"] <= 1 and 0 <= p["y"] <= 1 for p in mapped["points"])
+    assert views.trial(index, directory.name, 2)["reason"] == "behavior_duplicate"
+    with pytest.raises(KeyError):
+        views.summary(index, "../elsewhere")
+    after = {p: p.stat().st_mtime_ns for p in directory.rglob("*") if p.is_file()}
+    assert after == before
+
+
+def test_dashboard_map_is_unavailable_without_residual_and_layout_helpers():
+    import math as _math
+
+    from alpha_atlas.dashboard.views import _classical_mds, _place
+
+    distance = np.array([[0, 1, 1], [1, 0, 1], [1, 1, 0]], dtype=float)
+    coordinates = _classical_mds(distance)
+    pairwise = [
+        np.linalg.norm(coordinates[i] - coordinates[j]) for i, j in ((0, 1), (0, 2), (1, 2))
+    ]
+    assert pairwise == pytest.approx([1, 1, 1], abs=1e-6)
+    landmarks = np.array([[0.0, 0.0], [1.0, 0.0]])
+    near_first, strongest = _place(landmarks, [0.99, 0.0])
+    assert strongest == 0.99 and np.linalg.norm(near_first - landmarks[0]) < 0.2
+    assert _place(landmarks, [0.1, None]) is None  # Offshore: no measured position.
+    assert _place(landmarks, []) is None
+    assert _math.isfinite(float(coordinates.sum()))
+
+
+def test_mechanism_regions_get_timelines_from_the_shared_status(project, monkeypatch):
+    from test_v1 import V1Models
+
+    from alpha_atlas.dashboard import views
+    from alpha_atlas.runner import run
+
+    enable_residual(project)
+    run(
+        project,
+        "ashare",
+        "fold1",
+        "v2_sync",
+        42,
+        3,
+        method_impl=V2SyncSearch(
+            42,
+            V2SyncConfig(chat_model="m", candidates_per_plan=1, probe_attempts=2),
+            models=V1Models(expressions=["$adj_close", "$volume", "$adj_close * $volume"]),
+        ),
+    )
+    index = views.RunIndex(project)
+    key = views.run_list(index)[0]["id"]
+    mapped = views.map_view(index, key)
+    plans = views.plans(index, key)
+    assert mapped["available"] and mapped["regions"]
+    for region in mapped["regions"]:
+        statuses = [step["status"] for step in region["timeline"]]
+        assert statuses[0] == "probing" or len(region["timeline"]) >= 2
+    assert sum(len(p["trials"]) for p in plans["plans"]) == 3
+    assert all(p["explorer"] for p in plans["plans"])
+
+
+def test_dashboard_http_serves_api_and_static_only(tmp_path):
+    import threading
+    import urllib.error
+    import urllib.request
+    from http.server import ThreadingHTTPServer
+
+    from alpha_atlas.dashboard import make_handler, views
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(views.RunIndex(tmp_path)))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        assert json.loads(opener.open(f"{base}/api/runs").read()) == []
+        assert b"AlphaAtlas" in opener.open(f"{base}/").read()
+        for path in ("/api/summary?id=missing", "/%2e%2e/__init__.py", "/../views.py"):
+            with pytest.raises(urllib.error.HTTPError) as error:
+                opener.open(base + path)
+            assert error.value.code == 404
+    finally:
+        server.shutdown()
+        server.server_close()

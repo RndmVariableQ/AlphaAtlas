@@ -191,6 +191,8 @@ class TrialFeedback:
     # Present only when the version enables library_residual; absent in older trials.
     residual_ic: float | None = None
     library_r2: float | None = None
+    # Correlation with each library member in library order; used to place the map.
+    library_similarity: tuple[float | None, ...] | None = None
 
 
 @dataclass(frozen=True)

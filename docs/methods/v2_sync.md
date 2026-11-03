@@ -44,6 +44,12 @@ uv run atlas run --version rq8_zk26_seeded_fold2_v2sync_v6 --method v2_sync --at
 uv run atlas run --version rq8_zk26_seeded_fold2_overview_luna_v5 --method v1 --attempts 300 --search-only
 ```
 
+## 观测台地图
+
+开启残差规则时，准入还记录候选与当时每个库成员的 Val 相关性（`library_similarity`），
+初始化时记录初始库成员两两相关性（`run.json` 的 `initial_library.correlations`）。
+`atlas ui` 只用这些记录绘制地图，无需重载行情；规则见[开发指南](../development.md#观测台)。
+
 ## 限制
 
 - 残差投影只去除线性冗余；非线性重复会被高估，组合增量仍以 `atlas experiment` 的配对

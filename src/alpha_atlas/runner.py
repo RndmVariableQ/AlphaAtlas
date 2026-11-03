@@ -341,6 +341,14 @@ def _search(directory, spec, method, progress, features, fold, runtime, checkpoi
             "members": entries,
             "elapsed_seconds": time.perf_counter() - started,
         }
+        if _library_residual(rules):
+            # Map landmarks: pairwise Valid correlations of the initial members.
+            spec["initial_library"]["correlations"] = evaluator.library_correlations(
+                [
+                    (e["report"]["expression_id"], observations[e["report"]["expression_id"]].frame)
+                    for e in entries
+                ]
+            )
         spec["config_fingerprint"] = config_fingerprint(spec)
         progress.status("running")
         library.restore(store.library_view(), lambda entry: observations[entry.factor_id])

@@ -867,36 +867,54 @@ class EvaluationService:
             frame = pl.DataFrame({"row_id": rows}).join(frame, on="row_id", how="left")
         return frame["value"].to_numpy().astype(np.float64)
 
+    def _library_matrix(self, members):
+        """Standardized Valid member columns in library order; None marks a flat member."""
+        rows = self._validation_targets()["row_id"]
+        identities = tuple(identity for identity, _ in members)
+        if self._residual_library is None or self._residual_library[0] != identities:
+            columns = [_standardize(self._aligned(frame, rows)) for _, frame in members]
+            used = [column for column, _ in filter(None, columns)]
+            matrix = np.column_stack(used) if used else np.zeros((len(rows), 0))
+            present = [column is not None for column in columns]
+            self._residual_library = (identities, matrix, matrix.T @ matrix, present)
+        return self._residual_library[1:]
+
+    def library_correlations(self, members) -> list[list[float | None]]:
+        """Pairwise Valid correlations of library members, in library order (map landmarks)."""
+        matrix, gram, present = self._library_matrix(members)
+        correlations = gram / max(1, matrix.shape[0])
+        positions = iter(range(matrix.shape[1]))
+        index = [next(positions) if flag else None for flag in present]
+        return [
+            [None if i is None or j is None else round(float(correlations[i, j]), 4) for j in index]
+            for i in index
+        ]
+
     def residual_ic(self, values: pl.DataFrame, members, direction: int):
         """Residual Valid IC scaled by sqrt(1 - library_r2); library_residual residual_ic_v1.
 
         values and members are committed Valid observations (row_id, value). The projection is
         unsupervised, so fitting it on Valid factor values uses no target information.
+        Also returns the candidate's correlation with each member in library order.
         """
         targets = self._validation_targets()
-        rows = targets["row_id"]
-        prepared = _standardize(self._aligned(values, rows))
+        prepared = _standardize(self._aligned(values, targets["row_id"]))
         if prepared is None or direction not in {-1, 1}:
-            return None, None
+            return None, None, None
         candidate, finite = prepared
-        identities = tuple(identity for identity, _ in members)
-        if self._residual_library is None or self._residual_library[0] != identities:
-            columns = [_standardize(self._aligned(frame, rows)) for _, frame in members]
-            matrix = np.column_stack(
-                [column for column, _ in filter(None, columns)] or [np.zeros((len(rows), 0))]
-            )
-            self._residual_library = (identities, matrix, matrix.T @ matrix)
-        _, matrix, gram = self._residual_library
+        matrix, gram, present = self._library_matrix(members)
+        correlations = iter((matrix.T @ candidate / max(1, matrix.shape[0])).tolist())
+        similarity = [round(next(correlations), 4) if flag else None for flag in present]
         residual, explained = library_projection(candidate, matrix, gram)
         frame = targets.with_columns(
             value=pl.Series(np.where(finite, residual * direction, np.nan)).fill_nan(None)
         )
         result = metric(frame, self.profile["metric"], "val", weights=self.weights.get("val")).value
         if result is None:
-            return None, explained
+            return None, explained, similarity
         # Correlation ignores scale, so a shrunken copy of a member would keep its full IC.
         # Weighting by the unexplained share falls continuously to zero for duplicates.
-        return result * math.sqrt(max(0.0, 1.0 - explained)), explained
+        return result * math.sqrt(max(0.0, 1.0 - explained)), explained, similarity
 
     def evaluate(self, candidate: Candidate) -> EvaluationReport:
         started = time.perf_counter()

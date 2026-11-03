@@ -86,7 +86,7 @@ def report_from_dict(value: dict) -> EvaluationReport:
 def _feedback_record(feedback: TrialFeedback) -> dict:
     """Omit unused residual fields so runs without library_residual keep their trial format."""
     value = asdict(feedback)
-    for key in ("residual_ic", "library_r2"):
+    for key in ("residual_ic", "library_r2", "library_similarity"):
         if value[key] is None:
             del value[key]
     return value
@@ -98,6 +98,8 @@ def feedback_from_dict(value: dict) -> TrialFeedback:
         value["factor_trial_index"] = value.pop("trial_index")
     if "nearest_factor" in value:
         value["nearest_factor_id"] = value.pop("nearest_factor")
+    if value.get("library_similarity") is not None:
+        value["library_similarity"] = tuple(value["library_similarity"])
     return TrialFeedback(
         **{
             **value,

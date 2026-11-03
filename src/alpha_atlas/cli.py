@@ -84,6 +84,10 @@ def main() -> None:
         "--oos", action="store_true", help="Display saved OOS results without computing or writing"
     )
     commands.add_parser("compare")
+    ui = commands.add_parser("ui", help="Serve the local read-only run dashboard")
+    ui.add_argument("--host", default="127.0.0.1")
+    ui.add_argument("--port", type=int, default=8780)
+    ui.add_argument("--runs", type=Path, nargs="*", default=[], help="Extra run roots")
     args = parser.parse_args()
     if args.command in {"run", "resume", "test", "model", "finish", "experiment"}:
         logger = logging.getLogger("alpha_atlas.progress")
@@ -91,6 +95,11 @@ def main() -> None:
         logger.propagate = False
         logger.handlers = [logging.StreamHandler()]
     root = args.root.resolve()
+    if args.command == "ui":
+        from alpha_atlas.dashboard import serve
+
+        serve(root, args.host, args.port, args.runs)
+        return
     if args.command == "versions":
         from alpha_atlas.versions import load_version
 

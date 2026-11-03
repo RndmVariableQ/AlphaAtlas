@@ -24,6 +24,7 @@
 | [runner.py](../src/alpha_atlas/runner.py)、[checkpoint.py](../src/alpha_atlas/checkpoint.py) | 运行、恢复、冻结与 OOS |
 | [storage.py](../src/alpha_atlas/storage.py)、[reporting.py](../src/alpha_atlas/reporting.py) | 原子记录、只读重建与报告 |
 | [terminal.py](../src/alpha_atlas/terminal.py) | 终端进度与流式状态，各层共用，不读写记录 |
+| [dashboard/](../src/alpha_atlas/dashboard/) | 本地只读观测台：运行监控、研究记录与残差地图 |
 | [cli.py](../src/alpha_atlas/cli.py) | 命令行入口 |
 
 ```text
@@ -96,6 +97,24 @@ Explorer 的收敛提醒在第 21 次对话前独立记录一次，后续请求�
 正式报告仍保留品种等权指标，A 股沿用原有指标。
 展示只读取已有结果，不计算指标或裁决状态。进度写入 stderr，stdout 保留命令结果；
 `--quiet` 关闭全部进度。运行产物仍是研究证据和恢复的权威来源。
+
+## 观测台
+
+`atlas ui` 启动仅监听本机的只读 HTTP 服务（标准库，无前端依赖），扫描 `artifacts/runs`、
+`artifacts/comparisons/*/workspace/artifacts/runs` 及 `--runs` 指定目录。接口只读取 run.json、
+检查点与原子 trial，不写文件、不加运行锁、不重算因子；运行 ID 是不透明键，不接受路径。
+
+- **监控**：状态、进度、入库、累计残差信息、评估结果分布、当前计划、模型用量与速度。
+  `running` 超过 30 分钟无新记录显示为疑似停滞，仅作提示。
+- **研究记录**：按 `research_plan_index` 展示 Explorer 提案与评分、Analyst 计划、Miner 候选及
+  平台评估、退火裁决和受阻计划；所有方法的研究计划记录均可查看。
+- **地图**：仅开启 `library_residual` 的运行可用。库成员为地标，按记录的成员相关性做经典 MDS；
+  候选按与当时成员的相关性做单点应力最小化定位，与全库相关性均低于 0.2 的放在外海并按机制
+  分组（位置不表示相关性）。海拔为 `(residual_ic − sea_level)/sea_level`，初始库成员视为已知
+  陆地；没有点的区域为迷雾。区域状态直接调用 `v2_sync.mechanism_status`，与方法一致。
+  噪声、光照和云雾只是渲染纹理，不代表数据。时间轴按 trial 编号回放，坐标取最新成员集合，
+  回放只隐藏之后出现的点；新成员加入时布局可能整体微调。
+- 链接参数 `#run=<id>&tab=map|plans|monitor&plan=<n>|trial=<n>` 可直接打开指定视图。
 
 ## 文档维护
 

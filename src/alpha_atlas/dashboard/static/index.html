@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AlphaAtlas 观测台</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<aside id="sidebar">
+  <div class="brand"><span class="logo">◈</span><div><b>AlphaAtlas</b><small>研究观测台</small></div></div>
+  <input id="run-filter" placeholder="筛选运行：方法、模型、版本…">
+  <div id="run-list"></div>
+</aside>
+
+<main id="main">
+  <header id="runbar">
+    <div class="title-row">
+      <h1 id="run-title">选择一个运行</h1>
+      <span id="run-status" class="pill"></span>
+    </div>
+    <div id="run-meta" class="meta"></div>
+    <div class="stats" id="run-stats"></div>
+    <div class="progress"><div id="run-progress"></div></div>
+  </header>
+
+  <nav id="tabs">
+    <button data-tab="map" class="active">知识地图</button>
+    <button data-tab="plans">研究记录</button>
+    <button data-tab="monitor">运行监控</button>
+  </nav>
+
+  <section id="view-map" class="view active">
+    <div id="map-wrap">
+      <canvas id="map"></canvas>
+      <div id="map-empty" class="map-empty hidden"></div>
+      <div id="tooltip" class="tooltip hidden"></div>
+      <div class="legend">
+        <div class="legend-title">图例</div>
+        <div><i class="sw land"></i>陆地：残差信息高于海平面</div>
+        <div><i class="sw saturated"></i>饱和：近期尝试不再浮出水面</div>
+        <div><i class="sw seabed"></i>海底：已探索、无新信息</div>
+        <div><i class="sw fog"></i>迷雾：尚未探索</div>
+        <div><i class="sw probing"></i>勘探中：尝试次数不足</div>
+        <div class="legend-marks"><span class="mk admitted">◆</span>入库 <span class="mk initial">■</span>初始库 <span class="mk cand">●</span>候选</div>
+        <div id="map-note" class="note"></div>
+      </div>
+      <div class="map-tools">
+        <button id="zoom-in" title="放大">＋</button>
+        <button id="zoom-out" title="缩小">－</button>
+        <button id="zoom-reset" title="复位">⌂</button>
+      </div>
+      <div id="compass" class="compass">N</div>
+    </div>
+    <div id="timeline">
+      <button id="play" title="回放">▶</button>
+      <div class="slider-wrap">
+        <canvas id="spark"></canvas>
+        <input type="range" id="time" min="0" max="0" value="0">
+      </div>
+      <div id="time-label">—</div>
+      <label class="live"><input type="checkbox" id="live" checked> 跟随最新</label>
+    </div>
+  </section>
+
+  <section id="view-plans" class="view">
+    <div class="toolbar"><input id="plan-filter" placeholder="筛选：区域、方向、表达式…"></div>
+    <div id="plan-list"></div>
+  </section>
+
+  <section id="view-monitor" class="view">
+    <div class="grid">
+      <div class="card wide"><h3>库的增长</h3><svg id="chart-growth"></svg></div>
+      <div class="card wide"><h3>每次尝试的残差信息 <small>虚线为海平面</small></h3><svg id="chart-residual"></svg></div>
+      <div class="card"><h3>评估结果</h3><div id="reasons"></div></div>
+      <div class="card"><h3>当前研究</h3><div id="current"></div></div>
+      <div class="card"><h3>资源与速度</h3><div id="usage"></div></div>
+      <div class="card"><h3>方法配置</h3><div id="config"></div></div>
+    </div>
+  </section>
+</main>
+
+<aside id="detail" class="collapsed">
+  <button id="detail-close" title="关闭">×</button>
+  <div id="detail-body"></div>
+</aside>
+
+<script src="/app.js"></script>
+</body>
+</html>

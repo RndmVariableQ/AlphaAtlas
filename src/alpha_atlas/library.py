@@ -230,7 +230,7 @@ class FactorLibrary:
                     complete = not (
                         failures & {"insufficient_corr_overlap", "undefined_correlation"}
                     )
-        residual_ic = library_r2 = None
+        residual_ic = library_r2 = similarity = None
         if (
             self._residual is not None
             and report.status == "success"
@@ -240,7 +240,7 @@ class FactorLibrary:
             and values.expression_id == identity
             and values.frame["row_id"].n_unique() == values.frame.height
         ):
-            residual_ic, library_r2 = self._residual(
+            residual_ic, library_r2, similarity = self._residual(
                 values.frame,
                 [(factor_id, self._load(factor_id)) for factor_id in self._members],
                 report.direction,
@@ -259,6 +259,7 @@ class FactorLibrary:
             factor_trial_index=factor_trial_index,
             residual_ic=residual_ic,
             library_r2=library_r2,
+            library_similarity=None if similarity is None else tuple(similarity),
         )
         if accepted:
             if (
