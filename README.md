@@ -113,79 +113,65 @@ uv run atlas audit-data --asset ashare
 不能替代全面的金融数据质量审查，未完成的数据集默认不能用于正式实验。
 数据口径与已知例外见[研究协议](docs/research_protocol.md)和[数据验收记录](docs/records/data.md)。
 
-## 主入口与最小运行
+## 架构
 
-已固定的数据与算子版本可直接选择，无须重复填写资产、字段和 fold：
+依赖只向下：上层读取下层的结果，下层不感知上层。
 
-```powershell
-uv run atlas versions
-uv run atlas run --version rq8_zk26_fold2_v2 --method random
+```text
+结论层  runs/<id>/report.md → experiment_overview.md → docs/records/
+实验层  runner（单次运行） · experiment（单次收尾） · incremental（多运行配对比较）
+方法层  methods/*：只负责生成候选与奖励，经 SearchSession 访问公共工具
+平台层  DSL／算子 · 评估 · 因子库准入 · 预算 · 原子 trial 与恢复
+数据层  assets/ → MarketData · configs/versions/ 冻结数据版本 · 参考因子库
 ```
 
-`rq8_fold2_v1` 固定原八字段和 60 个算子；`rq8_zk26_fold2_v2` 固定八字段加 26 项月频
-Zookeeper 特征和 66 个算子。两个版本均固定 fold2、数据快照、评价规则、方法配置与
-Linear/LightGBM 参数。默认命令在冻结后完成模型/OOS；批量研究先加 `--search-only`。
-已有付费数据需在本地准备，数据不随 Git 分发；缺少或不匹配的快照会报错。
-版本入口与复现边界见[研究协议](docs/research_protocol.md#数据与算子版本)。
+| 层 | 位置 | 权威内容 |
+| --- | --- | --- |
+| 数据 | [assets/](src/alpha_atlas/assets/)、[configs/versions/](configs/versions/) | 快照、字段、fold、算子、评价规则与模型配置；冻结后不改，变更新建版本 |
+| 平台 | [expressions.py](src/alpha_atlas/expressions.py)、[evaluation.py](src/alpha_atlas/evaluation.py)、[library.py](src/alpha_atlas/library.py)、[session.py](src/alpha_atlas/session.py) | 数值、准入、预算与冻结，所有方法共用 |
+| 方法 | [methods/](src/alpha_atlas/methods/) | 搜索策略、奖励、提示词与方法状态 |
+| 实验 | [runner.py](src/alpha_atlas/runner.py)、[experiment.py](src/alpha_atlas/experiment.py)、[incremental.py](src/alpha_atlas/incremental.py)、[configs/experiments/](configs/experiments/) | 单次运行、冻结后 OOS／模型，以及预先声明的多方法比较 |
+| 结论 | 运行目录 `report.md`、[experiment_overview.md](experiment_overview.md)、[docs/records/](docs/records/experiments.md) | 自动报告与结果总表；结论和限制写入实验记录 |
 
-命令行入口是 `atlas`，定义于 [cli.py](src/alpha_atlas/cli.py)，统一研究流程由
-[runner.py](src/alpha_atlas/runner.py) 执行。完成数据准备后，可运行一个小预算实验：
+一次研究的顺序：选定数据版本 → 在 `configs/experiments/` 写下问题、方法、预算与指标 →
+搜索并冻结 → 全部开发决策固定后打开 Test → 自动填写总表，人工在实验记录中写结论。
+train/val 用于开发反馈；test 不参与搜索、入库或因子选择。
 
-```powershell
-# 搜索使用 train/val；冻结后自动评估单因子、组合模型和 Val 库内相似度，再填表
-$result = uv run atlas run --asset futures --fold fold1 --method random --seed 42 --attempts 10 |
-    ConvertFrom-Json
+## 实验入口
 
-# 根据已保存的实验记录生成报告
-uv run atlas report $result.run_dir
+以下命令在仓库根目录执行。数据不随 Git 分发，缺少或不匹配的快照会报错。
+
+| 用途 | 命令 |
+| --- | --- |
+| 查看数据状态／审计 | `uv run atlas data-status`、`uv run atlas audit-data --asset futures` |
+| 采集数据（显式发起） | `uv run python scripts/acquire_data.py futures --env-file <凭据文件>` |
+| 列出／查看冻结版本 | `uv run atlas versions`、`uv run atlas versions rq8_zk26_fold2_v2` |
+| 单次运行（含收尾） | `uv run atlas run --version <版本> --method <方法> --attempts 300` |
+| 只搜索并冻结 | 上述命令加 `--search-only` |
+| 中断后续跑 | `uv run atlas resume artifacts/runs/<run_id>`（可加 `--search-only`） |
+| 冻结后收尾 | `uv run atlas finish artifacts/runs/<run_id>`：单因子 OOS、Linear／LightGBM、库内相似度，并填总表 |
+| 单项评估 | `uv run atlas test <run_dir>`、`uv run atlas model <run_dir> [--test]` |
+| 重建／查看报告 | `uv run atlas report <run_dir>`、`uv run atlas report <run_dir> --oos` |
+| 多方法配对比较 | `uv run atlas experiment configs/experiments/<plan>/<scope>.json` |
+| 比较只搜索／打开 Test | 上述命令加 `--search-only`；全部 scope 拟合完成后加 `--test` |
+| 参考因子库 | `uv run python scripts/evaluate_zookeeper.py --fold fold2`、`uv run python scripts/evaluate_reference.py --fold fold1 --bars-per-day 48` |
+
+方法名见[方法目录](docs/methods/README.md)；`random`、`gp`、`mcts`、`atlas` 无需模型服务。
+`atlas experiment` 的 scope 列出 `runs` 时复用已冻结运行，否则按方法 × seed 启动搜索；
+运行 ID 由 scope、方法和 seed 确定，重复同一命令即续跑。默认输出到
+`artifacts/experiments/<scope.id>/`，历史结果用 `--output` 指定原目录。
+
+最小示例（无需模型服务）：
+
+```bash
+uv run atlas run --version rq8_zk26_fold2_v2 --method random --attempts 10
 ```
 
-运行结果保存在 `artifacts/runs/<run_id>/`，阅读入口为其中的 `report.md`；
-三项评估全部完成后自动更新 `experiment_overview.md` 中对应 fold 的结果表和相似度表。
-每个运行独立维护因子库与地图，小预算示例不保证产生入库因子。
-
-默认开放当前数据集的全部可用数值特征字段，并将实际字段列表保存到运行记录。
-`--fields` 仅用于显式缩小输入范围；身份、成员资格、质量、复权因子元数据和标签不属于默认特征。
-
-Research Kernel 的完整字段期货实验使用 `--asset futures_kernel_5m_full`，默认包含复权 OHLC、
-复权 VWAP、成交量、成交额和 `open_interest`。准备数据与来源见[数据验收记录](docs/records/data.md)。
-历史四字段资产 `futures_kernel_5m` 供既有运行恢复与评估；完整字段实验使用新快照和新运行。
-
-中断后可沿用原运行与预算恢复，将占位路径替换为实际运行目录：
-
-```powershell
-uv run atlas resume artifacts/runs/<run_id>
-```
-
-`run`、`resume` 默认执行完整流程。若搜索已冻结而后处理曾中断，`resume` 会继续后处理；
-也可单独补跑完成流程：
-
-```powershell
-uv run atlas finish artifacts/runs/<run_id>
-```
-
-已保存的模型与评估结果会复用；失败不填表，重试补齐未完成阶段，同一运行不会重复新增行。
-无入库因子的运行仍记录空库，组合模型显示不适用。正常收尾不发起模型服务请求。
-
-正式比较先冻结同组全部开发决策，再批量查看样本外结果；用 `--search-only` 推迟后处理：
-
-```powershell
-uv run atlas run --asset futures --fold fold1 --method random --attempts 10 --search-only
-uv run atlas resume artifacts/runs/<run_id> --search-only
-uv run atlas finish artifacts/runs/<run_id>
-```
-
-各单项入口仍可独立使用：
-
-```powershell
-uv run atlas test $result.run_dir
-uv run atlas report $result.run_dir --oos
-```
-
-`test` 计算冻结因子库的 OOS 指标；`report --oos` 只展示已保存的结果。
-test 不参与搜索、入库或因子选择，持续反馈给搜索的 val 属于开发验证集。
-
-开发入口与检查要求见[开发指南](docs/development.md)。
+运行结果保存在 `artifacts/runs/<run_id>/`，阅读入口为其中的 `report.md`。已保存的模型与
+评估结果会复用；失败不填表，同一运行不会重复新增行。正常收尾不请求模型服务。
+旧运行沿用 `--asset <资产> --fold <fold>` 入口恢复与评估；新实验使用 `--version`。
+`--fields` 只用于显式缩小字段；身份、成员、质量、复权元数据与标签不属于默认特征。
+开发与检查要求见[开发指南](docs/development.md)。
 
 ## 文档导航
 
