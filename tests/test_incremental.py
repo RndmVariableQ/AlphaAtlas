@@ -517,3 +517,66 @@ def test_refit_rejects_undeclared_source_version_and_invalid_union_setting(tmp_p
     atomic_json(tmp_path / "scope.json", scope)
     with pytest.raises(ValueError, match="include_union must be boolean"):
         _load_study(tmp_path, tmp_path / "scope.json", [tmp_path / "search"])
+
+
+def _scope_version():
+    return {"id": "v_test", "asset": "futures", "universe": "all", "fold": {"id": "fold2"}}
+
+
+def test_scope_reuses_listed_runs_without_starting_searches(tmp_path, monkeypatch):
+    from alpha_atlas import incremental
+
+    monkeypatch.setattr(incremental, "run", lambda *a, **k: pytest.fail("must not search"))
+    scope = {"id": "s", "methods": ["random"], "seeds": [42], "runs": ["artifacts/runs/x"]}
+    assert incremental._scope_runs(tmp_path, scope) == [tmp_path / "artifacts/runs/x"]
+
+
+def test_scope_starts_then_resumes_the_same_deterministic_run(tmp_path, monkeypatch):
+    from alpha_atlas import incremental
+
+    calls = []
+    monkeypatch.setattr(incremental, "load_version", lambda root, name: _scope_version())
+
+    def fake_run(root, asset, fold, method, seed, attempts, *, version, run_key):
+        calls.append(("run", method, attempts, version, run_key))
+        directory = root / "artifacts/runs" / f"{asset}-all-{fold}-{method}-{seed}-{run_key}"
+        directory.mkdir(parents=True)
+        atomic_json(directory / "run.json", {"status": "running"})
+        return directory
+
+    monkeypatch.setattr(incremental, "run", fake_run)
+    monkeypatch.setattr(incremental, "resume", lambda root, d: calls.append(("resume", d.name)))
+    scope = {
+        "id": "s",
+        "experiment_version": "v_test",
+        "methods": ["random", "gp"],
+        "seeds": [42],
+        "attempts_per_method": 7,
+    }
+    first = incremental._scope_runs(tmp_path, scope)
+    assert [c[:4] for c in calls] == [("run", "random", 7, "v_test"), ("run", "gp", 7, "v_test")]
+    assert calls[0][4] == hashlib.sha256(b"s/random/42").hexdigest()[:10]
+    calls.clear()
+    assert incremental._scope_runs(tmp_path, scope) == first
+    assert calls == [("resume", first[0].name), ("resume", first[1].name)]
+    atomic_json(first[0] / "run.json", {"status": "frozen"})
+    calls.clear()
+    incremental._scope_runs(tmp_path, scope)
+    assert calls == [("resume", first[1].name)]
+
+
+def test_scope_refuses_a_run_directory_without_specification(tmp_path, monkeypatch):
+    from alpha_atlas import incremental
+
+    monkeypatch.setattr(incremental, "load_version", lambda root, name: _scope_version())
+    key = hashlib.sha256(b"s/random/42").hexdigest()[:10]
+    (tmp_path / f"artifacts/runs/futures-all-fold2-random-42-{key}").mkdir(parents=True)
+    scope = {
+        "id": "s",
+        "experiment_version": "v_test",
+        "methods": ["random"],
+        "seeds": [42],
+        "attempts_per_method": 7,
+    }
+    with pytest.raises(ValueError, match="no saved specification"):
+        incremental._scope_runs(tmp_path, scope)

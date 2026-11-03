@@ -55,7 +55,16 @@ def main() -> None:
         "finish", help="Evaluate a frozen experiment and update its tables"
     )
     finish.add_argument("run_dir", type=Path)
-    for command in (run, resume):
+    experiment = commands.add_parser(
+        "experiment",
+        help="Run a declared comparison scope: searches, paired fit, then optional Test",
+    )
+    experiment.add_argument("scope", type=Path, help="Scope JSON under configs/experiments")
+    experiment.add_argument("--output", type=Path, help="Default: artifacts/experiments/<id>")
+    experiment.add_argument(
+        "--test", action="store_true", help="Open Test after every paired model is saved"
+    )
+    for command in (run, resume, experiment):
         command.add_argument(
             "--search-only", action="store_true", help="Freeze search without opening Test"
         )
@@ -66,7 +75,7 @@ def main() -> None:
     model.add_argument(
         "--test", action="store_true", help="Evaluate saved models on test; no refit"
     )
-    for command in (run, resume, oos, model, finish):
+    for command in (run, resume, oos, model, finish, experiment):
         command.add_argument("--quiet", action="store_true", help="Hide progress output")
     report = commands.add_parser("report", help="Rebuild the Markdown run report from records")
     report.add_argument("run_dir", type=Path)
@@ -75,7 +84,7 @@ def main() -> None:
     )
     commands.add_parser("compare")
     args = parser.parse_args()
-    if args.command in {"run", "resume", "test", "model", "finish"}:
+    if args.command in {"run", "resume", "test", "model", "finish", "experiment"}:
         logger = logging.getLogger("alpha_atlas.progress")
         logger.setLevel(logging.CRITICAL + 1 if args.quiet else logging.INFO)
         logger.propagate = False
@@ -167,6 +176,16 @@ def main() -> None:
 
         result = {"run_dir": str(args.run_dir.resolve())}
         result.update(finish_experiment(root, args.run_dir.resolve()))
+    elif args.command == "experiment":
+        from alpha_atlas.incremental import run_scope
+
+        result = run_scope(
+            root,
+            args.scope,
+            args.output.resolve() if args.output else None,
+            test=args.test,
+            search_only=args.search_only,
+        )
     elif args.command == "model":
         from alpha_atlas.runner import run_model
 

@@ -22,27 +22,11 @@ B26 的预处理、预测和评分样本一致。先完成所有 scope 的拟合
 在仓库根目录执行：
 
 ```bash
-UV_CACHE_DIR=/tmp/alpha-atlas-uv-cache POLARS_MAX_THREADS=8 \
-OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=4 uv run python - <<'PY'
-import json
-import subprocess
-import sys
-from pathlib import Path
-
-config = Path("configs/experiments/zk26_single_methods_v5_20261103")
-output = Path("artifacts/comparisons/zk26_single_methods_v5_20261103")
-groups = ("earlier_methods", "overview_methods")
-for phase in ("fit", "test"):
-    for group in groups:
-        path = config / f"{group}.json"
-        scope = json.loads(path.read_text())
-        args = [sys.executable, "scripts/evaluate_incremental.py",
-                "--scope", str(path), "--runs", *scope["runs"],
-                "--output", str(output / group)]
-        if phase == "test":
-            args.append("--test")
-        subprocess.run(args, check=True)
-PY
+for group in earlier_methods overview_methods; do
+  uv run atlas experiment configs/experiments/zk26_single_methods_v5_20261103/$group.json \
+    --output artifacts/comparisons/zk26_single_methods_v5_20261103/$group
+done
+# 两组都拟合完成后，对每组重复上述命令并追加 --test。
 ```
 
 每组保存 `fit.json`、`test.json`、`results.jsonl`、`factors.jsonl`。

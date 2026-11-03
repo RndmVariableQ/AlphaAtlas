@@ -124,6 +124,7 @@ def run(
     method_impl=None,
     runtime=None,
     version: str | None = None,
+    run_key: str | None = None,
 ) -> Path:
     experiment_version = None
     if version is not None:
@@ -180,7 +181,9 @@ def run(
     resumable = not hasattr(method, "run") and all(
         callable(getattr(method, name, None)) for name in ("dump_state", "load_state")
     )
-    run_id = f"{asset}-{universe}-{fold_id}-{method_name}-{seed}-{uuid.uuid4().hex[:10]}"
+    # A caller-supplied key makes the run directory addressable before the search finishes.
+    key = run_key or uuid.uuid4().hex[:10]
+    run_id = f"{asset}-{universe}-{fold_id}-{method_name}-{seed}-{key}"
     directory = root / "artifacts/runs" / run_id
     directory.mkdir(parents=True)
     spec = {

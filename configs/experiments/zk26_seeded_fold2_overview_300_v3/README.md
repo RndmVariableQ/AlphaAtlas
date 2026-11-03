@@ -37,10 +37,7 @@ AlphaSchema 的 150 个有效完整计划奖励阈值保持原值。两个周期
 两项搜索均冻结后，使用同一 scope 和运行目录先执行拟合，再显式增加 `--test`：
 
 ```bash
-uv run python scripts/evaluate_incremental.py \
-  --scope configs/experiments/zk26_seeded_fold2_overview_300_v3/two_methods.json \
-  --runs artifacts/runs/futures_kernel_5m_full-all-fold2-v1_async-42-5f77947f20 \
-         artifacts/runs/futures_kernel_5m_full-all-fold2-alphaschema-42-3a4f640d02 \
+uv run atlas experiment configs/experiments/zk26_seeded_fold2_overview_300_v3/two_methods.json \
   --output artifacts/comparisons/zk26_seeded_fold2_overview_luna_300_v3
 ```
 

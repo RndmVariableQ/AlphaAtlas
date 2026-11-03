@@ -365,12 +365,12 @@ B 与 B + L(m, k)，不按 Test、单因子排名或人工判断筛选新因子�
 uv run atlas run --version rq8_zk26_fold2_luna_v3 --method v1 --seed 42 --attempts 300 --search-only
 ```
 
-搜索命令复用现有 runner；配对增量入口为 `scripts/evaluate_incremental.py`，使用及产物见
+搜索与配对增量统一由 `atlas experiment <scope.json>` 执行，搜索复用现有 runner；使用及产物见
 [配对模型评估](model.md#固定-baseline-的配对增量实验)。普通 `atlas model` 和 `atlas finish`
 评价的是单个冻结库，不能冒充 B 与 B+L 的比较。配对入口复用 `model.py` 的特征、拟合、
 预测及 `evaluation.py` 的指标；合成数据覆盖行对齐、空库／重复、恒定预测、缺失、前缀和
 Test 隔离，不另建搜索工具、检查点或预算系统。
-配对结果独立保存到 `artifacts/comparisons/`；逐行派生 `.parq` 留在 Git 排除的 `data/`。
+配对结果默认保存到 `artifacts/experiments/<scope.id>/`（历史结果在 `artifacts/comparisons/`）；逐行派生 `.parq` 留在 Git 排除的 `data/`。
 不覆盖历史 baseline 或普通运行 `model/`。未来的真实结果写入实验记录，本节只规定设计。
 
 2024–2025 已被查看，结论标为历史诊断留出集增量。未查看的后续期间可以另行预注册作确认，

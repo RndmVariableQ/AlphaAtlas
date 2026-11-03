@@ -26,6 +26,8 @@ from alpha_atlas.runner import (
     _registry,
     _runtime,
     check_config,
+    resume,
+    run,
     source_fingerprint,
 )
 from alpha_atlas.storage import RunStore
@@ -453,3 +455,55 @@ def evaluate_incremental(root, scope_path, directories, output, *, test=False):
             )
             atomic_json(test_path, result)
         return {"output": str(test_path if test else fit_path)}
+
+
+def _scope_runs(root, scope):
+    """Reuse listed runs, or start/resume one search per planned method and seed."""
+    if "runs" in scope:
+        return [root / path for path in scope["runs"]]
+    version = load_version(
+        root, scope.get("source_experiment_version", scope["experiment_version"])
+    )
+    directories = []
+    for method in scope["methods"]:
+        for seed in scope["seeds"]:
+            key = hashlib.sha256(f"{scope['id']}/{method}/{seed}".encode()).hexdigest()[:10]
+            run_id = (
+                f"{version['asset']}-{version['universe']}-{version['fold']['id']}"
+                f"-{method}-{seed}-{key}"
+            )
+            directory = root / "artifacts/runs" / run_id
+            if not directory.exists():
+                run(
+                    root,
+                    version["asset"],
+                    version["fold"]["id"],
+                    method,
+                    seed,
+                    scope["attempts_per_method"],
+                    version=version["id"],
+                    run_key=key,
+                )
+            elif not (directory / "run.json").exists():
+                raise ValueError(f"planned run has no saved specification: {directory}")
+            elif read_json(directory / "run.json")["status"] != "frozen":
+                resume(root, directory)
+            directories.append(directory)
+    return directories
+
+
+def run_scope(root, scope_path, output=None, *, test=False, search_only=False):
+    """Run one declared comparison: searches, then paired fit; Test only when asked."""
+    root, scope_path = root.resolve(), scope_path.resolve()
+    scope = read_json(scope_path)
+    output = (output or root / "artifacts/experiments" / scope["id"]).resolve()
+    directories = _scope_runs(root, scope)
+    result = {"scope": scope["id"], "runs": [str(d.relative_to(root)) for d in directories]}
+    if search_only:
+        return result
+    result["fit"] = evaluate_incremental(root, scope_path, directories, output)["output"]
+    if test:
+        result["test"] = evaluate_incremental(root, scope_path, directories, output, test=True)[
+            "output"
+        ]
+    return result

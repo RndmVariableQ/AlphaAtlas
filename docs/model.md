@@ -101,7 +101,7 @@ rounds。参数在首次训练前固定；重复命令复用保存结果，不�
 
 ## 固定 baseline 的配对增量实验
 
-`scripts/evaluate_incremental.py` 按[固定预算协议](research_protocol.md#zookeeper-26-项组合的固定预算增量实验)
+`atlas experiment <scope.json>` 按[固定预算协议](research_protocol.md#zookeeper-26-项组合的固定预算增量实验)
 装配 B26 与 B26＋冻结新库。当前统一 v5、仅逐方法比较的入口见
 [复跑配置](../configs/experiments/zk26_single_methods_v5_20261103/README.md)。
 各 scope 设置 `include_union=false`，不会拟合或评分并集。省略此字段保留历史 scope 的语义。
@@ -109,7 +109,10 @@ rounds。参数在首次训练前固定；重复命令复用保存结果，不�
 并校验两版本的数据、字段、算子、目标、fold 和初始 B26 相同。搜索仍按其原版本通过冻结
 校验，配对模型配置必须等于预先指定的 baseline 配置；不改写来源运行或筛选成员。
 
-必须提供计划中的全部搜索运行。历史三方法首批使用
+scope 列出 `runs` 时直接复用这些冻结运行；未列出时按方法 × seed 启动搜索，运行 ID
+由 scope、方法和 seed 确定，中断后重复同一命令即续跑原运行。默认输出到
+`artifacts/experiments/<scope.id>/`，历史输出目录用 `--output` 指定。
+必须覆盖计划中的全部搜索运行。历史三方法首批使用
 `configs/experiments/zk26_seeded_fold2_300_v2/three_methods.json`。
 该 scope 固定 AlphaProbe、AlphaSchema、MCTS-LLM，seed 42，各 300 次；三个运行全部冻结后
 才能拟合，分别保留 200/300 前缀以及三方法并集，不代表完整十一方法并集。
@@ -118,11 +121,10 @@ rounds。参数在首次训练前固定；重复命令复用保存结果，不�
 校验。v4 计划引用该可发布副本，避免基准定义只存在于 Git 排除的 `artifacts/` 目录。
 
 ```bash
-uv run python scripts/evaluate_incremental.py \
-  --scope configs/experiments/zk26_seeded_fold2_300_v2/three_methods.json \
-  --runs artifacts/runs/<alphaprobe> artifacts/runs/<alphaschema> artifacts/runs/<mcts_llm> \
+uv run atlas experiment configs/experiments/zk26_seeded_fold2_300_v2/three_methods.json \
   --output artifacts/comparisons/zk26_seeded_fold2_three_methods_300_v2
 # 同一命令追加 --test，才读取 Test；要求所有组的两个模型已经保存。
+# --search-only 只启动或续跑搜索，不拟合。
 ```
 
 实现位于 `incremental.py`，复用 MarketData、DSL、冻结因子身份及 `model.py`。
