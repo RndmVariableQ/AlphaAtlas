@@ -50,7 +50,9 @@ class FeedbackModel:
         previous = 0
         for msg in messages:
             if msg["role"] == "user" and msg["content"].startswith('{"tool_result"'):
-                previous = json.loads(msg["content"])["tool_result"].get("trial_index", previous)
+                previous = json.loads(msg["content"])["tool_result"].get(
+                    "factor_trial_index", previous
+                )
         price = "adj_close" if "| `$adj_close` |" in messages[0]["content"] else "close"
         return command(expression=f"${price} + {previous}"), {
             "prompt_tokens": 12,
@@ -282,6 +284,21 @@ def step(method, current):
     return feedback
 
 
+@pytest.mark.parametrize("prefix", ["", "<think>Inspect the library first.</think>\n"])
+def test_fenced_react_tool_requests_preserve_raw_replies_and_attempt_cost(tmp_path, prefix):
+    current = session(tmp_path, budget=1)
+    replies = [
+        prefix + "```json\n" + command("library_stats") + "\n```",
+        prefix + "```json\n" + command(expression="$x") + "\n```",
+    ]
+    method = search(current, replies)
+    result = step(method, current)
+    assert result.candidate.expression == "$x"
+    assert current.attempts_used == 1 and current.remaining_budget() == 0
+    assert method.usage["chat_requests"] == 2
+    assert [request["content"] for request, _ in method.rounds] == replies
+
+
 def cycles(n):
     return [
         [
@@ -408,7 +425,7 @@ def test_all_react_tools_round_trip_through_json_dispatch(tmp_path):
         "library_stats",
     }
     context = by_tool["get_context"]
-    assert len(context["fields"]) == 24 and len(context["operators"]) == 60
+    assert len(context["fields"]) == 24 and len(context["operators"]) == 66
     assert context["frequency"] == "5m"
     assert all(op["description"] for op in context["operators"])
     assert context["expression_rules"]["timeframes"]["suffixes"] == [
@@ -422,7 +439,7 @@ def test_all_react_tools_round_trip_through_json_dispatch(tmp_path):
     reference = by_tool["library_search"]["results"][0]
     assert reference["expression"] == "RETURN($close, 63)" and not reference["admitted"]
     assert reference["missing_fields"] == [] and "metrics" not in reference
-    assert by_tool["evaluate"]["accepted"] and by_tool["evaluate"]["trial_index"] == 1
+    assert by_tool["evaluate"]["accepted"] and by_tool["evaluate"]["factor_trial_index"] == 1
     assert by_tool["library_list"]["total"] == 1
     assert by_tool["library_get"]["factor_id"] == by_tool["evaluate"]["factor_id"]
     assert by_tool["library_stats"] == {"members": 1, "version": 1}
@@ -814,7 +831,7 @@ def test_runner_resume_never_repeats_committed_evaluation(project, monkeypatch, 
     monkeypatch.setattr("alpha_atlas.methods.react.HTTPModels", lambda _: FeedbackModel())
     with monkeypatch.context() as patch:
         path = interrupted_run(project, patch, "react", boundary, attempts=6)
-    committed = {p: p.read_bytes() for p in (path / "trials").glob("*.json")}
+    committed = {p: p.read_bytes() for p in (path / "factor_trials").glob("*.json")}
     calls = []
     original = SearchSession.evaluate
 
@@ -1120,7 +1137,7 @@ def test_evaluate_auto_admission_and_search_are_returned_to_agent(tmp_path):
     assert admitted.accepted
     result = json.loads(method.rounds[-1][1]["content"])["tool_result"]
     assert result["accepted"] and result["reason"] == "accepted"
-    assert result["library_version"] == 1 and result["trial_index"] == 1
+    assert result["library_version"] == 1 and result["factor_trial_index"] == 1
     rows = method._query("library_search", {"query": "QUALITY momentum", "source": "run"})
     assert rows["total"] == 1 and rows["results"][0]["admitted"]
     assert rows["results"][0]["factor_id"] == admitted.report.expression_id
@@ -1129,7 +1146,7 @@ def test_evaluate_auto_admission_and_search_are_returned_to_agent(tmp_path):
     assert not rejected.accepted and rejected.reason == "behavior_duplicate"
     result = json.loads(method.rounds[-1][1]["content"])["tool_result"]
     assert not result["accepted"] and result["max_abs_corr"] == pytest.approx(1)
-    assert result["nearest_factor"] == admitted.report.expression_id
+    assert result["nearest_factor_id"] == admitted.report.expression_id
     assert result["library_version"] == 1
     step(method, current)
     assert not json.loads(method.rounds[-1][1]["content"])["tool_result"]["accepted"]

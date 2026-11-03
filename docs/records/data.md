@@ -2,6 +2,23 @@
 
 历史采集证据；通用约定见[实验规范](../research_protocol.md)，流程验收见[实验记录](experiments.md)。
 
+## 2026-11-02 Kernel / Zookeeper 的 PIT 核验范围
+
+Zookeeper26 被用户指定为固定历史诊断 baseline，见
+[核验结果](zookeeper26_fold2/report.md#baseline-与时点核验)和
+[机器可读证据](zookeeper26_fold2/audit.json)。固定快照上的因果计算、前缀一致性、
+上月行情时间及实际 DSL 字段执行检查通过；这与完整历史版本 PIT 是两种保证。
+
+Kernel 导出代码 `assets/research_kernel.py::EXPORT_SQL` 从 `final` 主力记录中按
+`received_at DESC, ingest_seq DESC` 取最新观测，没有历史决策时点上界；导出不包含
+接收时间版本链。`is_dominant`、`adj_cum_factor` 直接使用 Kernel 既有结果，当前元数据
+不足以独立证明其历史生效时点。此前的数据完整性／质量审计通过不应解释为 vintage-PIT 认证。
+
+原始数据保持两份快照；Zookeeper 在月度派生层对齐，并非合并后的原始八字段＋曲线资产。
+2023-05 至 06 月的 2,928 个匹配品种日，Kernel 合约代码为小写、曲线为大写，
+忽略大小写后标识全部相同；这是抽样结果，未改写真实身份，也不外推主力规则全历史一致。
+曲线清单仍保留两个缺 Bar，本次没有采集或改动上游数据。
+
 ## 2026-10-23 Research kernel 完整字段导出
 
 按用户要求补齐 Kernel 中已有的 `adj_open`、`adj_high`、`adj_low` 和 `open_interest`，

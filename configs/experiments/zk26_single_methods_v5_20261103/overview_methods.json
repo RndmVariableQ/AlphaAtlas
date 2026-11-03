@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "id": "zk26_single_methods_v5_20261103_overview_methods",
+  "parent_plan": "configs/experiments/zk26_single_methods_v5_20261103/plan.json",
+  "experiment_version": "rq8_zk26_seeded_fold2_overview_luna_v5",
+  "source_experiment_version": "rq8_zk26_seeded_fold2_overview_luna_v5",
+  "include_union": false,
+  "methods": [
+    "v1_async",
+    "alphaschema"
+  ],
+  "seeds": [
+    42
+  ],
+  "attempts_per_method": 300,
+  "evaluation_nodes": [
+    200,
+    300
+  ],
+  "runs": [
+    "artifacts/runs/futures_kernel_5m_full-all-fold2-v1_async-42-5f77947f20",
+    "artifacts/runs/futures_kernel_5m_full-all-fold2-alphaschema-42-3a4f640d02"
+  ],
+  "purpose": "固定原搜索因子，统一 v5 下游模型的单方法 B26 增量评估。"
+}

@@ -3,12 +3,35 @@
 import json
 import time
 from dataclasses import asdict, replace
+from inspect import signature
 
 from alpha_atlas.contracts import Candidate, EvaluationReport, SearchContext, TargetDefinition
 from alpha_atlas.expressions import compile_factor
 from alpha_atlas.operators.registry import ALIASES, MINIMUM_WINDOWS
 from alpha_atlas.reporting import terminal_candidate, terminal_evaluation, terminal_progress
-from alpha_atlas.storage import candidate_from_dict
+from alpha_atlas.storage import candidate_from_dict, feedback_from_dict
+
+READ_ONLY_TOOLS = {
+    "get_context": "get_context(): stable fields, operators, evaluation and reference settings",
+    "library_search": (
+        "library_search(query='', source='all', offset=0, limit=10): source is run/reference/all; "
+        "the enabled reference library's name also means reference. query has at most 1000 "
+        "characters; offset is a nonnegative integer; limit is an integer in [1,20]. "
+        "Use offset/limit paging. Returns full matching entries"
+    ),
+    "library_get": (
+        "library_get(factor_id): use a nonempty actual factor_id from library_list/search, "
+        "not a trial:N history reference. Returns an admitted member, or null if absent"
+    ),
+    "library_list": (
+        "library_list(offset=0, limit=20): admitted-member index; offset is a nonnegative "
+        "integer and limit is an integer in [1,100]"
+    ),
+    "library_stats": "library_stats(): admitted-library statistics; no arguments",
+}
+READ_ONLY_QUERY_HELP = "Available shared read-only tools:\n" + "\n".join(
+    f"- {description}." for description in READ_ONLY_TOOLS.values()
+)
 
 
 def _report(report):
@@ -23,16 +46,38 @@ def _report(report):
     }
 
 
+def _feedback(feedback):
+    return {
+        "candidate": asdict(feedback.candidate),
+        **_report(feedback.report),
+        **{
+            name: getattr(feedback, name)
+            for name in (
+                "accepted",
+                "reason",
+                "max_abs_corr",
+                "nearest_factor_id",
+                "comparison_complete",
+                "library_version",
+                "factor_trial_index",
+            )
+        },
+    }
+
+
 class SearchSession:
     def __init__(self, evaluator, library, store, limit: int, *, elapsed=None, run_spec=None):
         self._evaluator, self._library, self._store = evaluator, library, store
         trials = store.trials()
         self._evaluated = {
-            t["feedback"]["report"]["expression_id"]: candidate_from_dict(
-                t["feedback"]["candidate"]
-            )
-            for t in trials
-            if t["feedback"]["report"] and t["feedback"]["report"].get("canonical_expression")
+            **{m.factor_id: m.candidate for m in library.view().members},
+            **{
+                t["feedback"]["report"]["expression_id"]: candidate_from_dict(
+                    t["feedback"]["candidate"]
+                )
+                for t in trials
+                if t["feedback"]["report"] and t["feedback"]["report"].get("canonical_expression")
+            },
         }
         self._min_corr_overlap = (run_spec or {}).get("rules", {}).get("min_corr_overlap", 100)
         if self._min_corr_overlap < 1:
@@ -45,6 +90,7 @@ class SearchSession:
         self._started = time.perf_counter()
         self._elapsed = elapsed or (lambda: time.perf_counter() - self._started)
         spec = run_spec or {}
+        self._initial_count = len(spec.get("initial_library", {}).get("members", []))
         self._reference_library = spec.get("rules", library._rules).get("reference_library", "")
         if self._reference_library not in {"", "futures_cta"}:
             raise ValueError("reference_library must be empty or futures_cta")
@@ -59,13 +105,23 @@ class SearchSession:
             panel=profile.get("panel", "contract"),
         )
         self._fields = tuple(spec.get("fields", sorted(evaluator.fields)))
+        self._prepared_fields = {
+            row["prepared_field"]: {
+                "description": row["description"],
+                "calculation_frequency": row["calculation_frequency"],
+                "publication": row["publication"],
+                "calculation_expression": row["expression"],
+            }
+            for row in spec.get("experiment_version", {}).get("data_recipe", {}).get("factors", [])
+            if row["prepared_field"] in self._fields
+        }
 
     @property
     def attempts_used(self) -> int:
         return self._attempts
 
     @property
-    def trial_count(self) -> int:
+    def factor_trial_count(self) -> int:
         return self._trial
 
     def remaining_budget(self) -> int:
@@ -107,14 +163,43 @@ class SearchSession:
         price = next(
             (f for f in ("adj_close", "close", *timeframe_fields) if f in timeframe_fields), None
         )
-        timeframe_example = (
-            f"Use ${price}@30m; TS_MEAN(${price}@30m,20) uses 20 completed 30m bars. "
-            if price and self._context.frequency == "5m"
-            else "Use a field suffix only when allowed for the current frequency and field. "
+        timeframe_suffixes = (
+            tuple(f"@{interval}" for interval in INTERVALS)
+            if self._context.frequency == "5m"
+            else ()
         )
+        timeframe_example = (
+            f"${price} uses {self._context.frequency} bars. "
+            if price
+            else f"Unsuffixed fields use {self._context.frequency} bars. "
+        )
+        if timeframe_suffixes:
+            timeframe_example += (
+                "Available higher timeframes: " + ", ".join(timeframe_suffixes) + ". "
+            )
+            if price:
+                timeframe_example += f"TS_MEAN(${price}@30m,20) uses 20 completed 30m bars. "
+        else:
+            timeframe_example += "No higher timeframes. "
         return {
             "max_nodes": options.get("max_nodes", 100),
             "max_depth": options.get("max_depth", 20),
+            **(
+                {
+                    "prepared_fields": {
+                        "fields": {
+                            name: dict(info) for name, info in self._prepared_fields.items()
+                        },
+                        "semantics": "These features are computed on a separate calendar-month panel "
+                        "and published in the next trading-day calendar month. Their calculation "
+                        "expressions describe preparation, not allowed raw fields in this context. "
+                        "In method expressions, use the published $field. Unsuffixed TS windows "
+                        "still count base-frequency rows, not calendar months; @1mo is not supported.",
+                    }
+                }
+                if self._prepared_fields
+                else {}
+            ),
             "syntax_rules": "An expression may be a single formula or multiline Atlas DSL. "
             "For complex formulas, prefer named intermediate variables for readability; "
             "simple formulas may stay on one line. Define each variable once before use, "
@@ -131,14 +216,13 @@ class SearchSession:
                 {"expression": "base = TS_MEAN($field, 20)\n$field / base - 1"}
             ),
             "timeframes": {
-                "suffixes": tuple(f"@{i}" for i in INTERVALS)
-                if self._context.frequency == "5m"
-                else (),
+                "suffixes": timeframe_suffixes,
                 "fields": timeframe_fields,
                 "semantics": timeframe_example
                 + "Field permissions and Analyst allowed_fields use base names without @interval. "
                 "Same-frequency subtrees run on coarse bars, including TS windows; "
-                "mixed-frequency subtrees run on the base 5m panel after backward broadcasting. "
+                f"mixed-frequency subtrees run on the base {self._context.frequency} panel "
+                "after backward broadcasting. "
                 "Constants inherit scope. Do not replace explicit coarser scopes with rolling "
                 "native-bar sums or means; they do not reproduce completed clock buckets. "
                 "OHLC and adjusted OHLC aggregate first/max/min/last; volume and amount sum. "
@@ -154,7 +238,8 @@ class SearchSession:
             "numeric_rules": "Float64; nonfinite results and division near zero yield null. "
             "Windows are positive integers in the operand frequency with no upper bound; "
             "operator minimum windows still apply. Full finite windows are required; "
-            "insufficient history yields null. "
+            "insufficient history yields null. OBS_LAG reads only the lagged endpoint; "
+            "panel portfolio operators use their declared coverage instead of full windows. "
             + (
                 "TS groups by (exchange, product) and crosses dominant-contract changes, "
                 "resetting at known product gaps or invalid bars. Prefer available adj_* prices "
@@ -228,6 +313,20 @@ class SearchSession:
                 "icir": "Daily primary IC mean / sample std; >=2 valid days, std>1e-12. "
                 "Futures first correlate within product/day, then use primary product weights. "
                 "Train direction applies. Each correlation needs >=5 finite pairs.",
+                **(
+                    {
+                        "rank_lag": "Raw signed train RankIC and daily RankICIR, without train "
+                        "direction adjustment. lag1_rank_ic delays the signal by one native input "
+                        "bar on the full train clock, within configured factor-panel segments; "
+                        "missing/ineligible predecessors are not bridged. Stocks additionally "
+                        "require adjacent observed market days. Apply the original train clipping "
+                        "bounds without refitting. lag1_gap=max(0,rank_ic-lag1_rank_ic). "
+                        "RankIC uses the profile's date/product aggregation and weights; daily "
+                        "RankICIR uses Spearman in the ICIR aggregation above. Missing metrics=null."
+                    }
+                    if self._evaluator.diagnostics == "icir_turnover_lag1_v2"
+                    else {}
+                ),
                 "turnover": "Half absolute holdings change. Stocks: daily demeaned ranks, "
                 "gross normalized to one, PIT entries/exits included; require complete finite "
                 "snapshots with >=5 names. Futures: sign(value) unit holdings per native bar, "
@@ -251,6 +350,19 @@ class SearchSession:
             "operators": [self.get_operator(op["name"]) for op in self.list_operators()],
             "expression_rules": self.get_expression_rules(),
             "evaluation_rules": self.get_evaluation_rules(),
+            **(
+                {
+                    "initial_library": {
+                        "members": self._initial_count,
+                        "semantics": "Pre-existing baseline members are already in the run library. "
+                        "Use library_list/search/get to inspect them. Every candidate is checked "
+                        "against these members and all new admissions. Initial membership does "
+                        "not consume search attempts; its metrics use train/validation only.",
+                    }
+                }
+                if self._initial_count
+                else {}
+            ),
             "reference_library": {
                 "enabled": bool(self._reference_library),
                 "name": self._reference_library or None,
@@ -262,6 +374,10 @@ class SearchSession:
         }
 
     def library_get(self, factor_id):
+        if not isinstance(factor_id, str) or not factor_id.strip():
+            raise ValueError("factor_id must be nonempty text from library_list/search")
+        if factor_id.startswith("trial:"):
+            raise ValueError("trial:N is a history reference; use an actual admitted factor_id")
         item = self.get_library().get(factor_id)
         return (
             None
@@ -270,6 +386,11 @@ class SearchSession:
                 "candidate": asdict(item.candidate),
                 **_report(item.report),
                 "version": item.version,
+                **(
+                    {"origin": "initial" if item.version <= self._initial_count else "search"}
+                    if self._initial_count
+                    else {}
+                ),
             }
         )
 
@@ -283,6 +404,11 @@ class SearchSession:
                 {
                     "factor_id": m.factor_id,
                     "candidate": asdict(m.candidate),
+                    **(
+                        {"origin": "initial" if m.version <= self._initial_count else "search"}
+                        if self._initial_count
+                        else {}
+                    ),
                     "primary_val_ic": next(v.value for v in m.report.metrics if v.split == "val"),
                 }
                 for m in members[offset : offset + limit]
@@ -294,20 +420,42 @@ class SearchSession:
             "get_context": self.research_context,
             "library_get": self.library_get,
             "library_list": self.library_list,
-            "library_stats": lambda: self.get_library().stats(),
+            "library_stats": lambda: {
+                **self.get_library().stats(),
+                **(
+                    {
+                        "initial_members": self._initial_count,
+                        "new_members": self.get_library().version - self._initial_count,
+                    }
+                    if self._initial_count
+                    else {}
+                ),
+            },
             "library_search": self.library_search,
         }
-        if tool not in functions:
-            raise ValueError("Unknown tool; only the listed evaluation and read-only tools exist")
-        return functions[tool](**arguments)
+        if not isinstance(tool, str) or tool not in functions:
+            raise ValueError("Unknown tool; " + READ_ONLY_QUERY_HELP)
+        help_text = READ_ONLY_TOOLS[tool]
+        if not isinstance(arguments, dict):
+            raise ValueError(f"{tool}: arguments must be an object. Expected {help_text}")
+        try:
+            signature(functions[tool]).bind(**arguments)
+        except TypeError as exc:
+            raise ValueError(f"{tool}: invalid arguments: {exc}. Expected {help_text}") from None
+        try:
+            return functions[tool](**arguments)
+        except ValueError as exc:
+            raise ValueError(f"{tool}: {exc}. Expected {help_text}") from None
 
     def library_search(self, query="", source="all", offset=0, limit=10):
         if not isinstance(query, str) or len(query) > 1000:
             raise ValueError("query must be text of at most 1000 characters")
+        if self._reference_library and source == self._reference_library:
+            source = "reference"
         if not isinstance(source, str) or source not in {"all", "run", "reference"}:
             raise ValueError("source must be all, run or reference")
         if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 20:
-            raise ValueError("offset must be >=0 and limit in [1,20]")
+            raise ValueError("offset must be >=0 and limit in [1,20]; use offset/limit paging")
         rows = []
         if source in {"all", "run"}:
             for member in self.get_library().members:
@@ -388,22 +536,19 @@ class SearchSession:
     def evaluation_result(self, feedback):
         """Common model-facing result; live budget belongs to evaluation feedback only."""
         return {
-            "candidate": asdict(feedback.candidate),
-            **_report(feedback.report),
-            **{
-                name: getattr(feedback, name)
-                for name in (
-                    "accepted",
-                    "reason",
-                    "max_abs_corr",
-                    "nearest_factor",
-                    "comparison_complete",
-                    "library_version",
-                    "trial_index",
-                )
-            },
+            **_feedback(feedback),
             "remaining_attempts": self.remaining_budget(),
         }
+
+    def get_trial(self, factor_trial_index: int):
+        """Internal run-local history read; not an Agent tool and never adds live budget."""
+        row = self._store.trial(factor_trial_index)
+        feedback = feedback_from_dict(row["feedback"])
+        if feedback.factor_trial_index != factor_trial_index:
+            raise ValueError("committed feedback trial index mismatch")
+        if feedback.report is None:
+            raise ValueError("committed trial has no evaluation report")
+        return {**_feedback(feedback), "candidate": row["feedback"]["candidate"]}
 
     def register_operator(self, definition):
         terminal_progress("算子注册验证", 名称=definition.name)
@@ -413,10 +558,21 @@ class SearchSession:
         )
         return feedback
 
-    def evaluate(self, candidate: Candidate, *, generation_seconds: float = 0):
+    def evaluate(
+        self,
+        candidate: Candidate,
+        *,
+        generation_seconds: float = 0,
+        research_plan_index: int | None = None,
+    ):
         self._trial += 1
         started = time.perf_counter()
-        terminal_evaluation(candidate, index=self._trial, limit=self._limit)
+        terminal_evaluation(
+            candidate,
+            index=self._trial,
+            limit=self._limit,
+            research_plan_index=research_plan_index,
+        )
         if self.remaining_budget() == 0:
             report = EvaluationReport(
                 None, (), None, None, 0.0, "budget_rejected", "attempt budget exhausted"
@@ -450,7 +606,7 @@ class SearchSession:
             )
 
         feedback = self._library.consider(
-            candidate, report, values, commit=commit, trial_index=self._trial
+            candidate, report, values, commit=commit, factor_trial_index=self._trial
         )
         if report.canonical_expression is not None:
             self._evaluated[report.expression_id] = candidate
@@ -460,6 +616,8 @@ class SearchSession:
             limit=self._limit,
             elapsed=time.perf_counter() - started,
             total=self._elapsed(),
+            research_plan_index=research_plan_index,
+            initial_count=self._initial_count,
         )
         return feedback
 

@@ -1,7 +1,10 @@
 import json
+import math
 import os
 import subprocess
 import sys
+from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 from test_pipeline import project as project
@@ -18,7 +21,7 @@ from alpha_atlas.contracts import (
     TrialFeedback,
 )
 from alpha_atlas.methods import make_method
-from alpha_atlas.runner import resume, run
+from alpha_atlas.runner import _rebuild_member, resume, run
 from alpha_atlas.runner import test_frozen as evaluate_frozen
 from alpha_atlas.session import SearchSession
 from alpha_atlas.storage import RunStore
@@ -26,6 +29,27 @@ from alpha_atlas.storage import RunStore
 
 def json_state(method):
     return json.loads(json.dumps(method.dump_state()))
+
+
+def legacy_field_names(value):
+    """Build historical records in tests; production only decodes at existing read boundaries."""
+    if isinstance(value, list):
+        return [legacy_field_names(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    aliases = {
+        "factor_trial_records": "steps",
+        "factor_trial_index": "trial_index",
+        "nearest_factor_id": "nearest_factor",
+        "factor_trial_refs": "trial_refs",
+        "completed_research_plan_count": "round_index",
+        "next_research_plan_index": "next_index",
+        "research_plan_index": "index" if "outcomes" in value else "round_index",
+        "research_plan_state": "round"
+        if "work" in value and "version" not in value
+        else "round_state",
+    }
+    return {aliases.get(key, key): legacy_field_names(item) for key, item in value.items()}
 
 
 @pytest.mark.parametrize("name", ["random", "gp", "mcts", "atlas"])
@@ -63,7 +87,7 @@ def interrupted_run(project, monkeypatch, method="random", boundary="after_commi
         original = SearchSession.evaluate
 
         def evaluate(self, *args, **kwargs):
-            if self.trial_count == 4:
+            if self.factor_trial_count == 4:
                 raise KeyboardInterrupt("injected before evaluation")
             return original(self, *args, **kwargs)
 
@@ -74,7 +98,7 @@ def interrupted_run(project, monkeypatch, method="random", boundary="after_commi
 
         def tell(self, feedback):
             original(self, feedback)
-            if feedback[0].trial_index == 5:
+            if feedback[0].factor_trial_index == 5:
                 raise KeyboardInterrupt("injected after feedback consumption")
 
         monkeypatch.setattr(cls, "tell", tell)
@@ -104,9 +128,9 @@ def logical_trials(directory):
                 feedback["candidate"],
                 feedback["accepted"],
                 feedback["reason"],
-                feedback["trial_index"],
+                feedback["factor_trial_index"],
                 feedback["library_version"],
-                feedback["nearest_factor"],
+                feedback["nearest_factor_id"],
                 report["direction"],
                 report["status"],
                 report["coverage"],
@@ -133,7 +157,7 @@ def test_resume_matches_uninterrupted_run(project, monkeypatch, method, boundary
         path = interrupted_run(project, patch, method, boundary)
     assert read_json(path / "run.json")["status"] == "interrupted"
     assert read_json(path / "failures.json")[-1]["type"] == "KeyboardInterrupt"
-    committed = {p: p.read_bytes() for p in (path / "trials").glob("*.json")}
+    committed = {p: p.read_bytes() for p in (path / "factor_trials").glob("*.json")}
     calls = []
     original = SearchSession.evaluate
 
@@ -206,16 +230,118 @@ def test_zero_disk_cache_resume_preserves_trials_and_oos(project, monkeypatch):
     monkeypatch.setattr("alpha_atlas.runner.ArrowCache", lambda paths: ArrowCache(paths, 0))
     with monkeypatch.context() as patch:
         path = interrupted_run(project, patch, "atlas", attempts=8)
-    committed = {p.name: p.read_bytes() for p in (path / "trials").glob("*.json")}
+    committed = {p.name: p.read_bytes() for p in (path / "factor_trials").glob("*.json")}
     resume(project, path)
     assert not list((path / "cache").rglob("*.arrow"))
-    assert all((path / "trials" / name).read_bytes() == data for name, data in committed.items())
+    assert all(
+        (path / "factor_trials" / name).read_bytes() == data for name, data in committed.items()
+    )
     reference = run(project, "ashare", "fold1", "atlas", 42, attempts=8)
     assert logical_trials(path) == logical_trials(reference)
     assert RunStore(path).library_view().members
     assert (
         evaluate_frozen(project, path)["results"] == evaluate_frozen(project, reference)["results"]
     )
+
+
+@pytest.mark.parametrize(
+    "report_changes, metric_changes, accepted",
+    [
+        ({}, {"value": 0.03241067999469773}, True),
+        ({}, {"value": 0.032410679995}, False),
+        ({}, {"value": None}, False),
+        ({}, {"value": float("nan")}, False),
+        ({}, {"value": float("inf")}, False),
+        ({}, {"name": "other"}, False),
+        ({}, {"split": "val"}, False),
+        ({}, {"aggregation": "other"}, False),
+        ({}, {"n_obs": 101}, False),
+        ({}, {"n_groups": 3}, False),
+        ({"metrics": ()}, {}, False),
+        ({"expression_id": "other"}, {}, False),
+        ({"direction": -1}, {}, False),
+        ({"coverage": 0.9999999999999999}, {}, False),
+        ({"status": "compute_error"}, {}, False),
+        ({"clipping": {"value": [-1.0, 1.0000000000000002]}}, {}, False),
+    ],
+)
+def test_member_rebuild_allows_only_metric_roundoff(report_changes, metric_changes, accepted):
+    committed = EvaluationReport(
+        "factor",
+        (
+            Metric("ic", "train", 0.03241067999469774, 100, "equal", 2),
+            Metric("ic", "val", None, 0, "equal", 0),
+        ),
+        1,
+        1.0,
+        0.0,
+        observation_ref="observation",
+        clipping={"value": [-1.0, 1.0]},
+    )
+    rebuilt = replace(
+        committed,
+        metrics=(replace(committed.metrics[0], **metric_changes), committed.metrics[1]),
+    )
+    rebuilt = replace(rebuilt, **report_changes)
+    observation = object()
+    reads = []
+
+    def observe(reference):
+        reads.append(reference)
+        return observation
+
+    evaluator = SimpleNamespace(evaluate=lambda candidate: rebuilt, observation=observe)
+    entry = SimpleNamespace(candidate=Candidate("$close"), factor_id="factor", report=committed)
+    if accepted:
+        assert _rebuild_member(evaluator, entry) is observation
+        assert reads == ["observation"]
+    else:
+        with pytest.raises(ValueError, match="rebuilt member differs"):
+            _rebuild_member(evaluator, entry)
+        assert reads == []
+    assert entry.report is committed
+
+
+def test_resume_rebuilds_evicted_members_with_metric_roundoff(project, monkeypatch):
+    from alpha_atlas.evaluation import EvaluationService
+    from alpha_atlas.storage import ArrowCache
+
+    monkeypatch.setattr("alpha_atlas.runner.ArrowCache", lambda paths: ArrowCache(paths, 0))
+    with monkeypatch.context() as patch:
+        path = interrupted_run(project, patch, "atlas", attempts=8)
+    members = {e.factor_id for e in RunStore(path).library_view().members}
+    assert members
+    committed = {p.name: p.read_bytes() for p in (path / "factor_trials").glob("*.json")}
+    original = EvaluationService.evaluate
+    rebuilt = []
+
+    def evaluate(self, candidate):
+        report = original(self, candidate)
+        if report.expression_id in members:
+            rebuilt.append(report.expression_id)
+            return replace(
+                report,
+                metrics=tuple(
+                    replace(m, value=math.nextafter(m.value, math.inf))
+                    if m.value is not None
+                    else m
+                    for m in report.metrics
+                ),
+            )
+        return report
+
+    with monkeypatch.context() as patch:
+        patch.setattr(EvaluationService, "evaluate", evaluate)
+        resume(project, path)
+    assert rebuilt
+    assert all(
+        (path / "factor_trials" / name).read_bytes() == data for name, data in committed.items()
+    )
+    checkpoint = read_json(path / "checkpoint.json")
+    assert checkpoint["completed"] == checkpoint["attempts"] == 8
+    assert read_json(path / "run.json")["status"] == "frozen"
+    reference = run(project, "ashare", "fold1", "atlas", 42, attempts=8)
+    assert logical_trials(path) == logical_trials(reference)
 
 
 @pytest.mark.parametrize(
@@ -249,7 +375,7 @@ def test_resume_rejects_incompatible_evidence(project, monkeypatch, change, mess
             "config": path / "run.json",
             "snapshot": project / "data/ashare/manifest.json",
             "checkpoint": path / "checkpoint.json",
-            "trial": path / "trials/00000005.json",
+            "trial": path / "factor_trials/00000005.json",
         }[change]
         data = read_json(target)
         if change == "config":
@@ -273,7 +399,7 @@ def test_resume_and_oos_do_not_check_current_source(project, monkeypatch):
     with monkeypatch.context() as patch:
         path = interrupted_run(project, patch, "atlas")
     source = read_json(path / "run.json")["source_fingerprint"]
-    committed = {p: p.read_bytes() for p in (path / "trials").glob("*.json")}
+    committed = {p: p.read_bytes() for p in (path / "factor_trials").glob("*.json")}
 
     def no_source_scan():
         pytest.fail("resume and OOS must not scan current source")
@@ -397,7 +523,7 @@ def test_process_abrupt_exit_then_cli_resume(project):
     path = next((project / "artifacts/runs").iterdir())
     assert read_json(path / "run.json")["status"] == "running"
     assert not (path / "failures.json").exists()
-    committed = (path / "trials/00000002.json").read_bytes()
+    committed = (path / "factor_trials/00000002.json").read_bytes()
     result = subprocess.run(
         [
             sys.executable,
@@ -417,7 +543,7 @@ def test_process_abrupt_exit_then_cli_resume(project):
     )
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["run_dir"] == str(path)
-    assert (path / "trials/00000002.json").read_bytes() == committed
+    assert (path / "factor_trials/00000002.json").read_bytes() == committed
     assert len(RunStore(path).trials()) == 4
     assert read_json(path / "checkpoint.json")["attempts"] == 4
     assert read_json(path / "run.json")["status"] == "frozen"
@@ -440,7 +566,7 @@ def test_failed_checkpoint_write_keeps_previous_snapshot(project, monkeypatch):
             run(project, "ashare", "fold1", "gp", 42, attempts=3)
     path = next((project / "artifacts/runs").iterdir())
     checkpoint = read_json(path / "checkpoint.json")
-    assert checkpoint["completed"] == 0 and checkpoint["pending"]["trial_index"] == 1
+    assert checkpoint["completed"] == 0 and checkpoint["pending"]["factor_trial_index"] == 1
     assert len(RunStore(path).trials()) == 1
     resume(project, path)
     assert read_json(path / "checkpoint.json")["attempts"] == 3
@@ -459,7 +585,7 @@ def test_cache_io_error_is_a_run_failure_and_can_retry(project, monkeypatch):
     path = next((project / "artifacts/runs").iterdir())
     assert RunStore(path).trials() == []
     failure = read_json(path / "failures.json")[-1]
-    assert failure["stage"] == "evaluate" and failure["trial_index"] == 1
+    assert failure["stage"] == "evaluate" and failure["factor_trial_index"] == 1
     resume(project, path)
     assert len(RunStore(path).trials()) == 2
 

@@ -1,0 +1,127 @@
+{
+  "checked_before_test_at": "2026-11-03T11:15:26.073361+08:00",
+  "searches": {
+    "v1_async": {
+      "status": "frozen",
+      "completed": 300
+    },
+    "alphaschema": {
+      "status": "frozen",
+      "completed": 300
+    }
+  },
+  "training_rows": 5296605,
+  "saved_arm_count": 7,
+  "saved_model_count": 14,
+  "fit_sha256_before_test": "d869e47a6a6aae69edd9975518fffd9175d6c49751a2c42122be5456b2941934",
+  "downstream_config_matches_version": true,
+  "arms": {
+    "baseline": {
+      "retained_columns": 26,
+      "dropped_columns": [],
+      "linear_rank": 26
+    },
+    "v1_async_200": {
+      "retained_columns": 32,
+      "dropped_columns": [],
+      "linear_rank": 32
+    },
+    "v1_async_300": {
+      "retained_columns": 35,
+      "dropped_columns": [],
+      "linear_rank": 35
+    },
+    "alphaschema_200": {
+      "retained_columns": 28,
+      "dropped_columns": [],
+      "linear_rank": 28
+    },
+    "alphaschema_300": {
+      "retained_columns": 30,
+      "dropped_columns": [],
+      "linear_rank": 30
+    },
+    "union_200": {
+      "retained_columns": 34,
+      "dropped_columns": [],
+      "linear_rank": 34
+    },
+    "union_300": {
+      "retained_columns": 39,
+      "dropped_columns": [],
+      "linear_rank": 39
+    }
+  },
+  "fit_sha256_after_test": "d869e47a6a6aae69edd9975518fffd9175d6c49751a2c42122be5456b2941934",
+  "fit_file_unchanged": true,
+  "test_completed_at": "2026-11-03T11:19:55.474363+08:00",
+  "test_result_rows": 12,
+  "common_rows": 2549205,
+  "eligible_rows": 2558829,
+  "coverage": 0.9962389045926867,
+  "ic_product_counts": {
+    "v1_async_200:linear": 80,
+    "v1_async_200:lightgbm": 80,
+    "v1_async_300:linear": 80,
+    "v1_async_300:lightgbm": 80,
+    "alphaschema_200:linear": 80,
+    "alphaschema_200:lightgbm": 80,
+    "alphaschema_300:linear": 80,
+    "alphaschema_300:lightgbm": 80,
+    "union_200:linear": 80,
+    "union_200:lightgbm": 80,
+    "union_300:linear": 80,
+    "union_300:lightgbm": 80
+  },
+  "all_ic_product_sets_equal": true,
+  "bootstrap_valid_replicates": {
+    "v1_async_200:linear": {
+      "delta_weighted_pearson": 2000,
+      "relative_mse_reduction": 2000
+    },
+    "v1_async_200:lightgbm": {
+      "delta_weighted_pearson": 2000,
+      "relative_mse_reduction": 2000
+    },
+    "v1_async_300:linear": {
+      "delta_weighted_pearson": 2000,
+      "relative_mse_reduction": 2000
+    },
+    "v1_async_300:lightgbm": {
+      "delta_weighted_pearson": 2000,
+      "relative_mse_reduction": 2000
+    },
+    "alphaschema_200:linear": {
+      "delta_weighted_pearson": 2000,
+      "relative_mse_reduction": 2000
+    },
+    "alphaschema_200:lightgbm": {
+      "delta_weighted_pearson": 2000,
+      "relative_mse_reduction": 2000
+    },
+    "alphaschema_300:linear": {
+      "delta_weighted_pearson": 2000,
+      "relative_mse_reduction": 2000
+    },
+    "alphaschema_300:lightgbm": {
+      "delta_weighted_pearson": 2000,
+      "relative_mse_reduction": 2000
+    },
+    "union_200:linear": {
+      "delta_weighted_pearson": 2000,
+      "relative_mse_reduction": 2000
+    },
+    "union_200:lightgbm": {
+      "delta_weighted_pearson": 2000,
+      "relative_mse_reduction": 2000
+    },
+    "union_300:linear": {
+      "delta_weighted_pearson": 2000,
+      "relative_mse_reduction": 2000
+    },
+    "union_300:lightgbm": {
+      "delta_weighted_pearson": 2000,
+      "relative_mse_reduction": 2000
+    }
+  }
+}

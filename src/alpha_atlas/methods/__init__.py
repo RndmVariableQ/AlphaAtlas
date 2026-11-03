@@ -4,6 +4,10 @@ from alpha_atlas.methods.baselines import make_method as make_baseline
 
 
 def make_method(name: str, seed: int, options=None):
+    if name == "alphaschema":
+        from alpha_atlas.methods.alphaschema import AlphaSchemaConfig, AlphaSchemaSearch
+
+        return AlphaSchemaSearch(seed, AlphaSchemaConfig.from_mapping(options or {}))
     if name == "v1_async":
         from alpha_atlas.methods.v1_async import V1AsyncConfig, V1AsyncSearch
 

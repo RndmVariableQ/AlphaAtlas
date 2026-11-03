@@ -73,6 +73,8 @@ def build_expression(op: str, args: list[pl.Expr], params: list, group: list[str
             hi = x.quantile(params[1], interpolation="linear").over("timestamp")
             return x.clip(lo, hi)
     n = int(params[0])
+    if op == "OBS_LAG":
+        return a.shift(n).over(group)
     if op in {"DELAY", "DELTA", "RETURN"}:
         lag = a.shift(n).over(group)
         # Interior missing values also break a lag/return's declared history.
@@ -98,6 +100,8 @@ def build_expression(op: str, args: list[pl.Expr], params: list, group: list[str
         "TS_RANK": lambda: a.rolling_rank(method="average", **options) / n,
         "TS_SKEW": lambda: a.rolling_skew(n, bias=False, min_samples=n),
         "TS_KURT": lambda: a.rolling_kurtosis(n, fisher=True, bias=False, min_samples=n),
+        "TS_SKEW_POP": lambda: a.rolling_skew(n, bias=True, min_samples=n),
+        "TS_KURT_POP": lambda: a.rolling_kurtosis(n, fisher=True, bias=True, min_samples=n),
         # Polars weighted rolling panics on null arrays. NaN propagates within the
         # affected windows; materialize() converts those results back to null.
         "TS_LINEAR_DECAY": lambda: a.fill_null(float("nan")).rolling_mean(
@@ -165,6 +169,13 @@ def window_array(op: str, arrays: list[np.ndarray], window: int) -> np.ndarray:
         with np.errstate(all="ignore"):
             if op == "TS_PROD":
                 values = np.prod(x, axis=1)
+            elif op == "TS_RESID_STD3":
+                values = np.full(len(x), np.nan)
+                for i in np.flatnonzero(valid):
+                    design = np.column_stack((np.ones(window), *(m[i] for m in matrices[1:])))
+                    if np.linalg.matrix_rank(design) == 4:
+                        residual = x[i] - design @ np.linalg.lstsq(design, x[i], rcond=None)[0]
+                        values[i] = np.std(residual, ddof=1)
             elif op in {"TS_ARGMIN", "TS_ARGMAX"}:
                 function = np.argmin if op == "TS_ARGMIN" else np.argmax
                 values = function(x[:, ::-1], axis=1).astype(float)

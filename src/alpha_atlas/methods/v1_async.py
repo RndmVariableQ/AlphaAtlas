@@ -12,7 +12,15 @@ from dataclasses import dataclass
 
 from alpha_atlas.methods.annealing import AnnealingLLMSearch
 from alpha_atlas.methods.models import _RetryableError
-from alpha_atlas.methods.v1 import CONTENT_FIELDS, V1Config, V1Search, _normalize
+from alpha_atlas.methods.v1 import (
+    CONTENT_FIELDS,
+    ExplorerDialogueLimitError,
+    ExplorerUnresolved,
+    V1Config,
+    V1Search,
+    _normalize,
+    _unresolved,
+)
 from alpha_atlas.reporting import terminal_progress
 from alpha_atlas.storage import candidate_from_dict
 
@@ -34,22 +42,23 @@ class _AwaitingModel(Exception):
 class _ConcurrentModels:
     """Resume the existing checkpointed stages without running their state in workers."""
 
+    streaming = False
+
     def __init__(self, method):
         self.method = method
 
     def chat(self, system, payload, *, temperature=None):
         if "Atlas Explorer Agent" in system:
             system = system.replace(
-                "服务端按 30/30/20/20 加权选择一条交给原 Analyst",
-                "服务端按 30/30/20/20 排序，按 available_slots 选择方向并发交给 Analyst",
+                "The server selects one by 30/30/20/20 weighting and passes it to the original "
+                "Analyst",
+                "The server ranks by 30/30/20/20 and passes directions to Analysts concurrently "
+                "per available_slots",
             )
-            system += (
-                "\nactive_proposals 是正在研究的方向，新提案不得重复这些机制和预测。"
-                "available_slots 是当前空位数；有一条完整的新方向即可提交，不必为补位凑满三条。"
-            )
+            system += "\navailable_slots is the current number of free slots."
             payload = {
                 **payload,
-                "active_proposals": self.method.round_state["active_proposals"],
+                "active_proposals": self.method.research_plan_state["active_proposals"],
                 "available_slots": len(self.method.explorer["quotas"]),
             }
         return self.chat_messages(
@@ -74,7 +83,7 @@ class V1AsyncSearch(V1Search):
         self.models = _ConcurrentModels(self)
         self.groups = {}
         self.explorer = None
-        self.next_index = 1
+        self.next_research_plan_index = 1
         self.pending_group = None
         self._active = None
         self._executor = None
@@ -82,31 +91,33 @@ class V1AsyncSearch(V1Search):
 
     @contextmanager
     def _activate(self, key, group):
-        # round_state/work are temporary views onto ONE group's authoritative state.
+        # research_plan_state/work are temporary views onto ONE group's authoritative state.
         self._active = (key, group)
-        self.round_state, self.work = group["round"], group["work"]
+        self.research_plan_state, self.work = group["research_plan_state"], group["work"]
         try:
             yield
         finally:
             self._sync_active()
             self._active = None
-            self.round_state = self.work = None
+            self.research_plan_state = self.work = None
 
     def _sync_active(self):
         if self._active is not None:
             group = self._active[1]
-            group["round"], group["work"] = self.round_state, self.work
+            group["research_plan_state"], group["work"] = self.research_plan_state, self.work
 
     def dump_state(self):
         self._sync_active()
         state = super().dump_state()
-        del state["round_state"], state["work"]
+        del state["research_plan_state"], state["work"]
         return {
             **state,
             "version": "atlas_explorer_v1_async",
-            "groups": {key: group for key, group in self.groups.items() if group["round"]},
+            "groups": {
+                key: group for key, group in self.groups.items() if group["research_plan_state"]
+            },
             "explorer": self.explorer,
-            "next_index": self.next_index,
+            "next_research_plan_index": self.next_research_plan_index,
             "pending_group": self.pending_group if self.pending is not None else None,
         }
 
@@ -119,12 +130,21 @@ class V1AsyncSearch(V1Search):
         self.close()
         rng = state["rng"]
         self.rng.setstate((rng[0], tuple(rng[1]), rng[2]))
-        for key in self.dump_state().keys() - {"version", "config", "rng"}:
-            setattr(self, key, copy.deepcopy(state[key]))
+        self._load_research_fields(state)
 
     def _start_request(self, kind):
         # Resuming a saved stage is not a new request. Count only actual submissions below.
         pass
+
+    @property
+    def pending_research_plan_index(self):
+        group = self.groups.get(self.pending_group)
+        return group["research_plan_state"]["research_plan_index"] if group is not None else None
+
+    def _request_progress(self, title, **values):
+        # Reentering the saved stage to consume a future is not another model request.
+        if self._active[0] not in self._requests:
+            super()._request_progress(title, **values)
 
     def _request(self, messages, temperature):
         key = self._active[0]
@@ -137,7 +157,7 @@ class V1AsyncSearch(V1Search):
             except _RetryableError as exc:
                 if job["attempts"] == 4:
                     raise RuntimeError(f"{exc}; failed after 4 requests") from None
-                delay = 2 ** (job["attempts"] - 1)
+                delay = exc.retry_delay(job["attempts"] - 1)
                 job["future"] = None
                 job["retry_at"] = time.monotonic() + delay
                 terminal_progress("异步模型重试", 组=key, 等待秒=delay, 原因=str(exc))
@@ -176,17 +196,17 @@ class V1AsyncSearch(V1Search):
         )
 
     def _analyst_previous_round(self):
-        if "analyst_feedback" not in self.round_state:
+        if "analyst_feedback" not in self.research_plan_state:
             last = next(
                 (
-                    step["round_index"]
-                    for step in reversed(self.steps)
-                    if "annealing_result" in step
+                    record["research_plan_index"]
+                    for record in reversed(self.factor_trial_records)
+                    if "explorer_proposals" in record or "annealing_result" in record
                 ),
                 0,
             )
-            self.round_state["analyst_feedback"] = super()._analyst_previous_round(last)
-        return self.round_state["analyst_feedback"]
+            self.research_plan_state["analyst_feedback"] = super()._analyst_previous_round(last)
+        return self.research_plan_state["analyst_feedback"]
 
     def _catalog(self):
         snapshot, catalog = super()._catalog()
@@ -195,7 +215,7 @@ class V1AsyncSearch(V1Search):
 
     def _validate_proposals(self, raw, catalog, available_refs):
         batch = super()._validate_proposals(raw, catalog, available_refs)
-        active = self.round_state["active_proposals"]
+        active = self.research_plan_state["active_proposals"]
         if any(
             all(_normalize(item[k]) == _normalize(other[k]) for k in CONTENT_FIELDS[1:])
             for item in batch["proposals"]
@@ -204,15 +224,40 @@ class V1AsyncSearch(V1Search):
             raise ValueError("proposal duplicates an active research direction")
         return batch
 
+    def _explorer_waiting(self):
+        records = self.explorer["research_plan_state"]["responses"]["explorer"]
+        return _unresolved(records, self.config.max_dialogue_rounds) or bool(
+            len(records) >= self.config.max_dialogue_rounds
+            and records[-1].get("processed")
+            and ("error" in records[-1] or "query" in records[-1])
+        )
+
+    def _retire_explorer(self):
+        if self.explorer is None or self.groups:
+            return
+        state = self.explorer["research_plan_state"]
+        records = state["responses"]["explorer"]
+        if not state["active_proposals"] or not self._explorer_waiting():
+            return
+        # Keep the bounded dialogue in the existing research history, then use the new evidence.
+        history = self.factor_trial_records or self.blocked_plans
+        history[-1]["deferred_explorer"] = {
+            "research_plan_index": state["research_plan_index"],
+            "responses": records,
+        }
+        self.explorer = None
+
     def _start_explorer(self, context):
+        self._retire_explorer()
         if self.explorer is not None:
             return
         reserved = sum(
-            group["round"]["candidate_limit"] - len(group["round"]["outcomes"])
+            group["research_plan_state"]["candidate_limit"]
+            - len(group["research_plan_state"]["outcomes"])
             for group in self.groups.values()
         )
         available = context.remaining_attempts - reserved
-        slots = min(3, self.config.parallel_plans - len(self.groups), available)
+        slots = min(4, self.config.parallel_plans - len(self.groups), available)
         if slots <= 0:
             return
         quotas = []
@@ -220,12 +265,13 @@ class V1AsyncSearch(V1Search):
             quota = min(self.config.candidates_per_plan, math.ceil(available / remaining_slots))
             quotas.append(quota)
             available -= quota
-        state = self._new_round(context, self.next_index)
-        self.next_index += 1
+        state = self._new_round(context, self.next_research_plan_index)
+        self.next_research_plan_index += 1
         state["active_proposals"] = [
-            group["round"]["exploration"]["proposal"] for group in self.groups.values()
+            group["research_plan_state"]["exploration"]["proposal"]
+            for group in self.groups.values()
         ]
-        self.explorer = {"round": state, "work": None, "quotas": quotas}
+        self.explorer = {"research_plan_state": state, "work": None, "quotas": quotas}
         self._checkpoint()
 
     def _advance_explorer(self, context):
@@ -233,14 +279,28 @@ class V1AsyncSearch(V1Search):
             return
         with self._activate("explorer", self.explorer):
             snapshot, catalog = self._catalog()
+            state = self.research_plan_state
+            was_waiting = self._explorer_waiting()
+            if was_waiting and state["active_proposals"]:
+                return
             try:
-                super()._explore_round(snapshot, catalog)
+                super()._explore_round(snapshot, catalog, select=False)
             except _AwaitingModel:
                 return
-            state = self.round_state
+            except (ExplorerUnresolved, ExplorerDialogueLimitError) as exc:
+                if not state["active_proposals"]:
+                    raise
+                if not was_waiting:
+                    terminal_progress(
+                        "Explorer 等待活动计划",
+                        计划=state["research_plan_index"],
+                        活动组=len(self.groups),
+                        原因=str(exc),
+                    )
+                return
             batch = state["explorer_proposals"]
-            order = sorted(
-                range(len(batch["proposals"])), key=lambda i: -batch["proposals"][i]["score"]
+            order = self._select_proposals(
+                batch["proposals"], len(self.explorer["quotas"]), state["temperature"]
             )
             # The validated batch and group creation are committed together, before any Analyst.
             for offset, (selected, quota) in enumerate(
@@ -249,8 +309,8 @@ class V1AsyncSearch(V1Search):
                 if offset == 0:
                     group_state = state
                 else:
-                    group_state = self._new_round(context, self.next_index)
-                    self.next_index += 1
+                    group_state = self._new_round(context, self.next_research_plan_index)
+                    self.next_research_plan_index += 1
                 proposal = batch["proposals"][selected]
                 group_state["exploration"] = self._proposal_exploration(
                     proposal, catalog, set(proposal["references"]), batch["sources"]
@@ -263,7 +323,14 @@ class V1AsyncSearch(V1Search):
                     group_state[field] = state[field]
                 group_state["explorer_proposals"] = {**batch, "selected": selected}
                 group_state["candidate_limit"] = quota
-                self.groups[str(group_state["index"])] = {"round": group_state, "work": None}
+                self.groups[str(group_state["research_plan_index"])] = {
+                    "research_plan_state": group_state,
+                    "work": None,
+                }
+                terminal_progress(
+                    f"[计划 #{group_state['research_plan_index']} · Explorer] 方向已提交",
+                    方向=group_state["exploration"]["direction"],
+                )
         self.explorer = None
         self._checkpoint()
 
@@ -278,9 +345,10 @@ class V1AsyncSearch(V1Search):
         if self.context is None:
             self.context = self._session.query("get_context", {})
         while True:
+            self._check_blocked_limit()
             self._start_explorer(context)
             self._advance_explorer(context)
-            for key, group in self.groups.items():
+            for key, group in list(self.groups.items()):
                 if "candidate" in (group["work"] or {}) or not self._runnable(key):
                     continue
                 with self._activate(key, group):
@@ -288,6 +356,9 @@ class V1AsyncSearch(V1Search):
                         self._prepare_candidate(context)
                     except _AwaitingModel:
                         pass
+                if group["research_plan_state"] is None:
+                    del self.groups[key]
+                    self._retire_explorer()
             for key, group in self.groups.items():
                 candidate = (group["work"] or {}).get("candidate")
                 if candidate is not None:
@@ -312,9 +383,10 @@ class V1AsyncSearch(V1Search):
         group = self.groups[key]
         with self._activate(key, group):
             super().tell(results)
-        if group["round"] is None:
+        if group["research_plan_state"] is None:
             del self.groups[key]
         self.pending_group = None
+        self._retire_explorer()
         self._checkpoint()
 
     def close(self):

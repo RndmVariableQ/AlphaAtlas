@@ -1,0 +1,104 @@
+{
+  "run_id": "zookeeper26-fold2-435d201527",
+  "snapshot_id": "acb8d22544fd1f7b5560576e0d072ca405f5c315b83dffb2c28d8b59e71c0604",
+  "audit_scope": "read-only feature checks on the existing final-data snapshot; no new OOS fitting or scoring",
+  "source_schema_fields": [
+    "adj_open",
+    "adj_high",
+    "adj_low",
+    "adj_close",
+    "adj_vwap",
+    "volume",
+    "amount",
+    "open_interest"
+  ],
+  "prepared_fields": [
+    "zk_mom1",
+    "zk_mom12",
+    "zk_seasonality",
+    "zk_skew",
+    "zk_kurt",
+    "zk_max",
+    "zk_var",
+    "zk_cv",
+    "zk_vov",
+    "zk_atv",
+    "zk_iliq",
+    "zk_dOI",
+    "zk_dmaOI",
+    "zk_val",
+    "zk_val36",
+    "zk_val60",
+    "zk_basis",
+    "zk_basis12",
+    "zk_l2basis12",
+    "zk_bmom",
+    "zk_bmom12",
+    "zk_l2bmom12",
+    "zk_rbasis",
+    "zk_rbasis12",
+    "zk_l2rbasis",
+    "zk_ivolaBGR"
+  ],
+  "raw_far_fields_in_zookeeper_adapter": [],
+  "sample": {
+    "start": "2023-06-01",
+    "end": "2023-07-04",
+    "rows": 104262,
+    "products": 74
+  },
+  "raw_columns_preserved": [
+    "row_id",
+    "timestamp",
+    "trading_day",
+    "exchange",
+    "instrument_id",
+    "product",
+    "adj_open",
+    "adj_high",
+    "adj_low",
+    "adj_close",
+    "adj_vwap",
+    "volume",
+    "amount",
+    "open_interest",
+    "valid_bar",
+    "eligible",
+    "target_eligible",
+    "segment_id",
+    "product_segment_id",
+    "bar_interval_minutes"
+  ],
+  "all_raw_values_and_row_order_preserved": true,
+  "prefix": {
+    "cutoff": "2023-06-15",
+    "rows": 52437,
+    "all_columns_equal": true
+  },
+  "frozen_expressions": {
+    "count": 26,
+    "all_ids_match": true,
+    "all_field_only": true,
+    "all_outputs_equal_prepared_columns": true
+  },
+  "source_publication": {
+    "source_start": "2023-05-01",
+    "source_end": "2023-06-30",
+    "matched_rows": 103614,
+    "later_than_use_rows": 0
+  },
+  "source_anchor_comparison": {
+    "start": "2023-05-01",
+    "end": "2023-06-30",
+    "matched_product_days": 2928,
+    "different_identifier_strings": 2928,
+    "different_identifiers_ignoring_case": 0,
+    "note": "Kernel codes are lowercase and curve codes uppercase; string differences alone do not establish different real contracts. No source identities were modified."
+  },
+  "pit_assessment": {
+    "feature_computation": "causal_on_fixed_snapshot; sampled prefixes and source timestamps verified",
+    "historical_data_vintages": "not_certified; latest final record exported without received_at<=decision_time",
+    "kernel_dominant_and_adjustment_effective_times": "not_certified_from_exported_metadata",
+    "curve_missing_auxiliary_bars": 2
+  }
+}

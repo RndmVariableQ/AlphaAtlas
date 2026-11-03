@@ -1,0 +1,221 @@
+{
+  "schema_version": 1,
+  "id": "zk26_seeded_fold2_300_v2",
+  "status": "protocol",
+  "paths_relative_to": "repository_root",
+  "question": "固定搜索预算后，各方法全部入库因子对既有 26 因子预测组合的历史留出集增量。",
+  "experiment_version": "rq8_zk26_seeded_fold2_luna_v4",
+  "baseline_manifest": "docs/records/zookeeper26_fold2/baseline.json",
+  "baseline_model_config": "docs/records/zookeeper26_fold2/model/fit.json#spec.config",
+  "baseline_factor_order": "docs/records/zookeeper26_fold2/model/fit.json#factor_ids",
+  "baseline_frozen_library": "docs/records/zookeeper26_fold2/frozen/library.json",
+  "methods": [
+    {
+      "id": "random",
+      "group": "finite_grammar_control"
+    },
+    {
+      "id": "gp",
+      "group": "finite_grammar_control"
+    },
+    {
+      "id": "mcts",
+      "group": "finite_grammar_control"
+    },
+    {
+      "id": "atlas",
+      "group": "finite_grammar_control"
+    },
+    {
+      "id": "react",
+      "group": "llm_search"
+    },
+    {
+      "id": "alphaprobe",
+      "group": "llm_search"
+    },
+    {
+      "id": "alphaschema",
+      "group": "llm_search"
+    },
+    {
+      "id": "mcts_llm",
+      "group": "llm_search"
+    },
+    {
+      "id": "annealing",
+      "group": "llm_search"
+    },
+    {
+      "id": "v1",
+      "group": "llm_search"
+    },
+    {
+      "id": "v1_async",
+      "group": "llm_search"
+    }
+  ],
+  "budget": {
+    "unit": "platform_candidate_attempt",
+    "per_method_per_seed": 300,
+    "primary_seeds": [
+      42
+    ],
+    "primary_search_runs": 11,
+    "primary_attempt_ceiling": 3300,
+    "primary_model_fit_seed": 42,
+    "primary_evaluation_node": 300,
+    "secondary_evaluation_nodes": [
+      200
+    ],
+    "train_val_progress_nodes": [
+      50,
+      100,
+      150,
+      200,
+      250,
+      300
+    ],
+    "prefix_semantics": "从固定 300 次新候选轨迹的原子 trial 前缀恢复新增准入成员；B26 始终存在，不计作本轮发现。",
+    "charged": [
+      "initialization_submissions",
+      "duplicates",
+      "invalid_candidates",
+      "computation_failures",
+      "quality_rejections",
+      "cache_hits"
+    ],
+    "not_charged": [
+      "read_only_queries",
+      "syntax_prechecks",
+      "format_repairs_without_evaluation",
+      "budget_rejected",
+      "predeclared_existing_B26_measurement"
+    ],
+    "model_costs": "全部实际请求、重试、已知 token、embedding、墙钟及计算耗时另外报告；未知不记零。",
+    "early_stop": "保留真实已用预算及原因，不补齐或重启挑种子；未到节点标 not_reached，正常早停仍评价当时已冻结全库，区分分配上限与实际消耗。",
+    "technical_failure": "保留失败，按原运行恢复；未完成运行不当成零增量或从总表消失。"
+  },
+  "optional_replication": {
+    "enabled_by_default": false,
+    "additional_seeds": [
+      43,
+      44
+    ],
+    "additional_search_runs": 22,
+    "additional_attempt_ceiling": 6600,
+    "total_attempt_ceiling_with_primary": 9900,
+    "activation_rule": "若做三轮正式比较，在本轮任何 Test 之前决定并完成全部 33 次搜索；不得只重复赢家。",
+    "report": "逐 seed、均值、标准差、范围和正增量 seed 数；不把三个 seed 当成充分的显著性证据。",
+    "seed_scope": "改变搜索 RNG；下游模型 seed 始终为 42。在线服务与异步完成顺序未必逐次相同。"
+  },
+  "fairness": {
+    "chat_config_source": "experiment_version.method_configs",
+    "chat_model": "gpt-6-luna",
+    "chat_route": "所有 LLM 方法使用同一个已冻结地址；真实运行前确认实际后端一致，故障不临时换模型。",
+    "method_parameters": "保留各方法的温度、修复、对话、异步与搜索配置；不声称等 token 或单一机制消融。",
+    "embedding": "AlphaProbe 保留原 Qwen3-Embedding-0.6B 检索服务，计入该方法成本。",
+    "search_space": "四个有限文法控制与七个 LLM 搜索分组展示；能力和搜索空间差异明确标注。",
+    "initial_library": "每次运行从固定 B26 的全部 26 个成员开始，初始及新增成员共同参与查询、表达式去重与 Val 相似度准入；初始定义按本版本重算 Train/Val，不接收 Test。初始成员和测量成本单列，不占 300 次新候选尝试预算。",
+    "reference_library": "沿用版本统一的 futures_cta 无绩效参考定义，使用须重新评估。",
+    "objective": "搜索沿用原单因子 train/val 反馈与准入；组合增量仅在冻结后评价，不偷换成残差搜索。"
+  },
+  "arms": {
+    "B": "既有 26 项，按 baseline 冻结顺序、表达式和训练方向；在 v4 数据适配器上重算并作配对拟合。",
+    "B_plus_method": "B + 指定方法、seed、预算前缀的全部新增准入因子，排除预置 B26。",
+    "B_plus_union": "B + 同一 seed 和预算前缀下全部 11 个方法准入因子的并集；仅作补充，不列入等 300 预算排名。",
+    "union_requires": "11 个运行均结束并披露实际预算；技术失败未解决时标为 partial_union，不冒充完整并集。",
+    "ordering": "B 在先；新因子按 plan.methods 顺序、再按实际准入 trial 编号；单方法保留准入顺序。",
+    "deduplication": "只按公共 canonical factor_id 删除完全重复定义；保留首次定义与方向，记录全部来源。",
+    "correlated_factors": "保留不同身份但相关的因子，不新增相关性门槛，不按 Test 或 Val 再选 top-k。",
+    "unusable_columns": "只按既有训练预处理删除全缺失或常量列，单独报告入库数、重复数和模型保留列数。",
+    "empty_or_exact_duplicates_only": "扩充列集合等于 B 时直接复用 B 的预测，增量为 0；空库单独 IC 未定义。",
+    "models": [
+      "linear",
+      "lightgbm"
+    ]
+  },
+  "paired_fit": {
+    "fit_period": "version.fold.train + version.fold.val",
+    "test_period": "version.fold.test",
+    "target": "版本冻结的未来 12 根 5m 对数收益；目标终点不跨 split 或真实合约／连续段。",
+    "config_requirement": "version.model 必须等于 baseline_model_config；不调参、early stopping 或择优模型。",
+    "training_cohort": "先在符合标签和 eligibility 的 Train+Val 上确定 B 的非恒定列；固定其中至少一个 B 保留列有限的 row_id。所有组在这个同一集合拟合。",
+    "preprocessing": "两组在共同训练行上分别拟合相同预处理；共享 B 列与标签应得相同边界、均值和尺度；新列缺失按训练均值填补，不要求全列完整。",
+    "prediction_cohort": "固定 Test 上 B 能预测且目标有效的 row_id；所有组必须在相同行预测。新增列不扩大主比较覆盖。",
+    "baseline_reuse": "仅复用本次相同数据、配置和共同训练行拟合的 B；不得直接减历史已归档 IC。",
+    "clipping_and_targets": "训练标签裁剪和品种去均值沿用 model.py；IC 与误差评价使用原始 Test 目标，不用 Test 校准预测。",
+    "split_separation": "下游模型不把参与筛选和合并拟合的 Val 当作独立模型验证集。",
+    "additional_coverage": "另报原始预测覆盖、共同样本覆盖和新因子覆盖；主比较不混入新增覆盖行。"
+  },
+  "metrics": {
+    "primary": "delta_time_series_weighted_pearson_ic_at_300",
+    "primary_formula": "IC(B + L) - IC(B)",
+    "secondary": [
+      "delta_time_series_weighted_spearman_ic",
+      "relative_weighted_mse_reduction",
+      "delta_time_series_equal_pearson_ic",
+      "delta_time_series_equal_spearman_ic"
+    ],
+    "mse_formula": "1 - MSE(B + L) / MSE(B)",
+    "mse_zero_denominator": "undefined",
+    "product_weights": "按完整 Test eligible 行计算各品种 sqrt(sum(amount))，共同品种内归一化；两组使用同一权重。",
+    "mse_aggregation": "先求每个品种在共同样本上的 MSE，再按固定品种权重加权；不平均各品种的相对改善率。",
+    "ic_products": "配对两组都满足公共指标有效条件的品种交集；共同 row_id、品种与权重同时用于两组。",
+    "cross_method_ranking": "同模型、同节点另列所有可评分方法共同有效品种上的比较表；披露剔除与覆盖，整组常量预测不得填 IC=0。",
+    "breakdowns": [
+      "test_2024",
+      "test_2025",
+      "per_product"
+    ],
+    "interpretation": "分别列出两个模型全部结果；IC 改善但误差恶化时如实报告，不等同可交易收益、Sharpe 或独立信息数量。"
+  },
+  "uncertainty": {
+    "kind": "paired_moving_trading_day_blocks",
+    "block_length_days": 20,
+    "replicates": 2000,
+    "seed": 20261102,
+    "interval": [
+      0.025,
+      0.975
+    ],
+    "resampling": "按年分层；全市场同步抽连续交易日块，年内截断到原日数，不逐根 5m iid 重抽；所有组共享抽样索引。",
+    "fixed_predictions": true,
+    "fixed_full_test_product_weights": true,
+    "metrics": [
+      "delta_time_series_weighted_pearson_ic",
+      "relative_weighted_mse_reduction"
+    ],
+    "computation": "保存品种×交易日充分统计量，重算区块内各品种 pooled Pearson 和 MSE；不平均日 IC；不为 bootstrap 重训。",
+    "missing_product": "某次抽样无观测或 IC 无定义的品种在该次两组同时排除，归一化剩余固定权重；报告有效重复次数。",
+    "claims": "区间为冻结模型的时间波动描述；不代替搜索 seed 重复，也不作 11×2 多重比较后的显著赢家声明。"
+  },
+  "sequence": [
+    "离线校验版本、数据身份、模型配置与命令矩阵；预先决定是否启用全部重复轮。",
+    "真实搜索前另行确认同一 Chat 后端兼容各方法及 embedding 可用；本设计不发真实请求。",
+    "运行矩阵全部使用 --search-only；只接触 train/val，记录每个返回的 run_dir。",
+    "全部搜索结束后固定成员、方向、算子依赖及 200/300 前缀，冻结方法并集。",
+    "在共同 Train+Val 行拟合并保存所有 B 和扩充模型，冻结评价样本规则及 bootstrap 参数。",
+    "统一读取历史 Test，生成所有逐方法和并集增量表，不回传搜索、不按 Test 改成员或参数。"
+  ],
+  "outputs": {
+    "search": "复用 artifacts/runs/<run_id>/ 原子 trial、方法状态、冻结库和成本记录。",
+    "paired_evaluation": "artifacts/comparisons/zk26_seeded_fold2_three_methods_300_v2/；只把搜索新增成员算作增量，保留 B26 初始成员来源。",
+    "factor_export": "JSONL：来源 run、method、seed、budget node、factor_id、完整表达式、描述、方向、准入 trial 与重复来源。",
+    "result_export": "JSONL：method/union、seed、budget、model、status、实际尝试、入库/去重/保留数、共同样本/品种、两组 IC/MSE、增量、区间、覆盖与成本。",
+    "licensed_rows": "若落地逐行行情／预测等派生 .parq，存 data/ 下并保持 Git 排除；公开仅定义、配置、汇总和代码。"
+  },
+  "implementation_status": {
+    "search_version_and_commands": "available",
+    "ordinary_atlas_model": "仅评估单个冻结库；B 与 B+L 使用独立配对入口。",
+    "paired_incremental_entrypoint": "scripts/evaluate_incremental.py; fit all arms, then explicit --test",
+    "execution_records": "各 scope 给出本批输入；真实运行状态与结果以 artifacts/runs 和 artifacts/comparisons 为准。"
+  },
+  "limitations": [
+    "2024–2025 已查看，仅为历史诊断留出集；新的确认性 OOS 需要事先冻结且未查看的后续数据。",
+    "单 seed 结果只是该次搜索产物比较；三 seed 重复也不能消除已知历史 Test 的研究选择偏差。",
+    "固定最终快照上的因果计算不等于已认证 vintage PIT；沿用 v2 的 Kernel 聚合 5m、曲线缺失与代理定义边界。",
+    "v3 与 v2 数据、字段、配方、算子、划分、准入和预测模型相同；仅统一 Chat 服务和超时并将默认尝试数设为 300。",
+    "v3 的独立空库搜索已停止用于本轮主比较：AlphaProbe 已冻结，另外两组保留中断状态。v4 以 B26 为统一初始库重新搜索，不合并两种轨迹。"
+  ]
+}

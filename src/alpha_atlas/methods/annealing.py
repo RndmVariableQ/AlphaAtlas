@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import math
@@ -11,30 +12,25 @@ from dataclasses import asdict, dataclass
 from alpha_atlas.annealing import acceptance_probability, finite, temperature
 from alpha_atlas.contracts import Candidate, Region, SearchContext
 from alpha_atlas.methods.mcts_llm import LLMSearchConfig
-from alpha_atlas.methods.models import HTTPModels
+from alpha_atlas.methods.models import HTTPModels, parse_json_object
 from alpha_atlas.methods.prompt_examples import render_factor_examples
 from alpha_atlas.reporting import TerminalStream, terminal_progress
+from alpha_atlas.session import READ_ONLY_QUERY_HELP
 from alpha_atlas.storage import candidate_from_dict
 from alpha_atlas.timeframes import field_reference
 
-READ_ONLY_QUERY_PROMPT = """For shared read-only tools, return only a JSON object:
+READ_ONLY_QUERY_PROMPT = (
+    """For shared read-only tools, return only a JSON object:
 {"queries": [{"name": "library_search", "arguments": {"query": "mechanism", "source": "all"}}]}.
-Available queries: get_context(), library_search(query='', source='all', offset=0, limit=10),
-library_get(factor_id), library_list(offset=0, limit=20), library_stats().
+"""
+    + READ_ONLY_QUERY_HELP
+    + """
 get_context returns allowed fields, operators, expression and evaluation rules, and reference settings.
 Use query_results as evidence, then return the final JSON required by your role.
-At most 8 query rounds, 16 requests per round. Queries do not submit or evaluate candidates.
-Reference definitions without measured performance must be evaluated by the platform.
-Queries do not change the region, direction, plan, allowed fields or admission rules.
+At most 8 query rounds, 16 requests per round.
+Reference definitions have no measured performance.
 """
-
-
-def _one_sentence(value):
-    text = " ".join(value.split())
-    endings = [text.find(mark) for mark in ("。", "！", "？", "!", "?", ".") if mark in text]
-    if endings:
-        text = text[: min(endings) + 1].strip()
-    return text if len(text) <= 120 else text[:119].rstrip() + "…"
+)
 
 
 def _distribution(values, *, positive_ratio=False):
@@ -105,7 +101,7 @@ class AnnealingLLMSearch:
         self._atlas_context = lambda: {"regions": [], "statistics": {}}
         self._checkpoint = lambda: None
         self.context = None
-        self.round_state = None
+        self.research_plan_state = None
         self.work = None
         self.pending = None
         self.active_region_id = None
@@ -113,9 +109,10 @@ class AnnealingLLMSearch:
         self.proposed_regions = {}
         self.attempts_total = None
         self.completed_attempts = 0
-        self.round_index = 0
+        self.completed_research_plan_count = 0
         self.last_evaluation = None
-        self.steps = []
+        self.factor_trial_records = []
+        self.blocked_plans = []
         self.usage = {
             "chat_requests": 0,
             "unknown_usage_requests": 0,
@@ -128,6 +125,11 @@ class AnnealingLLMSearch:
     @property
     def configuration(self):
         return asdict(self.config)
+
+    @property
+    def pending_research_plan_index(self):
+        state = self.research_plan_state
+        return state["research_plan_index"] if state is not None else None
 
     def set_session(self, session):
         self._session = session
@@ -153,7 +155,7 @@ class AnnealingLLMSearch:
                 key: getattr(self, key)
                 for key in (
                     "context",
-                    "round_state",
+                    "research_plan_state",
                     "work",
                     "pending",
                     "active_region_id",
@@ -161,9 +163,10 @@ class AnnealingLLMSearch:
                     "proposed_regions",
                     "attempts_total",
                     "completed_attempts",
-                    "round_index",
+                    "completed_research_plan_count",
                     "last_evaluation",
-                    "steps",
+                    "factor_trial_records",
+                    "blocked_plans",
                     "usage",
                 )
             },
@@ -174,8 +177,50 @@ class AnnealingLLMSearch:
             raise ValueError("annealing method configuration changed")
         rng = state["rng"]
         self.rng.setstate((rng[0], tuple(rng[1]), rng[2]))
+        self._load_research_fields(state)
+
+    def _load_research_fields(self, state):
+        # Decode historical field names here; saved model inputs and replies stay untouched.
+        aliases = {
+            "factor_trial_records": "steps",
+            "research_plan_state": "round_state",
+            "completed_research_plan_count": "round_index",
+            "next_research_plan_index": "next_index",
+        }
         for key in self.dump_state().keys() - {"version", "config", "rng"}:
-            setattr(self, key, state[key])
+            source = key if key in state else aliases.get(key, key)
+            value = state.get(source, []) if key == "blocked_plans" else state[source]
+            setattr(self, key, copy.deepcopy(value))
+        for record in self.factor_trial_records:
+            if "round_index" in record:
+                record["research_plan_index"] = record.pop("round_index")
+            if "trial_index" in record:
+                record["factor_trial_index"] = record.pop("trial_index")
+            for key in ("candidate", "evaluation", "accepted"):
+                record.pop(key, None)
+        if self.last_evaluation is not None:
+            if "trial_index" in self.last_evaluation:
+                self.last_evaluation["factor_trial_index"] = self.last_evaluation.pop("trial_index")
+            if "nearest_factor" in self.last_evaluation:
+                self.last_evaluation["nearest_factor_id"] = self.last_evaluation.pop(
+                    "nearest_factor"
+                )
+        groups = list(getattr(self, "groups", {}).values())
+        if getattr(self, "explorer", None) is not None:
+            groups.append(self.explorer)
+        plans = [self.research_plan_state]
+        work = [self.work]
+        for group in groups:
+            if "round" in group:
+                group["research_plan_state"] = group.pop("round")
+            plans.append(group["research_plan_state"])
+            work.append(group["work"])
+        for plan in plans:
+            if plan is not None and "index" in plan:
+                plan["research_plan_index"] = plan.pop("index")
+        for item in work:
+            if item is not None and "round_index" in item:
+                item["research_plan_index"] = item.pop("round_index")
 
     def _start_request(self, kind):
         self.usage[f"{kind}_requests"] += 1
@@ -207,24 +252,37 @@ class AnnealingLLMSearch:
                 },
             )
 
-    def _region_evidence(self, region_id):
+    def _trial_results(self, records=None):
+        records = self.factor_trial_records if records is None else records
+        return {
+            record["factor_trial_index"]: self._session.get_trial(record["factor_trial_index"])
+            for record in records
+        }
+
+    def _region_evidence(self, region_id, trials=None):
         metric_name = self.context.get("metric")
         rules = self.context.get("evaluation_rules", {})
         min_coverage = rules.get("min_coverage", 0.0)
-        steps = [step for step in self.steps if step.get("region_id") == region_id]
+        factor_trial_records = [
+            record for record in self.factor_trial_records if record.get("region_id") == region_id
+        ]
+        trials = self._trial_results(factor_trial_records) if trials is None else trials
         evaluated = [
-            step for step in steps if (step.get("evaluation") or {}).get("status") == "success"
+            record
+            for record in factor_trial_records
+            if trials[record["factor_trial_index"]]["status"] == "success"
         ]
         qualified = []
-        for step in evaluated:
-            evaluation = step["evaluation"]
+        for record in evaluated:
+            evaluation = trials[record["factor_trial_index"]]
             train = _metric_value(evaluation, metric_name, "train")
             valid = _metric_value(evaluation, metric_name, "val")
             coverage = evaluation.get("coverage")
             if finite(train) and finite(valid) and finite(coverage) and coverage >= min_coverage:
                 qualified.append(
                     {
-                        "step": step,
+                        "record": record,
+                        "evaluation": evaluation,
                         "train": abs(train),
                         "valid": valid,
                         "coverage": coverage,
@@ -235,43 +293,46 @@ class AnnealingLLMSearch:
         negatives = [item for item in qualified if item["valid"] < 0]
         neutral = [item for item in qualified if item["valid"] == 0]
         if not qualified:
-            label = "样本不足"
+            label = "insufficient samples"
         elif (positives and negatives) or neutral:
-            label = "证据混合"
+            label = "mixed evidence"
         elif positives:
-            label = "有初步支持"
+            label = "preliminary support"
         else:
-            label = "本轮验证较弱"
+            label = "weak validation this round"
 
         rejection_reasons = {}
-        for step in steps:
-            if step.get("accepted"):
+        for record in factor_trial_records:
+            evaluation = trials[record["factor_trial_index"]]
+            if evaluation["accepted"]:
                 continue
-            evaluation = step.get("evaluation") or {}
-            reason = evaluation.get("reason") or evaluation.get("status") or "未入库"
+            reason = evaluation.get("reason") or evaluation.get("status") or "not admitted"
             rejection_reasons[reason] = rejection_reasons.get(reason, 0) + 1
 
         def examples(items, key):
             selected = sorted(items, key=key, reverse=True)[:1]
             return [
                 {
-                    "ref": f"trial:{item['step'].get('trial_index')}",
-                    "trial_index": item["step"].get("trial_index"),
-                    "evaluation_id": item["step"].get("evaluation", {}).get("evaluation_id"),
-                    "factor_id": item["step"].get("evaluation", {}).get("factor_id"),
+                    "ref": f"trial:{item['record'].get('factor_trial_index')}",
+                    "factor_trial_index": item["record"].get("factor_trial_index"),
+                    "evaluation_id": item["evaluation"].get("evaluation_id"),
+                    "factor_id": item["evaluation"].get("factor_id"),
                     "train_oriented": item["train"],
                     "valid_oriented": item["valid"],
                     "valid_coverage": item["coverage"],
-                    "admitted": bool(item["step"].get("accepted")),
+                    "admitted": bool(item["evaluation"]["accepted"]),
                 }
                 for item in selected
             ]
 
         return {
-            "attempts": len(steps),
+            "attempts": len(factor_trial_records),
             "successful_evaluations": len(evaluated),
             "valid_coverage_qualified": len(qualified),
-            "admitted": sum(bool(step.get("accepted")) for step in steps),
+            "admitted": sum(
+                bool(trials[record["factor_trial_index"]]["accepted"])
+                for record in factor_trial_records
+            ),
             "rejection_reasons": rejection_reasons,
             "evidence_label": label,
             "train_primary": _distribution([item["train"] for item in qualified]),
@@ -283,7 +344,8 @@ class AnnealingLLMSearch:
             "opposing_trials": examples(negatives, lambda item: -item["valid"]),
         }
 
-    def _explorer_atlas(self, snapshot):
+    def _explorer_atlas(self, snapshot, trials=None):
+        trials = self._trial_results() if trials is None else trials
         regions = []
         region_ids_by_continent = {}
         for region in snapshot.get("regions", []):
@@ -294,14 +356,16 @@ class AnnealingLLMSearch:
             regions.append(
                 {
                     **region,
-                    "statistics": self._region_evidence(region_id),
+                    "statistics": self._region_evidence(region_id, trials),
                 }
             )
         return {
-            "scope": "当前 run 的全量 Region；AlphaAtlas 每个 run 独立，不合并其他 run",
+            "scope": "all Regions of the current run; each AlphaAtlas run is independent and other runs "
+            "are not merged",
             "primary_metric": self.context.get("metric"),
             "direction_handling": (
-                "Train 主指标按绝对值汇总；报告中的 Valid 主指标已按 Train 方向同向化。"
+                "Train primary metrics are aggregated as absolute values; reported Valid primary "
+                "metrics are already aligned to the Train direction."
             ),
             "validation_coverage_threshold": self.context.get("evaluation_rules", {}).get(
                 "min_coverage", 0.0
@@ -311,6 +375,10 @@ class AnnealingLLMSearch:
                 for continent_id, region_ids in sorted(region_ids_by_continent.items())
             ],
             "regions": regions,
+            "blocked_plans": [
+                {"research_plan_index": item["research_plan_index"], "plan": item["plan"]}
+                for item in self.blocked_plans
+            ],
         }
 
     def _round_temperature(self, context):
@@ -321,10 +389,19 @@ class AnnealingLLMSearch:
             progress, self.config.initial_temperature, self.config.final_temperature
         )
 
-    def _analyst_previous_round(self, round_index=None):
-        round_index = self.round_index if round_index is None else round_index
+    def _analyst_previous_round(self, research_plan_index=None):
+        research_plan_index = (
+            self.completed_research_plan_count
+            if research_plan_index is None
+            else research_plan_index
+        )
         metric_name = self.context.get("metric") if isinstance(self.context, dict) else None
-        prior_steps = [step for step in self.steps if step.get("round_index") == round_index]
+        prior_records = [
+            record
+            for record in self.factor_trial_records
+            if record.get("research_plan_index") == research_plan_index
+        ]
+        trials = self._trial_results(prior_records)
         ranked = []
         evaluation_rules = (
             self.context.get("evaluation_rules", {}) if isinstance(self.context, dict) else {}
@@ -332,11 +409,11 @@ class AnnealingLLMSearch:
         minimum_coverage = evaluation_rules.get(
             "min_coverage", self.context.get("min_coverage", 0.0)
         )
-        for step in prior_steps:
-            evaluation = step.get("evaluation") or {}
+        for record in prior_records:
+            evaluation = trials[record["factor_trial_index"]]
             coverage = evaluation.get("coverage")
             if (
-                step.get("accepted") is not True
+                evaluation["accepted"] is not True
                 or evaluation.get("status") != "success"
                 or not finite(coverage)
                 or coverage < minimum_coverage
@@ -355,8 +432,8 @@ class AnnealingLLMSearch:
                 continue
             ranked.append(
                 {
-                    "trial_index": step.get("trial_index"),
-                    "candidate": step.get("candidate"),
+                    "factor_trial_index": record.get("factor_trial_index"),
+                    "candidate": evaluation["candidate"],
                     "coverage": coverage,
                     "selection_metric": metric_name,
                     "primary_val_ic": primary_val,
@@ -371,12 +448,12 @@ class AnnealingLLMSearch:
         ranked.sort(
             key=lambda item: (
                 -item["absolute_primary_val_ic"],
-                item["trial_index"] if type(item["trial_index"]) is int else 0,
+                item["factor_trial_index"] if type(item["factor_trial_index"]) is int else 0,
             )
         )
         return {
-            "round_index": round_index or None,
-            "attempted_candidates": len(prior_steps),
+            "research_plan_index": research_plan_index or None,
+            "attempted_candidates": len(prior_records),
             "qualified_candidates": len(ranked),
             "selection_metric": metric_name,
             "ranking": "descending absolute direction-adjusted validation primary IC",
@@ -410,10 +487,12 @@ class AnnealingLLMSearch:
                 key in records[-1] for key in ("result", "error", "query_results")
             ):
                 try:
-                    raw = json.loads(records[-1]["text"])
-                    if not isinstance(raw, dict):
-                        raise ValueError("model response must be a JSON object")
-                    if stage == "analyst" and "queries" in raw:
+                    raw = parse_json_object(records[-1]["text"])
+                    if (
+                        stage == "analyst"
+                        and "queries" in raw
+                        and (raw["queries"] != [] or len(raw) == 1)
+                    ):
                         records[-1]["query_results"] = self._read_queries(raw, records)
                     else:
                         records[-1]["result"] = validator(raw)
@@ -428,7 +507,10 @@ class AnnealingLLMSearch:
                 else self.config.max_dialogue_rounds
             )
             if len(records) >= limit:
-                raise ValueError(f"{stage}: response repair limit exhausted")
+                raise ValueError(
+                    f"{stage}: response repair limit exhausted; last validation error: "
+                    + records[-1].get("error", "no valid final response")
+                )
             prompt = {
                 **payload,
                 "previous_response": records[-1].get("text") if records else None,
@@ -437,12 +519,14 @@ class AnnealingLLMSearch:
                     record["query_results"] for record in records if "query_results" in record
                 ],
             }
-            terminal_progress(
-                "退火",
+            self._request_progress(
+                {"explorer": "Explorer", "analyst": "Analyst", "miner": "Miner"}[stage],
+                计划=(self.research_plan_state or {}).get(
+                    "research_plan_index", self.completed_research_plan_count + 1
+                ),
                 进度=f"{self.completed_attempts + 1}/{self.attempts_total}",
-                Agent={"explorer": "Explorer", "analyst": "Analyst", "miner": "Miner"}[stage],
-                轮次=(self.round_state or {}).get("index", self.round_index + 1),
-                模式=(self.round_state or {}).get("mode"),
+                对话=f"{len(records) + 1}/{limit}",
+                模式=(self.research_plan_state or {}).get("mode"),
             )
             self._start_request("chat")
             text, usage = self.models.chat(
@@ -523,14 +607,23 @@ class AnnealingLLMSearch:
 
     @staticmethod
     def _validate_plan(raw, exploration, context):
+        blocked = AnnealingLLMSearch._blocked_reason(raw)
+        if blocked is not None:
+            return {
+                "region_id": exploration["region_id"],
+                "direction": exploration["direction"],
+                "blocked": blocked,
+            }
         hypothesis = raw.get("hypothesis")
         instruction = raw.get("miner_instruction")
         fields = raw.get("allowed_fields")
         known_fields = set(context.get("fields", []))
         if not isinstance(hypothesis, str) or not hypothesis.strip():
             raise ValueError("Analyst must provide a testable hypothesis")
+        if isinstance(instruction, dict) and instruction:
+            instruction = json.dumps(instruction, ensure_ascii=False, allow_nan=False)
         if not isinstance(instruction, str) or not instruction.strip():
-            raise ValueError("Analyst must provide Miner instructions")
+            raise ValueError("miner_instruction must be nonempty text or a nonempty JSON object")
         if (
             not isinstance(fields, list)
             or not fields
@@ -547,6 +640,9 @@ class AnnealingLLMSearch:
         }
 
     def _validate_miner(self, raw):
+        blocked = self._blocked_reason(raw)
+        if blocked is not None:
+            return {"blocked": blocked}
         expression = raw.get("expression")
         if not isinstance(expression, str) or not expression.strip():
             raise ValueError("Miner must provide a nonempty Atlas DSL expression")
@@ -554,7 +650,7 @@ class AnnealingLLMSearch:
         if checked["error"] is not None:
             raise ValueError(checked["error"])
         tree = checked["expression"]
-        fields = set(self.round_state["plan"]["allowed_fields"])
+        fields = set(self.research_plan_state["plan"]["allowed_fields"])
 
         def used_fields(node):
             values = {field_reference(node["value"])[0]} if node["op"] == "field" else set()
@@ -572,6 +668,37 @@ class AnnealingLLMSearch:
             raise ValueError("Miner name must be text")
         return {"expression": expression, "name": name}
 
+    @staticmethod
+    def _blocked_reason(raw):
+        if "blocked" not in raw:
+            return None
+        reason = raw["blocked"]
+        if set(raw) != {"blocked"} or not isinstance(reason, str) or not reason.strip():
+            raise ValueError('return only {"blocked":"specific missing capability"}')
+        return reason.strip()
+
+    def _check_blocked_limit(self):
+        count = sum(
+            item["completed_attempts"] == self.completed_attempts for item in self.blocked_plans
+        )
+        if count >= self.config.max_dialogue_rounds:
+            raise ValueError("blocked plan limit exhausted without a submitted candidate")
+
+    def _finish_blocked_plan(self, reason):
+        state = self.research_plan_state
+        self.blocked_plans.append(
+            {
+                "research_plan_index": state["research_plan_index"],
+                "plan": {**state["plan"], "blocked": reason},
+                "completed_attempts": self.completed_attempts,
+            }
+        )
+        if not state["outcomes"]:
+            self.completed_research_plan_count += 1
+        self._finish_round(update_region=False)
+        self.work = None
+        self._checkpoint()
+
     def _new_round(self, context, index):
         snapshot, _ = self._catalog()
         self._seed_region_scores(snapshot)
@@ -580,7 +707,7 @@ class AnnealingLLMSearch:
             self.config.initial_temperature * self.config.final_temperature
         )
         return {
-            "index": index,
+            "research_plan_index": index,
             "temperature": heat,
             "budget_progress": progress,
             "mode": "breadth" if heat >= geometric_midpoint else "depth",
@@ -591,20 +718,39 @@ class AnnealingLLMSearch:
             "outcomes": [],
         }
 
+    def _request_progress(self, title, *, reminder=None, **values):
+        plan_index = values.pop("计划", None)
+        scope = f"[计划 #{plan_index} · {title}]"
+        if reminder:
+            terminal_progress(f"{scope} 提醒", 内容=reminder)
+        action = {"Explorer": "探索方向", "Analyst": "制定计划", "Miner": "生成因子"}[title]
+        labels = {"计划候选": "候选", "修复": "尝试"}
+        details = " · ".join(
+            f"{labels.get(key, key)}={value}"
+            for key, value in values.items()
+            if value is not None and key != "进度" and (key != "模式" or title == "Explorer")
+        )
+        terminal_progress(f"{scope} {action} · {details}")
+
     def _start_round(self, context):
-        if self.round_state is None:
-            self.round_state = self._new_round(context, self.round_index + 1)
+        if self.research_plan_state is None:
+            self.research_plan_state = self._new_round(
+                context, self.completed_research_plan_count + 1
+            )
             self._checkpoint()
         snapshot, catalog = self._catalog()
-        self.round_state["atlas_snapshot"] = snapshot
+        self.research_plan_state["atlas_snapshot"] = snapshot
         self._seed_region_scores(snapshot)
-        exploration = self.round_state["exploration"]
+        exploration = self.research_plan_state["exploration"]
         if exploration is None:
             exploration = self._explore_round(snapshot, catalog)
-            self.round_state["exploration"] = exploration
+            self.research_plan_state["exploration"] = exploration
             self._checkpoint()
-        terminal_progress("Explorer", 方向=_one_sentence(exploration["direction"]))
-        plan = self.round_state["plan"]
+            terminal_progress(
+                f"[计划 #{self.research_plan_state['research_plan_index']} · Explorer] 方向已提交",
+                方向=exploration["direction"],
+            )
+        plan = self.research_plan_state["plan"]
         if plan is None:
             analyst_payload = {
                 "research_context": self.context,
@@ -614,18 +760,30 @@ class AnnealingLLMSearch:
             plan = self._phase(
                 "analyst",
                 "You are the Research Analyst Agent. Turn the Explorer's fixed direction into a "
-                "testable plan for one Factor Miner candidate at a time. Do not change the region "
-                "or research direction. Choose only available base field names in allowed_fields; "
-                "specify any permitted @interval in the measurement plan and Miner instructions. "
-                "Do not decide whether a "
-                "candidate is qualified; the platform does that. Return JSON with hypothesis, "
-                "allowed_fields, measurement_plan and miner_instruction.",
+                "testable plan for one Factor Miner candidate at a time. Choose the fields, feature "
+                "timeframes, windows, controls and thresholds for that direction. Use base field "
+                "names in allowed_fields; specify @interval in the measurement plan and Miner "
+                "instructions. Return one JSON object without "
+                "Markdown or surrounding prose: hypothesis is a nonempty string; allowed_fields "
+                "is a nonempty array of available base-field strings; measurement_plan is a "
+                "string; miner_instruction is nonempty instruction text. A nonempty JSON object "
+                "for miner_instruction is also accepted and passed to Miner as JSON text, "
+                "preserving all keys and values. Use tests executable through the supplied DSL "
+                "and platform feedback. If the direction requires unavailable data or evaluation "
+                'capabilities, return only {"blocked":"specific missing capability"}.',
                 analyst_payload,
                 lambda raw: self._validate_plan(raw, exploration, self.context),
-                self.round_state["responses"]["analyst"],
+                self.research_plan_state["responses"]["analyst"],
             )
-            terminal_progress("Analyst", 假设=_one_sentence(plan["hypothesis"]))
-            self.round_state["plan"] = plan
+            terminal_progress(
+                f"[计划 #{self.research_plan_state['research_plan_index']} · Analyst] 计划已提交",
+                **{
+                    "阻塞原因" if "blocked" in plan else "假设": plan.get(
+                        "blocked", plan.get("hypothesis")
+                    ),
+                },
+            )
+            self.research_plan_state["plan"] = plan
             self._checkpoint()
 
     def _explore_round(self, snapshot, catalog):
@@ -636,7 +794,7 @@ class AnnealingLLMSearch:
             for field in ("supporting_trials", "opposing_trials")
             for item in region["statistics"][field]
         }
-        mode = self.round_state["mode"]
+        mode = self.research_plan_state["mode"]
         active = catalog.get(self.active_region_id)
         explorer_payload = {
             "research_context": self.context,
@@ -656,15 +814,17 @@ class AnnealingLLMSearch:
 
         def explore(raw):
             result = self._validate_exploration(raw, catalog, available_evidence_refs)
-            self.round_state["exploration"] = result
+            self.research_plan_state["exploration"] = result
             return result
 
-        exploration = self.round_state["exploration"]
+        exploration = self.research_plan_state["exploration"]
         if exploration is None:
             exploration = self._phase(
                 "explorer",
                 "You are the Atlas Explorer Agent. Choose what market mechanism or region to "
                 "study. Use only the complete current-run Atlas map and research context. The map "
+                "includes blocked plans and their missing capabilities; choose another executable "
+                "question or a new test that resolves the blocker. The map "
                 "summarizes successful, Valid-coverage-qualified Train/Valid primary-metric pairs; "
                 "Train is shown by absolute value and Valid is already flipped with the Train sign. "
                 "Read the evidence label cautiously, keep insufficient evidence inconclusive, and "
@@ -678,7 +838,7 @@ class AnnealingLLMSearch:
                 '"direction":"research question","evidence_refs":[]}.',
                 explorer_payload,
                 explore,
-                self.round_state["responses"]["explorer"],
+                self.research_plan_state["responses"]["explorer"],
             )
         return exploration
 
@@ -698,18 +858,20 @@ class AnnealingLLMSearch:
             "The conversation contains every earlier candidate "
             "you proposed in this plan and the platform evaluation returned for each one. Use "
             "that evidence to propose a materially distinct next candidate; never repeat an "
-            "earlier expression. Do not change the region, direction, plan, evaluation, or "
-            "admission decision. Return JSON with expression and optional name."
+            "earlier expression. Return JSON with expression and optional name. If the planned "
+            "test cannot be implemented, return only "
+            '{"blocked":"specific missing capability"}. Keep the planned test; do not replace '
+            "it with a different question."
         )
         system += "\n\n" + READ_ONLY_QUERY_PROMPT
         system += "\n\n" + render_factor_examples(
             plan["allowed_fields"], self.context.get("frequency")
         )
-        messages = self.round_state.setdefault("miner_messages", [])
+        messages = self.research_plan_state.setdefault("miner_messages", [])
         if not messages:
             payload = {
                 "research_context": self.context,
-                "exploration": self.round_state["exploration"],
+                "exploration": self.research_plan_state["exploration"],
                 "plan": plan,
                 "candidate_attempt": 1,
                 "candidate_attempt_limit": self._plan_limit(),
@@ -730,10 +892,8 @@ class AnnealingLLMSearch:
             ):
                 record = records[-1]
                 try:
-                    raw = json.loads(record["text"])
-                    if not isinstance(raw, dict):
-                        raise ValueError("model response must be a JSON object")
-                    if "queries" in raw:
+                    raw = parse_json_object(record["text"])
+                    if "queries" in raw and (raw["queries"] != [] or len(raw) == 1):
                         record["query_results"] = self._read_queries(raw, records)
                     else:
                         record["result"] = self._validate_miner(raw)
@@ -771,19 +931,22 @@ class AnnealingLLMSearch:
             limit = self.config.max_formula_repairs + 1
             replies = sum("query_results" not in record for record in records)
             if replies >= limit:
-                raise ValueError("miner: response repair limit exhausted")
-            terminal_progress(
-                "退火",
+                raise ValueError(
+                    "miner: response repair limit exhausted; last validation error: "
+                    + records[-1].get("error", "no valid candidate")
+                )
+            self._request_progress(
+                "Miner",
+                计划=self.research_plan_state["research_plan_index"],
                 进度=f"{self.completed_attempts + 1}/{self.attempts_total}",
-                Agent="Miner",
-                轮次=self.round_state["index"],
-                模式=self.round_state.get("mode"),
-                计划候选=(f"{len(self.round_state['outcomes']) + 1}/{self._plan_limit()}"),
+                模式=self.research_plan_state.get("mode"),
+                计划候选=(f"{len(self.research_plan_state['outcomes']) + 1}/{self._plan_limit()}"),
+                对话=len(records) + 1,
                 修复=f"{replies + 1}/{limit}",
             )
             self._start_request("chat")
             if hasattr(self.models, "chat_messages"):
-                with TerminalStream() as stream:
+                with TerminalStream(enabled=getattr(self.models, "streaming", True)) as stream:
                     text, usage = self.models.chat_messages(
                         messages,
                         on_delta=stream.delta,
@@ -815,34 +978,34 @@ class AnnealingLLMSearch:
             raise ValueError("attempt budget exhausted")
         if self.context is None:
             self.context = self._session.query("get_context", {})
-        candidate = self._prepare_candidate(context)
+        candidate = None
+        while candidate is None:
+            self._check_blocked_limit()
+            candidate = self._prepare_candidate(context)
         self.pending = asdict(candidate)
         self._checkpoint()
         return [candidate]
 
     def _plan_limit(self):
-        return self.round_state.get("candidate_limit", self.config.candidates_per_plan)
+        return self.research_plan_state.get("candidate_limit", self.config.candidates_per_plan)
 
     def _prepare_candidate(self, context):
-        if self.round_state is None or self.round_state.get("plan") is None:
+        if self.research_plan_state is None or self.research_plan_state.get("plan") is None:
             self._start_round(context)
+        plan = self.research_plan_state["plan"]
+        if "blocked" in plan:
+            self._finish_blocked_plan(plan["blocked"])
+            return None
         if self.work is None:
             self.work = {
-                "round_index": self.round_state["index"],
-                "region_id": self.round_state["plan"]["region_id"],
+                "research_plan_index": self.research_plan_state["research_plan_index"],
+                "region_id": self.research_plan_state["plan"]["region_id"],
                 "responses": [],
                 "validation_error": None,
             }
             self._checkpoint()
-        plan = self.round_state["plan"]
         try:
             miner = self._miner_candidate(plan)
-            candidate = Candidate(
-                miner["expression"],
-                (plan["region_id"],),
-                hypothesis=plan["hypothesis"],
-                name=miner.get("name"),
-            )
         except (ValueError, TypeError, KeyError) as exc:
             self.work["validation_error"] = str(exc)
             candidate = Candidate(
@@ -851,50 +1014,63 @@ class AnnealingLLMSearch:
                 hypothesis=f"generation failed: {exc}",
                 name="alpha_atlas_generation_error",
             )
+        else:
+            if "blocked" in miner:
+                self._finish_blocked_plan(miner["blocked"])
+                return None
+            candidate = Candidate(
+                miner["expression"],
+                (plan["region_id"],),
+                hypothesis=plan["hypothesis"],
+                name=miner.get("name"),
+            )
         self.work["candidate"] = asdict(candidate)
         self._checkpoint()
         return candidate
 
-    def _finish_round(self):
-        outcomes = self.round_state["outcomes"]
+    def _finish_round(self, *, update_region=True):
+        outcomes = self.research_plan_state["outcomes"]
         if not outcomes:
-            self.round_state = None
+            self.research_plan_state = None
             return
-        region_id = self.round_state["plan"]["region_id"]
+        region_id = self.research_plan_state["plan"]["region_id"]
         stats = self.region_scores.setdefault(region_id, {"accepted": 0, "attempts": 0})
         stats["accepted"] += sum(outcomes)
         stats["attempts"] += len(outcomes)
-        proposal_score = self._region_score(region_id)
-        incumbent = self.active_region_id
-        incumbent_score = self._region_score(incumbent)
-        probability = draw = None
-        if incumbent is None or incumbent == region_id or incumbent_score is None:
-            accepted, reason = True, "initialize_or_continue_region"
-            probability = 1.0
-        else:
-            probability = acceptance_probability(
-                incumbent_score, proposal_score, self.round_state["temperature"]
-            )
-            draw = self.rng.random()
-            accepted = draw < probability
-            reason = "metropolis_accept" if accepted else "metropolis_reject"
-        if accepted:
-            self.active_region_id = region_id
-        self.round_state["annealing_result"] = {
-            "proposed_region_id": region_id,
-            "incumbent_before": incumbent,
-            "proposal_score": proposal_score,
-            "incumbent_score": incumbent_score,
-            "temperature": self.round_state["temperature"],
-            "acceptance_probability": probability,
-            "draw": draw,
-            "accepted": accepted,
-            "reason": reason,
-            "active_region_after": self.active_region_id,
-        }
-        self.steps[-1]["annealing_result"] = self.round_state["annealing_result"]
-        self.round_index += 1
-        self.round_state = None
+        if update_region:
+            proposal_score = self._region_score(region_id)
+            incumbent = self.active_region_id
+            incumbent_score = self._region_score(incumbent)
+            probability = draw = None
+            if incumbent is None or incumbent == region_id or incumbent_score is None:
+                accepted, reason = True, "initialize_or_continue_region"
+                probability = 1.0
+            else:
+                probability = acceptance_probability(
+                    incumbent_score, proposal_score, self.research_plan_state["temperature"]
+                )
+                draw = self.rng.random()
+                accepted = draw < probability
+                reason = "metropolis_accept" if accepted else "metropolis_reject"
+            if accepted:
+                self.active_region_id = region_id
+            self.research_plan_state["annealing_result"] = {
+                "proposed_region_id": region_id,
+                "incumbent_before": incumbent,
+                "proposal_score": proposal_score,
+                "incumbent_score": incumbent_score,
+                "temperature": self.research_plan_state["temperature"],
+                "acceptance_probability": probability,
+                "draw": draw,
+                "accepted": accepted,
+                "reason": reason,
+                "active_region_after": self.active_region_id,
+            }
+            self.factor_trial_records[-1]["annealing_result"] = self.research_plan_state[
+                "annealing_result"
+            ]
+        self.completed_research_plan_count += 1
+        self.research_plan_state = None
 
     def tell(self, results):
         if len(results) != 1 or self.pending is None:
@@ -902,24 +1078,21 @@ class AnnealingLLMSearch:
         feedback = results[0]
         if feedback.candidate != candidate_from_dict(self.pending):
             raise ValueError("feedback does not match pending candidate")
-        self.round_state["outcomes"].append(int(feedback.accepted))
+        self.research_plan_state["outcomes"].append(int(feedback.accepted))
         self.last_evaluation = self._session.evaluation_result(feedback)
-        self.steps.append(
+        self.factor_trial_records.append(
             {
-                "round_index": self.round_state["index"],
+                "research_plan_index": self.research_plan_state["research_plan_index"],
                 "region_id": self.work["region_id"],
-                "direction": self.round_state["exploration"]["direction"],
-                "evidence_refs": self.round_state["exploration"].get("evidence_refs", []),
-                "plan": self.round_state["plan"],
-                "candidate": self.pending,
-                "accepted": feedback.accepted,
-                "trial_index": feedback.trial_index,
-                "evaluation": self.last_evaluation,
+                "direction": self.research_plan_state["exploration"]["direction"],
+                "evidence_refs": self.research_plan_state["exploration"].get("evidence_refs", []),
+                "plan": self.research_plan_state["plan"],
+                "factor_trial_index": feedback.factor_trial_index,
             }
         )
-        messages = self.round_state.get("miner_messages")
+        messages = self.research_plan_state.get("miner_messages")
         if messages is not None:
-            attempt = len(self.round_state["outcomes"])
+            attempt = len(self.research_plan_state["outcomes"])
             messages.append(
                 {
                     "role": "user",
@@ -943,7 +1116,7 @@ class AnnealingLLMSearch:
         self.pending = None
         self.work = None
         if (
-            len(self.round_state["outcomes"]) >= self._plan_limit()
+            len(self.research_plan_state["outcomes"]) >= self._plan_limit()
             or self._session.remaining_budget() == 0
         ):
             self._finish_round()

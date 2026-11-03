@@ -14,7 +14,13 @@ from pathlib import Path
 from alpha_atlas.assets.common import atomic_json
 from alpha_atlas.contracts import fingerprint
 
-MUTABLE_RUN_FIELDS = {"status", "library_size", "total_seconds", "library_sha256"}
+MUTABLE_RUN_FIELDS = {
+    "status",
+    "library_size",
+    "total_seconds",
+    "library_sha256",
+    "search_stop_reason",
+}
 
 
 def config_fingerprint(spec: dict) -> str:
@@ -63,7 +69,7 @@ class Checkpoint:
     def __init__(self, directory: Path, spec: dict):
         self.directory, self.spec = directory, spec
         self.stage = "setup"
-        self.trial_index = None
+        self.factor_trial_index = None
         self.started = time.perf_counter()
         self.previous_seconds = spec.get("total_seconds", 0.0)
 
@@ -71,7 +77,7 @@ class Checkpoint:
         return self.previous_seconds + time.perf_counter() - self.started
 
     def save(self, method, completed: int, attempts: int, library_version: int, pending=None):
-        self.trial_index = pending["trial_index"] if pending else completed
+        self.factor_trial_index = pending["factor_trial_index"] if pending else completed
         # Strict JSON: no pickle, implicit str conversion, or non-finite state values.
         state = json.loads(json.dumps(method.dump_state(), allow_nan=False))
         payload = {
@@ -92,8 +98,13 @@ class Checkpoint:
             raise ValueError("unsupported checkpoint version")
         if data["config_fingerprint"] != self.spec["config_fingerprint"]:
             raise ValueError("checkpoint configuration mismatch")
+        pending = data["pending"]
+        if pending is not None and "trial_index" in pending:
+            pending["factor_trial_index"] = pending.pop("trial_index")
         self.previous_seconds = max(self.previous_seconds, data["elapsed_seconds"])
-        self.trial_index = data["pending"]["trial_index"] if data["pending"] else data["completed"]
+        self.factor_trial_index = (
+            data["pending"]["factor_trial_index"] if data["pending"] else data["completed"]
+        )
         return data
 
     def status(self, status: str, **extra):
@@ -123,7 +134,7 @@ class Checkpoint:
             {
                 "time": datetime.now(UTC).isoformat(),
                 "stage": self.stage,
-                "trial_index": self.trial_index,
+                "factor_trial_index": self.factor_trial_index,
                 "elapsed_seconds": self.elapsed(),
                 "type": type(exc).__name__,
                 "message": message,

@@ -18,9 +18,10 @@ from urllib.parse import urlsplit
 import numpy as np
 
 from alpha_atlas.contracts import Candidate, Expression
-from alpha_atlas.methods.models import HTTPModels
+from alpha_atlas.methods.models import HTTPModels, parse_json_object
 from alpha_atlas.methods.prompt_examples import render_factor_examples
 from alpha_atlas.reporting import terminal_progress
+from alpha_atlas.session import READ_ONLY_QUERY_HELP
 from alpha_atlas.storage import candidate_from_dict
 
 
@@ -306,6 +307,7 @@ class AlphaProbeSearch:
     def _start_request(self, kind):
         terminal_progress(
             "模型请求",
+            transient=True,
             类型=kind,
             MODEL=getattr(self.config, f"{kind}_model"),
             请求次数=self.usage[f"{kind}_requests"] + 1,
@@ -315,7 +317,6 @@ class AlphaProbeSearch:
         self._checkpoint()
 
     def _finish_usage(self, kind, usage):
-        terminal_progress("模型响应收到", 类型=kind)
         names = ("prompt_tokens", "completion_tokens") if kind == "chat" else ("total_tokens",)
         if isinstance(usage, dict) and all(
             type(usage.get(k)) is int and usage[k] >= 0 for k in names
@@ -432,9 +433,8 @@ class AlphaProbeSearch:
                         "You research alpha factors. Return only a JSON object. "
                         'For shared read-only tools, return {"queries": [{"name": '
                         '"get_context", "arguments": {}}]}. '
-                        "Available queries: get_context(), library_search(query='', source='all', "
-                        "offset=0, limit=10), library_get(factor_id), library_list(offset=0, limit=20), "
-                        "library_stats(). get_context returns all allowed fields, full operators, "
+                        + READ_ONLY_QUERY_HELP
+                        + "\nget_context returns all allowed fields, full operators, "
                         "expression and evaluation rules, and reference-library settings. "
                         "Reference access follows the shared run configuration; no automatic admission. "
                         "Candidates are evaluated by the same platform evaluate operation after proposal. "
@@ -449,10 +449,14 @@ class AlphaProbeSearch:
                     )
                     self._finish_usage("chat", usage)
                     try:
-                        parsed = json.loads(text)
-                    except json.JSONDecodeError:
+                        parsed = parse_json_object(text)
+                    except ValueError:
                         parsed = None  # Persist malformed responses before the usual rejection.
-                    if isinstance(parsed, dict) and "queries" in parsed:
+                    if (
+                        isinstance(parsed, dict)
+                        and "queries" in parsed
+                        and (parsed["queries"] != [] or len(parsed) == 1)
+                    ):
                         if len(queries) >= 8:
                             raise ValueError("metadata query round budget exhausted")
                         requests = parsed["queries"]
@@ -467,7 +471,7 @@ class AlphaProbeSearch:
                         continue
                     batch["responses"][phase] = text
                     self._checkpoint()  # Raw response survives parse errors and interrupted next phases.
-                response = json.loads(batch["responses"][phase])
+                response = parse_json_object(batch["responses"][phase])
                 if phase == "analyst":
                     rows = response["strategies"]
                     valid = all(isinstance(s, str) and s.strip() for s in rows)
@@ -556,7 +560,7 @@ class AlphaProbeSearch:
         if self.pending["batch"] is not None:
             self.batches[self.pending["batch"]]["outcomes"].append(
                 {
-                    "trial": feedback.trial_index,
+                    "factor_trial_index": feedback.factor_trial_index,
                     "factor_id": report.expression_id if report else None,
                     "reason": feedback.reason,
                     "accepted": feedback.accepted,

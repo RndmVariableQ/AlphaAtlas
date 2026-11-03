@@ -1,5 +1,6 @@
 import copy
 import json
+import logging
 import math
 from dataclasses import replace
 
@@ -31,10 +32,11 @@ from alpha_atlas.storage import RunStore
 
 
 class FakeModels:
-    def __init__(self, expressions=None, *, invalid_phase=None, query=False):
+    def __init__(self, expressions=None, *, invalid_phase=None, query=False, fenced=False):
         self.expressions = expressions or ["$x", "$x * $close", "$x / $close", "$close"]
         self.invalid_phase = invalid_phase
         self.query = query
+        self.fenced = fenced
         self.calls = []
         self.temperatures = []
 
@@ -51,12 +53,15 @@ class FakeModels:
         elif phase == "risk":
             result = {"score": 0.6, "reason": "Test risk assessment"}
         else:
-            index = (payload["evaluation_result"] or {}).get("trial_index", 0)
+            index = (payload["evaluation_result"] or {}).get("factor_trial_index", 0)
             result = {
                 "expression": self.expressions[index % len(self.expressions)],
                 "hypothesis": "Test",
             }
-        return json.dumps(result), {"prompt_tokens": 5, "completion_tokens": 3}
+        text = json.dumps(result)
+        if self.fenced:
+            text = "```json\n" + text + "\n```"
+        return text, {"prompt_tokens": 5, "completion_tokens": 3}
 
 
 def session(tmp_path, attempts=10):
@@ -91,6 +96,36 @@ def step(search, session):
     feedback = session.evaluate(candidate)
     search.tell([feedback])
     return feedback
+
+
+def test_empty_queries_do_not_hide_valid_mcts_phase_results(tmp_path):
+    class EmptyQueries(FakeModels):
+        def chat(self, system, payload, **kwargs):
+            text, usage = super().chat(system, payload, **kwargs)
+            return json.dumps({**json.loads(text), "queries": []}), usage
+
+    current = session(tmp_path, attempts=1)
+    models = EmptyQueries()
+    search = search_for(current, models)
+    candidate = search.ask(current.get_context())[0]
+    assert candidate.expression
+    assert len(models.calls) == search.usage["chat_requests"] == 3
+    assert current.remaining_budget() == 1 and not current._store.trials()
+    for records in search.work["responses"].values():
+        assert len(records) == 1 and "result" in records[0] and "query_results" not in records[0]
+
+
+@pytest.mark.parametrize("response", [{"queries": []}, {"score": 2, "queries": []}])
+def test_empty_queries_do_not_make_invalid_mcts_results_valid(tmp_path, response):
+    search = search_for(session(tmp_path))
+
+    def validate(raw):
+        if not 0 <= raw["score"] <= 1:
+            raise ValueError("invalid risk score")
+
+    record = {"text": json.dumps(response)}
+    search._parse_response(record, validate)
+    assert "error" in record and "result" not in record and "query_results" not in record
 
 
 def test_relative_rank_ties_direction_and_softmax_hand_calculation():
@@ -155,9 +190,10 @@ def test_fsa_parameter_abstraction_closed_structure_and_per_formula_support():
     assert frequent_patterns(counts, 0) == []
 
 
-def test_real_shared_five_dimensions_max_backprop_and_fixed_context(tmp_path):
+@pytest.mark.parametrize("fenced", [False, True])
+def test_real_shared_five_dimensions_max_backprop_and_fixed_context(tmp_path, fenced):
     current = session(tmp_path)
-    models = FakeModels(query=True)
+    models = FakeModels(query=True, fenced=fenced)
     search = search_for(current, models)
     initial_context = current.query("get_context", {})
     first = step(search, current)
@@ -263,8 +299,20 @@ def test_saved_raw_response_recovers_without_resending(tmp_path, phase):
     assert len(restored.nodes) == 1 and restored.usage["chat_requests"] == 3
 
 
-def test_risk_stream_retry_preserves_stage_and_charges_one_evaluation(tmp_path, monkeypatch):
+def test_risk_stream_retry_preserves_stage_and_charges_one_evaluation(
+    tmp_path, monkeypatch, caplog
+):
     import io
+
+    class Terminal(io.StringIO):
+        def isatty(self):
+            return True
+
+    terminal = Terminal()
+    monkeypatch.setattr("alpha_atlas.reporting.sys.stderr", terminal)
+    monkeypatch.setattr(
+        logging.getLogger("alpha_atlas.progress"), "handlers", [logging.StreamHandler(terminal)]
+    )
 
     current = session(tmp_path, attempts=1)
     method = MCTSLLMSearch(
@@ -294,7 +342,24 @@ def test_risk_stream_retry_preserves_stage_and_charges_one_evaluation(tmp_path, 
 
     monkeypatch.setattr("alpha_atlas.methods.models.urlopen", request)
     monkeypatch.setattr("alpha_atlas.methods.models.time.sleep", waits.append)
-    feedback = step(method, current)
+    with caplog.at_level(logging.INFO, logger="alpha_atlas.progress"):
+        feedback = step(method, current)
+    messages = [record.getMessage() for record in caplog.records]
+    scope = "[MCTS-LLM · 候选 #1]"
+    for action, completed in (
+        ("生成建议", "建议已返回"),
+        ("生成公式", "公式已返回"),
+        ("风险判断", "风险判断已返回"),
+    ):
+        starts = [message for message in messages if message.startswith(f"  {scope} {action} ·")]
+        endings = [
+            message for message in messages if message.startswith(f"  {scope} {completed}\n")
+        ]
+        assert len(starts) == len(endings) == 1
+        assert messages.index(starts[0]) < messages.index(endings[0])
+        assert f"{scope} {action}" in terminal.getvalue()
+    assert "建议: Test market mechanism" in caplog.text
+    assert "评分（高分表示低风险）: 0.6" in caplog.text
     assert phases == ["suggestion", "formula_0", "risk", "risk"] and waits == [1]
     assert len(current._store.trials()) == 1 and current.remaining_budget() == 0
     assert feedback.candidate.expression == "$x"
@@ -325,7 +390,7 @@ def test_runner_resume_and_frozen_oos(project, monkeypatch, boundary):
 
             def tell(self, feedback):
                 original(self, feedback)
-                if feedback[0].trial_index == 2:
+                if feedback[0].factor_trial_index == 2:
                     raise KeyboardInterrupt("injected")
 
             patch.setattr(MCTSLLMSearch, "tell", tell)
@@ -467,7 +532,7 @@ def test_normal_factory_entry_configuration_freeze_and_diagnostics_preflight(pro
     benchmark = project / "configs/benchmark.toml"
     benchmark.write_text(
         benchmark.read_text(encoding="utf-8").replace(
-            'search_diagnostics = "icir_turnover_v1"', 'search_diagnostics = ""'
+            'search_diagnostics = "icir_turnover_lag1_v2"', 'search_diagnostics = ""'
         ),
         encoding="utf-8",
     )

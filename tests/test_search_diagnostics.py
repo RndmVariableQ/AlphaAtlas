@@ -7,7 +7,7 @@ import pytest
 from test_evaluation_library import evaluator, market_frame
 
 from alpha_atlas.contracts import Candidate, DateRange
-from alpha_atlas.evaluation import search_diagnostics
+from alpha_atlas.evaluation import rank_lag_diagnostics, search_diagnostics
 
 
 def stock_panel():
@@ -143,3 +143,116 @@ def test_public_report_diagnostics_ignore_validation_and_preserve_primary_metric
     again = cached_service.evaluate(Candidate("$x"))
     assert again.diagnostics == first.diagnostics and again.cache_hit
     assert replace(enhanced, diagnostics={}).metrics == ordinary.metrics
+
+
+def test_raw_rank_delay_hand_calculation_and_direction_independence():
+    panel = stock_panel().with_columns(-pl.col("value"))
+    actual = search_diagnostics(
+        panel, PERIOD, "cross_sectional_spearman", -1, version="icir_turnover_lag1_v2"
+    )
+    # Raw daily IC = [-1, +1, +1]; delayed daily IC = [missing, -1, +1].
+    assert actual["rank_ic"] == pytest.approx(1 / 3)
+    assert actual["rank_icir"] == pytest.approx(np.mean([-1, 1, 1]) / np.std([-1, 1, 1], ddof=1))
+    assert actual["icir"] == -actual["rank_icir"]
+    assert actual["lag1_rank_ic"] == 0 and actual["lag1_n_obs"] == 10
+    assert actual["lag1_gap"] == pytest.approx(1 / 3)
+    assert actual["lag1_unit"] == "native_bar"
+    for seed in range(3):
+        assert (
+            search_diagnostics(
+                panel.sample(fraction=1, shuffle=True, seed=seed),
+                PERIOD,
+                "cross_sectional_spearman",
+                -1,
+                version="icir_turnover_lag1_v2",
+            )
+            == actual
+        )
+
+
+def test_delay_does_not_bridge_invalid_bars_membership_missing_days_or_training_start():
+    panel = stock_panel()
+    missing = panel.with_columns(
+        pl.when(pl.col("trading_day") == date(2020, 1, 2))
+        .then(None)
+        .otherwise(pl.col("value"))
+        .alias("value")
+    )
+    # Current rows with missing factors may use a valid previous bar, but the next bar cannot skip.
+    result = rank_lag_diagnostics(missing, PERIOD, "cross_sectional_spearman")
+    assert result["lag1_rank_ic"] == 1 and result["lag1_n_obs"] == 5
+    nonmember = panel.with_columns((pl.col("trading_day") != date(2020, 1, 2)).alias("eligible"))
+    assert (
+        rank_lag_diagnostics(nonmember, PERIOD, "cross_sectional_spearman")["lag1_rank_ic"] is None
+    )
+    incomplete = panel.filter(
+        ~((pl.col("instrument_id") == "0") & (pl.col("trading_day") == date(2020, 1, 2)))
+    )
+    assert (
+        rank_lag_diagnostics(incomplete, PERIOD, "cross_sectional_spearman")["lag1_rank_ic"] is None
+    )
+    single_day = DateRange(date(2020, 1, 2), date(2020, 1, 2))
+    result = rank_lag_diagnostics(panel, single_day, "cross_sectional_spearman")
+    assert result["rank_icir"] is None and result["lag1_rank_ic"] is None
+    empty = panel.with_columns(pl.lit(False).alias("eligible"))
+    result = rank_lag_diagnostics(empty, PERIOD, "cross_sectional_spearman")
+    assert result["rank_ic"] is None and result["lag1_gap"] is None
+
+
+def test_future_delay_respects_contract_and_product_segments_and_training_weights():
+    from test_evaluation_library import average_rank
+
+    panel = futures_panel()
+    weights = pl.DataFrame({"product": ["A", "B"], "weight": [1.0, 3.0]})
+    result = rank_lag_diagnostics(panel, PERIOD, "time_series_weighted_pearson_ic", weights)
+    a_target = np.concatenate([np.arange(1, 6), -np.arange(1, 6), -np.arange(1, 6)])
+    a_signal = np.tile(np.arange(5), 3)
+    a_ic = np.corrcoef(average_rank(a_signal), average_rank(a_target))[0, 1]
+    assert result["lag1_rank_ic"] == pytest.approx((a_ic + 3) / 4)
+    assert result["lag1_n_obs"] == 30  # Six contracts, five delayed pairs per contract.
+    assert result["rank_icir"] == pytest.approx(
+        np.mean([1, 0.5, 0.5]) / np.std([1, 0.5, 0.5], ddof=1)
+    )
+    product = panel.with_columns(pl.lit(0).alias("product_segment_id"))
+    combined = rank_lag_diagnostics(
+        product, PERIOD, "time_series_weighted_pearson_ic", weights, "product"
+    )
+    assert combined["lag1_n_obs"] == 34  # Each product can continue through its main-contract roll.
+    reset = product.with_columns(pl.col("segment_id").alias("product_segment_id"))
+    assert (
+        rank_lag_diagnostics(reset, PERIOD, "time_series_weighted_pearson_ic", weights, "product")[
+            "lag1_n_obs"
+        ]
+        == 30
+    )
+
+
+def test_versioned_shared_delay_keeps_metrics_frozen_clipping_and_cache_separate():
+    data = market_frame().with_columns(pl.Series("x", np.random.default_rng(8).normal(size=120)))
+    service = evaluator(data, diagnostics="icir_turnover_lag1_v2")
+    report = service.evaluate(Candidate("$x"))
+    previous = evaluator(data, diagnostics="icir_turnover_v1").evaluate(Candidate("$x"))
+    assert report.status == "success" and report.metrics == previous.metrics
+    assert report.direction == previous.direction and report.clipping == previous.clipping
+    assert report.evaluation_id != previous.evaluation_id
+    for key, value in previous.diagnostics.items():
+        if key != "version":
+            assert report.diagnostics[key] == value
+    assert service.evaluate(Candidate("$x")).cache_hit
+    # Compute the delayed reference independently on the shared frozen train clipping bounds.
+    train = data.filter(pl.col("trading_day") <= date(2020, 1, 10)).sort(
+        "instrument_id", "timestamp"
+    )
+    delayed = train.with_columns(
+        pl.col("x").shift().over("exchange", "instrument_id").alias("value")
+    )
+    delayed = delayed.join(service.targets, on="row_id")
+    from alpha_atlas.evaluation import apply_clipping, metric, split_panel
+
+    expected = metric(
+        apply_clipping(split_panel(delayed, service.fold.train), report.clipping),
+        "cross_sectional_spearman",
+        "train",
+    )
+    assert report.diagnostics["lag1_rank_ic"] == pytest.approx(expected.value)
+    assert report.diagnostics["lag1_n_obs"] == expected.n_obs

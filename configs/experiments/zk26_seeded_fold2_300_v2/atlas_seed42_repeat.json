@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "id": "zk26_seeded_fold2_atlas_seed42_repeat_300_v2",
+  "parent_plan": "configs/experiments/zk26_seeded_fold2_300_v2/plan.json",
+  "experiment_version": "rq8_zk26_seeded_fold2_luna_v4",
+  "methods": [
+    "atlas"
+  ],
+  "seeds": [
+    42
+  ],
+  "attempts_per_method": 300,
+  "total_attempt_ceiling": 300,
+  "evaluation_nodes": [
+    200,
+    300
+  ],
+  "method_group": "finite_grammar_control",
+  "purpose": "User-requested fresh repeat with the identical seed and settings; verify reproducibility.",
+  "repeat_of_run": "futures_kernel_5m_full-all-fold2-atlas-42-a40f311cd5",
+  "repeat_of_scope": "configs/experiments/zk26_seeded_fold2_300_v2/atlas.json",
+  "oos_release": "both Atlas and AlphaSchema repeat searches frozen and all paired models saved before either Test evaluation",
+  "companion_scope": "configs/experiments/zk26_seeded_fold2_300_v2/alphaschema_seed42_repeat.json",
+  "union_label": "single_method_alias; identical to atlas, not an additional search",
+  "optional_replication": false,
+  "limitations": [
+    "Same-seed reproducibility check, not an independent search-seed replication.",
+    "Historical Test was already viewed; no new blind holdout claim or parameter selection.",
+    "The registered atlas method is the finite-grammar region-UCB control."
+  ],
+  "runs": [
+    "artifacts/runs/futures_kernel_5m_full-all-fold2-atlas-42-71d892ead6"
+  ],
+  "status": "superseded_before_oos",
+  "superseded_by": "configs/experiments/zk26_seeded_fold2_overview_300_v3/two_methods.json",
+  "stop_reason": "User clarified experiment_overview.md method/settings; stop old configuration and preserve artifacts."
+}

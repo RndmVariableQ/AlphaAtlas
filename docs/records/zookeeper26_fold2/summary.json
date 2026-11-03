@@ -1,0 +1,8 @@
+{
+  "factors": 26,
+  "test_defined": 26,
+  "positive_test_ic": 15,
+  "test_mean": 0.0019481685669300816,
+  "test_median": 0.0008741916815349937,
+  "admitted": 3
+}

@@ -1,6 +1,10 @@
 # Common downstream models for every frozen factor library. Train only; no automatic tuning.
 seed = 42
 
+[preprocessing]
+clip_quantiles = [0.01, 0.99]
+product_demean = true
+
 [linear]
 rcond = 1e-12
 

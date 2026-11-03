@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "id": "zk26_incremental_fold2_three_methods_300_v1",
+  "parent_plan": "configs/experiments/zk26_incremental_fold2_300_v1/plan.json",
+  "experiment_version": "rq8_zk26_fold2_luna_v3",
+  "methods": [
+    "alphaprobe",
+    "alphaschema",
+    "mcts_llm"
+  ],
+  "seeds": [
+    42
+  ],
+  "attempts_per_method": 300,
+  "total_attempt_ceiling": 900,
+  "evaluation_nodes": [
+    200,
+    300
+  ],
+  "oos_release": "all three searches frozen and all paired models saved before Test",
+  "union_label": "three_method_union; not the full eleven-method union",
+  "other_methods": "not launched in this batch",
+  "optional_replication": false,
+  "runs": [
+    "artifacts/runs/futures_kernel_5m_full-all-fold2-alphaprobe-42-04c0d21d41",
+    "artifacts/runs/futures_kernel_5m_full-all-fold2-alphaschema-42-64e86f690c",
+    "artifacts/runs/futures_kernel_5m_full-all-fold2-mcts_llm-42-cdc95b13e7"
+  ],
+  "superseded_by_scope": "configs/experiments/zk26_seeded_fold2_300_v2/three_methods.json",
+  "execution_note": "用户要求 B26 初始库后停止本轮；AlphaProbe 冻结，AlphaSchema/MCTS-LLM 中断。未执行本轮配对 Test，旧运行和配置保持原样。"
+}

@@ -1,15 +1,17 @@
 # AlphaPROBE search under Atlas's numerical/data/admission protocol.
 # Configure actual models before running. No keys belong in this file.
-chat_model = "deepseek-flash"
+# Optional subscription backend: integrations/claude_cli/README.md.
+# CLI sampling ignores temperature and output caps; embeddings use their own service.
+chat_model = "claude-haiku-5-5"
 embedding_model = "Qwen3-Embedding-0.6B"
-chat_base_url = "https://api.deepseek.com/v1"
+chat_base_url = "http://127.0.0.1:8765/v1"
 embedding_base_url = "http://127.0.0.1:8003/v1"
-chat_key_env = "OPENAI_API_KEY"
+chat_key_env = "ALPHA_ATLAS_LOCAL_BRIDGE_UNUSED"
 embedding_key_env = "ALPHA_ATLAS_EMBEDDING_API_KEY"
 temperature = 1.0
 # Reasoning and final JSON share this output budget.
 max_output_tokens = 65536
-timeout_seconds = 120.0
+timeout_seconds = 1800.0
 
 pool_capacity = 50
 top_k = 15

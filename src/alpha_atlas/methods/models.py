@@ -1,8 +1,10 @@
 """Shared small HTTP client for chat and embeddings; no SDK or provider state."""
 
 import json
+import math
 import os
 import time
+from email.utils import parsedate_to_datetime
 from http.client import IncompleteRead
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -16,6 +18,63 @@ class ContextLimitError(RuntimeError):
 
 class _RetryableError(RuntimeError):
     """A transient transport failure; message contains no provider data."""
+
+    def __init__(self, message, *, backoff=1, retry_after=0):
+        super().__init__(message)
+        self.backoff = backoff
+        self.retry_after = retry_after
+
+    def retry_delay(self, attempt):
+        return max(self.backoff * 2**attempt, self.retry_after)
+
+
+def parse_json_object(text):
+    """Parse one object, preserving literal whitespace inside model-generated strings."""
+    if not isinstance(text, str):
+        raise ValueError("model response must be text containing one JSON object")
+    text = text.strip()
+    if text.startswith("```"):
+        opening, separator, fenced = text.partition("\n")
+        body, closing_separator, closing = fenced.rpartition("\n")
+        if (
+            not separator
+            or opening.strip().casefold() not in {"```", "```json"}
+            or not closing_separator
+            or closing.strip() != "```"
+        ):
+            raise ValueError("Return one complete JSON object, optionally in one ```json block")
+        text = body
+    strict = True
+    while True:
+        try:
+            value = json.loads(text, strict=strict)
+            break
+        except json.JSONDecodeError as exc:
+            if (
+                strict
+                and exc.msg.startswith("Invalid control character")
+                and text[exc.pos : exc.pos + 1] in {"\n", "\r", "\t"}
+                and not any(ord(c) < 32 and c not in "\n\r\t" for c in text)
+            ):
+                strict = False
+                continue
+            # Only delete the redundant closing at the decoder's failure position.
+            # Never add delimiters, alter strings/values, or select a partial response.
+            if (
+                exc.msg == "Expecting ',' delimiter"
+                and text[exc.pos : exc.pos + 1] == "}"
+                and text[: exc.pos].rstrip().endswith("}")
+                and text[exc.pos + 1 :].lstrip().startswith((",", "]"))
+            ):
+                text = text[: exc.pos] + text[exc.pos + 1 :]
+                continue
+            raise ValueError(
+                f"Invalid JSON at line {exc.lineno}, column {exc.colno}: {exc.msg}. "
+                "Return one complete JSON object without surrounding prose."
+            ) from None
+    if not isinstance(value, dict):
+        raise ValueError("model response must be a JSON object")
+    return value
 
 
 class HTTPModels:
@@ -38,7 +97,7 @@ class HTTPModels:
                     raise RuntimeError(f"{exc}; failed after 4 requests") from None
                 if on_delta is not None:
                     on_delta("restart", "")
-                delay = 2**attempt
+                delay = exc.retry_delay(attempt)
                 terminal_progress(
                     "模型请求重试", 类型=kind, 重试=f"{attempt + 1}/3", 等待秒=delay, 原因=str(exc)
                 )
@@ -67,8 +126,24 @@ class HTTPModels:
                 return self._validate_chat_response(body) if kind == "chat" else body
         except HTTPError as exc:
             if exc.code in {408, 429, 500, 502, 503, 504}:
+                retry_after = 0
+                header = exc.headers.get("Retry-After") if exc.headers else None
+                if header:
+                    try:
+                        try:
+                            seconds = float(header)
+                        except ValueError:
+                            seconds = parsedate_to_datetime(header).timestamp() - time.time()
+                        if math.isfinite(seconds):
+                            retry_after = max(0, seconds)
+                    except (ValueError, TypeError, OverflowError):
+                        pass
                 exc.close()
-                raise _RetryableError(f"{kind} model request failed (HTTP {exc.code})") from None
+                raise _RetryableError(
+                    f"{kind} model request failed (HTTP {exc.code})",
+                    backoff=30 if exc.code == 429 else 1,
+                    retry_after=retry_after,
+                ) from None
             if kind == "chat" and exc.code in {400, 413, 422}:
                 try:
                     error = json.loads(exc.read(65536)).get("error", {})
@@ -102,7 +177,10 @@ class HTTPModels:
                 "server_error",
                 "rate_limit_exceeded",
             }:
-                raise _RetryableError("chat model service temporarily unavailable")
+                raise _RetryableError(
+                    "chat model service temporarily unavailable",
+                    backoff=30 if code == "rate_limit_exceeded" else 1,
+                )
             if code == "context_length_exceeded":
                 raise ContextLimitError("model context length exceeded")
             raise RuntimeError("chat model returned an error response")

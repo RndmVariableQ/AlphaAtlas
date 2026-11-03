@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "id": "zk26_single_methods_v5_20261103",
+  "status": "protocol",
+  "question": "各独立方法冻结新增因子在相同 v5 下游配置下，对 B26 组合的增益。",
+  "experiment_version": "rq8_zk26_seeded_fold2_overview_luna_v5",
+  "baseline_frozen_library": "docs/records/zookeeper26_fold2/frozen/library.json",
+  "baseline_model_config": "docs/records/zookeeper26_fold2/model_overview/fit.json#spec.config",
+  "baseline_factor_order": "docs/records/zookeeper26_fold2/model_overview/fit.json#factor_ids",
+  "search_policy": "只复用指定运行的冻结因子、方向及准入顺序，不重新搜索，不按历史 Test 筛选。",
+  "arms": {
+    "B": "固定 B26，在共同 Train+Val 上按 v5 模型配置重新拟合。",
+    "B_plus_method": "B26 + 该运行在 200/300 次前缀的全部新增准入成员；每个运行独立拟合。",
+    "models": [
+      "linear",
+      "lightgbm"
+    ],
+    "ordering": "B26 保存顺序在先，然后按该运行实际准入 trial 顺序。",
+    "unusable_columns": "沿用训练预处理删除全缺失或常量列，报告总成员和保留列数。"
+  },
+  "budget": {
+    "attempts_per_search": 300,
+    "primary_node": 300,
+    "secondary_nodes": [
+      200
+    ],
+    "search_seed": 42,
+    "model_seed": 42,
+    "new_search_attempts": 0
+  },
+  "paired_fit": {
+    "training_cohort": "固定 B26 可用的同一 Train+Val row_id 集合，预处理仅在该集合拟合。",
+    "prediction_cohort": "Test 使用 B26 可预测且标签有效的相同 row_id；指标使用公共有效品种。",
+    "model_configuration": "全部使用 v5.model；Linear OLS，LightGBM 50 轮、leaf2000、depth5。",
+    "source_version": "scope.source_experiment_version 保留真实搜索来源，数据/字段/算子/目标/B26 必须与评估版本一致。"
+  },
+  "metrics": {
+    "primary": "delta_time_series_weighted_pearson_ic",
+    "mse": "1 - weighted_MSE(B26 + new) / weighted_MSE(B26)",
+    "weights": "完整 Test eligible 行的品种 sqrt(sum(amount))，两组固定同权重。"
+  },
+  "uncertainty": {
+    "kind": "paired_moving_trading_day_blocks",
+    "block_length_days": 20,
+    "replicates": 2000,
+    "seed": 20261102,
+    "fixed_predictions": true,
+    "resampling": "按年分层、全市场同步交易日块。"
+  },
+  "sequence": [
+    "核对六次来源运行均已冻结及配置兼容。",
+    "完成所有 scope 的 Train+Val 拟合并保存模型。",
+    "统一评估历史 Test，导出全部方法结果；不回传搜索或据此改选成员。"
+  ],
+  "limitations": [
+    "2024–2025 已查看，属于历史诊断留出集。",
+    "相同 seed 和评估预算不等于相同 token 或时间成本。",
+    "AlphaSchema 两次搜索各自保留；有限文法 atlas 明确列为独立对照。",
+    "供应商 vintage PIT 尚未认证，原数据来源和缺失限制沿用版本。"
+  ]
+}

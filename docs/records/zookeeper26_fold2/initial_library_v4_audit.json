@@ -1,0 +1,63 @@
+{
+  "date": "2026-11-02",
+  "version": "rq8_zk26_seeded_fold2_luna_v4",
+  "kind": "initial_membership_train_val_audit",
+  "run_id": "futures_kernel_5m_full-all-fold2-random-42-816d8a4d5e",
+  "snapshot_id": "23b2d89c314645925e14e99f9fbbe58763d042170763011e8a2507ce60cc044b",
+  "config_fingerprint": "8e9f748ddb49bd1efafa1c39ca240442f48bc246cd6c8e5cb66d8991b85c8db8",
+  "library_sha256": "4a5d1dd5f5a1aed60ca720d1c0a8a243b0838d1719e4c72040eb4ca694cc5bcb",
+  "initial_members": 26,
+  "initial_measurement_seconds": 115.04979701526463,
+  "initial_factor_ids": [
+    "9c9c185f4236892beafbe7299674c467ed058dae04b8f84074b0508555df7dce",
+    "e1c5937577943987b2eb1d1cbc0e05afcba2775c5e584d119c4ab6f825dd42e3",
+    "f0091ae273204e30bbc4ef2480a1ecfc4fa45bd3729cc97c5153023b535fa555",
+    "c2a8d2f4eb0beab952a9c4a3fcc518b7ef451fc1b0f984a0e388abc4c1dabfdc",
+    "4620eb6f7333bd0c74ddd4923893d09eee432906cc7a151fd600ba6090559e1a",
+    "2e2691ebfb33ff3b565e61ca08417351980c1fee0dabdd8527c062fa11c7558b",
+    "2986ead82b9d4f6c597b0d3d4727e2a3e51ce0067181b89b7793859191bb7670",
+    "391875065e047d932cef4593374620e23e2e1efe26d1dd7194e8741632625c29",
+    "57e8d50d9be6c43b83e58a79d965b4b6f6ab225f87aa36df964ab4544f8d1d4e",
+    "b455c94f85c8982454c9e7478a38467f9ece8aa8ff1f72fa66edff129dec17c9",
+    "6e8b82bb8968a475d59bc991c57a67bc92ad511a917a4d9b56e301b4946ad85d",
+    "4c287504c495b21f9e960db48c2fac414e175d7be46b81508d38ecc0a226b1da",
+    "7d772b81c8af6a3198cf87574040fab8d3f4f5bda2ce0cea50f6452e2e9553a1",
+    "756fa2f17667a53428a5b48831cfad3fb3ec1dfe9ea5f77a978288fdf461f183",
+    "7e783525d4bbb2adbad27814e2b9d02fa2d23f5532619f8567242696bb4c9d67",
+    "fb6064462d3a301d860b252463a2c29a94dba952faa22179d8205285bf0b6692",
+    "7438b787a4f115706794f4359d4c05987adc8c8d1c1ddd5ca0e92601165cc357",
+    "6005030d7be2c77936dbad6f3d2180d04ccbfa9b39ef81da79428b22ec3fd1e2",
+    "2be8a5b4853aa607f5235ece09142bc6348d306be48422d9f19d6caf55945e02",
+    "64e342e39d1c0b8cb59c04919051af7898a489ffb2d289dc7178c772dd3ea980",
+    "083cb7e8d65ff728ae28953a9e08b78935ce7762d3115597c29a3d04a8a7bf88",
+    "c0f1ad185ab22f08fa018fff68770883b0c97e272874dd0d34132f968d7e1a4f",
+    "b693ae9733eadc9e9ca24e2c34bd15ef641003a0e1e88fded956e341e8fa38d7",
+    "ab183aff7816f29e8eb69d2155289d37b60491e7d4017cbfacfb5e7b33c404a5",
+    "87b0564b835de52b2fb7694a3753031c27a2b072ef40ba0ba6d720748ea49ea1",
+    "3bd6d4a98411a6ffd2d3ba4cacb108efee83d02f58ebac9a8f3f119e81c327db"
+  ],
+  "search_attempts": 2,
+  "new_members": 0,
+  "test_loaded": false,
+  "checks": [
+    {
+      "expression": "$zk_mom1",
+      "reason": "expression_duplicate",
+      "max_abs_corr": null,
+      "nearest_factor_id": null,
+      "library_version": 26
+    },
+    {
+      "expression": "2 * $zk_mom1",
+      "reason": "behavior_duplicate",
+      "max_abs_corr": 1.0,
+      "nearest_factor_id": "9c9c185f4236892beafbe7299674c467ed058dae04b8f84074b0508555df7dce",
+      "library_version": 26
+    }
+  ],
+  "validation": {
+    "command": "pwsh -File scripts/check.ps1",
+    "passed": 1298,
+    "excluded_tests": 0
+  }
+}

@@ -1,11 +1,16 @@
 # Paper v3 search, adapted to shared Atlas diagnostics. No vendor or data configuration.
+# Optional subscription backend: integrations/claude_cli/README.md.
+# CLI sampling ignores phase temperatures and output caps.
+# chat_model = "claude-haiku-5-5"
+# chat_base_url = "http://127.0.0.1:8765/v1"
+# chat_key_env = "ALPHA_ATLAS_LOCAL_BRIDGE_UNUSED"
 chat_model = "deepseek-flash"
 chat_base_url = "https://api.deepseek.com/v1"
 chat_key_env = "OPENAI_API_KEY"
 temperature = 1.0
 repair_temperature = 0.8
 risk_temperature = 0.1
-timeout_seconds = 120.0
+timeout_seconds = 1800.0
 exploration = 1.0
 dimension_temperature = 1.0
 tree_budget = 3

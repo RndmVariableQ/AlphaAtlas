@@ -22,6 +22,9 @@ MINIMUM_WINDOWS = {
     "TS_RANKCORR": 2,
     "TS_SKEW": 3,
     "TS_KURT": 4,
+    "TS_SKEW_POP": 3,
+    "TS_KURT_POP": 4,
+    "TS_RESID_STD3": 5,
 }
 
 BUILTIN_DESCRIPTIONS = {
@@ -54,6 +57,7 @@ BUILTIN_DESCRIPTIONS = {
     "IS_FINITE": "True for finite x, false for null or nonfinite x.",
     "FILLNA": "Replace null x with y. Does not change market eligibility or target validity.",
     "DELAY": "Value of x n bars ago. Requires all n+1 observations to be finite.",
+    "OBS_LAG": "Value exactly n rows ago within the continuity group; interior nulls are allowed.",
     "DELTA": "x minus its value n bars ago. Requires all n+1 observations to be finite.",
     "RETURN": "Simple return x / x[n bars ago] - 1, not log return. Requires n+1 valid bars.",
     "TS_SUM": "Sum of x over the last n bars, including the current bar.",
@@ -66,6 +70,23 @@ BUILTIN_DESCRIPTIONS = {
     "TS_ZSCORE": "(x - rolling mean) / rolling sample std over n bars. Null if std <= 1e-12.",
     "TS_SKEW": "Bias-corrected skewness over n bars. Constant windows yield null.",
     "TS_KURT": "Bias-corrected excess kurtosis over n bars (normal=0). Null for constant windows.",
+    "TS_SKEW_POP": "Population skewness (bias=True) over n finite bars; constant windows null.",
+    "TS_KURT_POP": "Population excess kurtosis (bias=True, Fisher) over n finite bars.",
+    "TS_RESID_STD3": (
+        "Sample std of OLS residuals of y on intercept, x1, x2, x3 over n bars. "
+        "Requires complete observations and rank 4; ddof=1, not regression degrees of freedom."
+    ),
+    "CS_LAGGED_MEAN": (
+        "Current mean return of members selected at the previous panel timestamp. "
+        "Arguments: return, membership condition, minimum holdings, coverage in (0,1]. "
+        "Missing holdings count against coverage; observed holdings are equally reweighted."
+    ),
+    "CS_LAGGED_SPREAD": (
+        "Current top-minus-bottom return using previous-timestamp signal and membership. "
+        "Arguments: return, signal, membership condition, tail fraction in (0,0.5], coverage. "
+        "Floor(N*fraction) holdings per tail; ties use exchange/instrument identity. "
+        "Missing holdings are never replaced; each tail must meet coverage independently."
+    ),
     "TS_MIN": "Minimum x over the last n bars.",
     "TS_MAX": "Maximum x over the last n bars.",
     "TS_RANK": "Current x's ascending average rank within n bars, divided by n.",
@@ -127,10 +148,10 @@ def builtin_specs() -> dict[str, OperatorSpec]:
     add("IF_THEN_ELSE", ("condition", "series", "series"))
     add("IS_FINITE", ("series",), output="condition")
     add("FILLNA", ("series", "series"))
-    add("DELAY DELTA RETURN", ("series", "window"), "ts", history="lag")
+    add("DELAY DELTA RETURN OBS_LAG", ("series", "window"), "ts", history="lag")
     add(
         "TS_SUM TS_PROD TS_MEAN TS_MEDIAN TS_LINEAR_DECAY TS_STD TS_VAR TS_ZSCORE "
-        "TS_SKEW TS_KURT TS_MIN TS_MAX TS_RANK TS_ARGMIN TS_ARGMAX",
+        "TS_SKEW TS_KURT TS_SKEW_POP TS_KURT_POP TS_MIN TS_MAX TS_RANK TS_ARGMIN TS_ARGMAX",
         ("series", "window"),
         "ts",
         history="window",
@@ -144,6 +165,19 @@ def builtin_specs() -> dict[str, OperatorSpec]:
         history="window",
     )
     add("TS_CORR TS_COV TS_RANKCORR", ("series", "series", "window"), "ts", history="window")
+    add("TS_RESID_STD3", ("series", "series", "series", "series", "window"), "ts", history="window")
+    add(
+        "CS_LAGGED_MEAN",
+        ("series", "condition", "window", "float"),
+        "panel",
+        history="previous_timestamp",
+    )
+    add(
+        "CS_LAGGED_SPREAD",
+        ("series", "series", "condition", "float", "float"),
+        "panel",
+        history="previous_timestamp",
+    )
     add("TS_COUNT TS_RATE", ("condition", "window"), "ts", history="window")
     add("TS_ANY TS_ALL", ("condition", "window"), "ts", "condition", history="window")
     add("CS_RANK CS_ZSCORE CS_DEMEAN CS_SCALE", ("series",), "cs")
@@ -196,8 +230,13 @@ class OperatorFeedback:
 
 
 class OperatorRegistry:
-    def __init__(self, *, runtime=None, record=None):
+    def __init__(self, *, runtime=None, record=None, versions: dict[str, str] | None = None):
         self._specs = builtin_specs()
+        if versions is not None:
+            for name, version in versions.items():
+                if name not in self._specs or self._specs[name].version != version:
+                    raise ValueError(f"unavailable operator version: {name}@{version}")
+            self._specs = {name: self._specs[name] for name in versions}
         self._definitions: dict[str, OperatorDefinition] = {}
         self._bodies: dict[str, Expression] = {}
         self.runtime = runtime

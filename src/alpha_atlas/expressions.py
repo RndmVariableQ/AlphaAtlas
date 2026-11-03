@@ -185,6 +185,11 @@ def compile_factor(
                 raise ValueError(f"invalid {spec.name} bounds")
         if spec.name == "TS_QUANTILE" and not 0 <= static[0] <= 1:
             raise ValueError("quantile must be in [0,1]")
+        if spec.name in {"CS_LAGGED_MEAN", "CS_LAGGED_SPREAD"}:
+            if not 0 < static[-1] <= 1:
+                raise ValueError("portfolio coverage must be in (0,1]")
+            if spec.name == "CS_LAGGED_SPREAD" and not 0 < static[0] <= 0.5:
+                raise ValueError("portfolio tail fraction must be in (0,0.5]")
         n = int(normalized[spec.args.index("window")].value) if "window" in spec.args else 0
         minimum = MINIMUM_WINDOWS.get(spec.name, 1)
         if n and n < minimum:
@@ -203,6 +208,8 @@ def compile_factor(
             high = Expression("TS_QUANTILE", (x, w, hi))
             return visit(Expression("MIN", (Expression("MAX", (x, low)), high)), expansion)
         history = n if spec.history == "lag" else max(n - 1, 0)
+        if spec.scope == "panel":
+            history = 1
         if definition and definition.kind == "group_batch":
             history = definition.history
             if definition.window_arg:
@@ -331,7 +338,12 @@ def execute(
             value = pl.col(str(node.value)).cast(pl.Float64)
         elif node.op == "const":
             value = pl.lit(node.value, dtype=pl.Float64)
-        elif spec.kind == "builtin" and "window" in spec.args and int(params[0]) > frame.height:
+        elif (
+            spec.kind == "builtin"
+            and spec.scope == "ts"
+            and "window" in spec.args
+            and int(params[0]) > frame.height
+        ):
             # No group can fill this window. Avoid allocating window-sized temporary arrays.
             value = pl.lit(None, dtype=pl.Boolean if spec.output == "condition" else pl.Float64)
         elif (definition := registry.definition(node.op)) and definition.kind == "group_batch":
@@ -342,7 +354,13 @@ def execute(
                 definition, eager, columns, params, node_group
             ).rename(name)
             work = eager.lazy()
-        elif node.op in {"TS_PROD", "TS_ARGMIN", "TS_ARGMAX", "TS_RANKCORR"}:
+        elif node.op in {"CS_LAGGED_MEAN", "CS_LAGGED_SPREAD"}:
+            from alpha_atlas.operators.portfolio import lagged_portfolio
+
+            eager = work.collect()
+            value = lagged_portfolio(eager, columns, params, identity, node.op).rename(name)
+            work = eager.lazy()
+        elif node.op in {"TS_PROD", "TS_ARGMIN", "TS_ARGMAX", "TS_RANKCORR", "TS_RESID_STD3"}:
             eager = work.collect()
             source = eager.select(*node_group, *dict.fromkeys(columns)).with_row_index("__pos")
             values = np.full(eager.height, np.nan)

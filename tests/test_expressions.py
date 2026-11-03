@@ -242,8 +242,8 @@ def test_order_statistics_against_independent_reference():
         assert actual[i] == pytest.approx(np.corrcoef(ra, rb)[0, 1])
 
 
-def test_catalog_is_exactly_sixty():
-    assert len(OperatorRegistry().catalog()) == 60
+def test_catalog_includes_six_reusable_monthly_recipe_operators():
+    assert len(OperatorRegistry().catalog()) == 66
     assert parse("# comment\n$x").op == "field"
 
 

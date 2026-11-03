@@ -1,0 +1,5123 @@
+{
+  "format_version": 2,
+  "definitions": [
+    {
+      "schema_version": 1,
+      "library": "zookeeper_26",
+      "version": "zookeeper_rq_monthly_v1",
+      "name": "mom1",
+      "source_name": "mom1",
+      "description": "一个自然月动量",
+      "family": "momentum",
+      "status": "adapted_proxy",
+      "input_group": "eight_fields",
+      "source_fields": [
+        "adj_vwap",
+        "volume"
+      ],
+      "prepared_field": "zk_mom1",
+      "expression": "$zk_mom1",
+      "formula": "R_m",
+      "lookback_months": 1,
+      "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+      "update_frequency": "monthly",
+      "available_at": "first observed 5m bar of the following trading month",
+      "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+      "adaptation_notes": "已复权日 VWAP 代理收益，允许正常主力切换。",
+      "source": {
+        "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+        "authors": "Fan, Li, Qiao, Zhang",
+        "ssrn_id": "6618461",
+        "url": "https://ssrn.com/abstract=6618461",
+        "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+      },
+      "implementation": "alpha_atlas.factor_libraries.zookeeper.compute.compute_monthly",
+      "source_dependencies": {
+        "futures_kernel_5m_full": [
+          "adj_vwap",
+          "volume"
+        ]
+      },
+      "formula_language": "mathematical_description; executable field is expression after preparation",
+      "lookback_trading_days": null
+    },
+    {
+      "schema_version": 1,
+      "library": "zookeeper_26",
+      "version": "zookeeper_rq_monthly_v1",
+      "name": "mom12",
+      "source_name": "mom12",
+      "description": "十二个自然月动量",
+      "family": "momentum",
+      "status": "adapted_proxy",
+      "input_group": "eight_fields",
+      "source_fields": [
+        "adj_vwap",
+        "volume"
+      ],
+      "prepared_field": "zk_mom12",
+      "expression": "$zk_mom12",
+      "formula": "prod(1 + R[m-11:m]) - 1",
+      "lookback_months": 12,
+      "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+      "update_frequency": "monthly",
+      "available_at": "first observed 5m bar of the following trading month",
+      "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+      "adaptation_notes": "完整的连续 12 个月收益。",
+      "source": {
+        "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+        "authors": "Fan, Li, Qiao, Zhang",
+        "ssrn_id": "6618461",
+        "url": "https://ssrn.com/abstract=6618461",
+        "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+      },
+      "implementation": "alpha_atlas.factor_libraries.zookeeper.compute.compute_monthly",
+      "source_dependencies": {
+        "futures_kernel_5m_full": [
+          "adj_vwap",
+          "volume"
+        ]
+      },
+      "formula_language": "mathematical_description; executable field is expression after preparation",
+      "lookback_trading_days": null
+    },
+    {
+      "schema_version": 1,
+      "library": "zookeeper_26",
+      "version": "zookeeper_rq_monthly_v1",
+      "name": "seasonality",
+      "source_name": "seasonality",
+      "description": "季节性：十一月前的单月收益",
+      "family": "momentum",
+      "status": "adapted_proxy",
+      "input_group": "eight_fields",
+      "source_fields": [
+        "adj_vwap",
+        "volume"
+      ],
+      "prepared_field": "zk_seasonality",
+      "expression": "$zk_seasonality",
+      "formula": "R[m-11]",
+      "lookback_months": 12,
+      "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+      "update_frequency": "monthly",
+      "available_at": "first observed 5m bar of the following trading month",
+      "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+      "adaptation_notes": "11 个月滞后，不是过去 11 个月累计收益。",
+      "source": {
+        "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+        "authors": "Fan, Li, Qiao, Zhang",
+        "ssrn_id": "6618461",
+        "url": "https://ssrn.com/abstract=6618461",
+        "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+      },
+      "implementation": "alpha_atlas.factor_libraries.zookeeper.compute.compute_monthly",
+      "source_dependencies": {
+        "futures_kernel_5m_full": [
+          "adj_vwap",
+          "volume"
+        ]
+      },
+      "formula_language": "mathematical_description; executable field is expression after preparation",
+      "lookback_trading_days": null
+    },
+    {
+      "schema_version": 1,
+      "library": "zookeeper_26",
+      "version": "zookeeper_rq_monthly_v1",
+      "name": "skew",
+      "source_name": "skew",
+      "description": "过去 250 交易日收益偏度",
+      "family": "distribution",
+      "status": "adapted_proxy",
+      "input_group": "eight_fields",
+      "source_fields": [
+        "adj_vwap",
+        "volume"
+      ],
+      "prepared_field": "zk_skew",
+      "expression": "$zk_skew",
+      "formula": "mean((r-mean(r))^3) / mean((r-mean(r))^2)^1.5",
+      "lookback_months": null,
+      "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+      "update_frequency": "monthly",
+      "available_at": "first observed 5m bar of the following trading month",
+      "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+      "adaptation_notes": "250 个完整日收益；总体矩偏度，非偏差修正估计。",
+      "source": {
+        "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+        "authors": "Fan, Li, Qiao, Zhang",
+        "ssrn_id": "6618461",
+        "url": "https://ssrn.com/abstract=6618461",
+        "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+      },
+      "implementation": "alpha_atlas.factor_libraries.zookeeper.compute.compute_monthly",
+      "source_dependencies": {
+        "futures_kernel_5m_full": [
+          "adj_vwap",
+          "volume"
+        ]
+      },
+      "formula_language": "mathematical_description; executable field is expression after preparation",
+      "lookback_trading_days": 250
+    },
+    {
+      "schema_version": 1,
+      "library": "zookeeper_26",
+      "version": "zookeeper_rq_monthly_v1",
+      "name": "kurt",
+      "source_name": "kurt",
+      "description": "过去 250 交易日收益超额峰度",
+      "family": "distribution",
+      "status": "adapted_proxy",
+      "input_group": "eight_fields",
+      "source_fields": [
+        "adj_vwap",
+        "volume"
+      ],
+      "prepared_field": "zk_kurt",
+      "expression": "$zk_kurt",
+      "formula": "mean((r-mean(r))^4) / mean((r-mean(r))^2)^2 - 3",
+      "lookback_months": null,
+      "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+      "update_frequency": "monthly",
+      "available_at": "first observed 5m bar of the following trading month",
+      "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+      "adaptation_notes": "250 个完整日收益；总体矩估计，减 3。",
+      "source": {
+        "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+        "authors": "Fan, Li, Qiao, Zhang",
+        "ssrn_id": "6618461",
+        "url": "https://ssrn.com/abstract=6618461",
+        "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+      },
+      "implementation": "alpha_atlas.factor_libraries.zookeeper.compute.compute_monthly",
+      "source_dependencies": {
+        "futures_kernel_5m_full": [
+          "adj_vwap",
+          "volume"
+        ]
+      },
+      "formula_language": "mathematical_description; executable field is expression after preparation",
+      "lookback_trading_days": 250
+    },
+    {
+      "schema_version": 1,
+      "library": "zookeeper_26",
+      "version": "zookeeper_rq_monthly_v1",
+      "name": "max",
+      "source_name": "max",
+      "description": "最近完成月份的最大日收益",
+      "family": "distribution",
+      "status": "adapted_proxy",
+      "input_group": "eight_fields",
+      "source_fields": [
+        "adj_vwap",
+        "volume"
+      ],
+      "prepared_field": "zk_max",
+      "expression": "$zk_max",
+      "formula": "max(r_d for d in month m)",
+      "lookback_months": 1,
+      "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+      "update_frequency": "monthly",
+      "available_at": "first observed 5m bar of the following trading month",
+      "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+      "adaptation_notes": "m 月末计算，在 m+1 月使用，故为预测月份的前月。",
+      "source": {
+        "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+        "authors": "Fan, Li, Qiao, Zhang",
+        "ssrn_id": "6618461",
+        "url": "https://ssrn.com/abstract=6618461",
+        "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+      },
+      "implementation": "alpha_atlas.factor_libraries.zookeeper.compute.compute_monthly",
+      "source_dependencies": {
+        "futures_kernel_5m_full": [
+          "adj_vwap",
+          "volume"
+        ]
+      },
+      "formula_language": "mathematical_description; executable field is expression after preparation",
+      "lookback_trading_days": null
+    },
+    {
+      "schema_version": 1,
+      "library": "zookeeper_26",
+      "version": "zookeeper_rq_monthly_v1",
+      "name": "var",
+      "source_name": "var",
+      "description": "过去 250 交易日日收益标准差",
+      "family": "risk",
+      "status": "adapted_proxy",
+      "input_group": "eight_fields",
+      "source_fields": [
+        "adj_vwap",
+        "volume"
+      ],
+      "prepared_field": "zk_var",
+      "expression": "$zk_var",
+      "formula": "sample_std(r[d-249:d])",
+      "lookback_months": null,
+      "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+      "update_frequency": "monthly",
+      "available_at": "first observed 5m bar of the following trading month",
+      "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+      "adaptation_notes": "遵循附录文字 standard deviation；虽然论文名称为 Variance，实际不是方差。",
+      "source": {
+        "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+        "authors": "Fan, Li, Qiao, Zhang",
+        "ssrn_id": "6618461",
+        "url": "https://ssrn.com/abstract=6618461",
+        "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+      },
+      "implementation": "alpha_atlas.factor_libraries.zookeeper.compute.compute_monthly",
+      "source_dependencies": {
+        "futures_kernel_5m_full": [
+          "adj_vwap",
+          "volume"
+        ]
+      },
+      "formula_language": "mathematical_description; executable field is expression after preparation",
+      "lookback_trading_days": 250
+    },
+    {
+      "schema_version": 1,
+      "library": "zookeeper_26",
+      "version": "zookeeper_rq_monthly_v1",
+      "name": "cv",
+      "source_name": "cv",
+      "description": "十二个月日收益方差与均值之比",
+      "family": "risk",
+      "status": "adapted_proxy",
+      "input_group": "eight_fields",
+      "source_fields": [
+        "adj_vwap",
+        "volume"
+      ],
+      "prepared_field": "zk_cv",
+      "expression": "$zk_cv",
+      "formula": "sample_var(r over calendar months m-11:m) / mean(r over same dates)",
+      "lookback_months": 12,
+      "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+      "update_frequency": "monthly",
+      "available_at": "first observed 5m bar of the following trading month",
+      "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+      "adaptation_notes": "遵循论文 variance/mean；不改成 std/mean；均值绝对值不超过 1e-12 时为空。",
+      "source": {
+        "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+        "authors": "Fan, Li, Qiao, Zhang",
+        "ssrn_id": "6618461",
+        "url": "https://ssrn.com/abstract=6618461",
+        "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+      },
+      "implementation": "alpha_atlas.factor_libraries.zookeeper.compute.compute_monthly",
+      "source_dependencies": {
+        "futures_kernel_5m_full": [
+          "adj_vwap",
+          "volume"
+        ]
+      },
+      "formula_language": "mathematical_description; executable field is expression after preparation",
+      "lookback_trading_days": null
+    },
+    {
+      "schema_version": 1,
+      "library": "zookeeper_26",
+      "version": "zookeeper_rq_monthly_v1",
+      "name": "vov",
+      "source_name": "vov",
+      "description": "波动率的波动率",
+      "family": "risk",
+      "status": "adapted_proxy",
+      "input_group": "eight_fields",
+      "source_fields": [
+        "adj_vwap",
+        "volume"
+      ],
+      "prepared_field": "zk_vov",
+      "expression": "$zk_vov",
+      "formula": "sample_std(var_daily[d-249:d])",
+      "lookback_months": null,
+      "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+      "update_frequency": "monthly",
+      "available_at": "first observed 5m bar of the following trading month",
+      "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+      "adaptation_notes": "var_daily 是 250 日收益标准差；至少需要 499 个有效日收益。",
+      "source": {
+        "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+        "authors": "Fan, Li, Qiao, Zhang",
+        "ssrn_id": "6618461",
+        "url": "https://ssrn.com/abstract=6618461",
+        "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+      },
+      "implementation": "alpha_atlas.factor_libraries.zookeeper.compute.compute_monthly",
+      "source_dependencies": {
+        "futures_kernel_5m_full": [
+          "adj_vwap",
+          "volume"
+        ]
+      },
+      "formula_language": "mathematical_description; executable field is expression after preparation",
+      "lookback_trading_days": 499
+    },
+    {
+      "schema_version": 1,
+      "library": "zookeeper_26",
+      "version": "zookeeper_rq_monthly_v1",
+      "name": "atv",
+      "source_name": "atv",
+      "description": "相对前十二个月平均成交量的异常成交量",
+      "family": "liquidity",
+      "status": "adapted_proxy",
+      "input_group": "eight_fields",
+      "source_fields": [
+        "volume"
+      ],
+      "prepared_field": "zk_atv",
+      "expression": "$zk_atv",
+      "formula": "V_m / mean(V[m-12:m-1]) - 1",
+      "lookback_months": 13,
+      "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+      "update_frequency": "monthly",
+      "available_at": "first observed 5m bar of the following trading month",
+      "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+      "adaptation_notes": "均值排除当前月；V 为主力合约成交量，非全期限总成交量。",
+      "source": {
+        "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+        "authors": "Fan, Li, Qiao, Zhang",
+        "ssrn_id": "6618461",
+        "url": "https://ssrn.com/abstract=6618461",
+        "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+      },
+      "implementation": "alpha_atlas.factor_libraries.zookeeper.compute.compute_monthly",
+      "source_dependencies": {
+        "futures_kernel_5m_full": [
+          "volume"
+        ]
+      },
+      "formula_language": "mathematical_description; executable field is expression after preparation",
+      "lookback_trading_days": null
+    },
+    {
+      "schema_version": 1,
+      "library": "zookeeper_26",
+      "version": "zookeeper_rq_monthly_v1",
+      "name": "iliq",
+      "source_name": "iliq",
+      "description": "月度 Amivest 流动性倒数",
+      "family": "liquidity",
+      "status": "adapted_proxy",
+      "input_group": "eight_fields",
+      "source_fields": [
+        "adj_vwap",
+        "volume",
+        "amount"
+      ],
+      "prepared_field": "zk_iliq",
+      "expression": "$zk_iliq",
+      "formula": "1 / mean(A_d / abs(r_d) for valid d in month m)",
+      "lookback_months": 1,
+      "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+      "update_frequency": "monthly",
+      "available_at": "first observed 5m bar of the following trading month",
+      "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+      "adaptation_notes": "A 为人民币成交额；排除零收益和非正成交额日，要求至少 80% 当月交易日有效；是均值倒数，非日倒数均值。",
+      "source": {
+        "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+        "authors": "Fan, Li, Qiao, Zhang",
+        "ssrn_id": "6618461",
+        "url": "https://ssrn.com/abstract=6618461",
+        "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+      },
+      "implementation": "alpha_atlas.factor_libraries.zookeeper.compute.compute_monthly",
+      "source_dependencies": {
+        "futures_kernel_5m_full": [
+          "adj_vwap",
+          "volume",
+          "amount"
+        ]
+      },
+      "formula_language": "mathematical_description; executable field is expression after preparation",
+      "lookback_trading_days": null
+    },
+    {
+      "schema_version": 1,
+      "library": "zookeeper_26",
+      "version": "zookeeper_rq_monthly_v1",
+      "name": "dOI",
+      "source_name": "dOI",
+      "description": "月末主力持仓量环比差",
+      "family": "positioning",
+      "status": "adapted_proxy",
+      "input_group": "eight_fields",
+      "source_fields": [
+        "open_interest"
+      ],
+      "prepared_field": "zk_dOI",
+      "expression": "$zk_dOI",
+      "formula": "OI_m - OI[m-1]",
+      "lookback_months": 2,
+      "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+      "update_frequency": "monthly",
+      "available_at": "first observed 5m bar of the following trading month",
+      "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+      "adaptation_notes": "论文 change 未指定比例；本版固定为绝对差。主力 OI 替代全期限 gross OI。",
+      "source": {
+        "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+        "authors": "Fan, Li, Qiao, Zhang",
+        "ssrn_id": "6618461",
+        "url": "https://ssrn.com/abstract=6618461",
+        "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+      },
+      "implementation": "alpha_atlas.factor_libraries.zookeeper.compute.compute_monthly",
+      "source_dependencies": {
+        "futures_kernel_5m_full": [
+          "open_interest"
+        ]
+      },
+      "formula_language": "mathematical_description; executable field is expression after preparation",
+      "lookback_trading_days": null
+    },
+    {
+      "schema_version": 1,
+      "library": "zookeeper_26",
+      "version": "zookeeper_rq_monthly_v1",
+      "name": "dmaOI",
+      "source_name": "dmaOI",
+      "description": "月末主力持仓量相对过去十二月均值偏离",
+      "family": "positioning",
+      "status": "adapted_proxy",
+      "input_group": "eight_fields",
+      "source_fields": [
+        "open_interest"
+      ],
+      "prepared_field": "zk_dmaOI",
+      "expression": "$zk_dmaOI",
+      "formula": "OI_m / mean(OI[m-12:m-1]) - 1",
+      "lookback_months": 13,
+      "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+      "update_frequency": "monthly",
+      "available_at": "first observed 5m bar of the following trading month",
+      "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+      "adaptation_notes": "本版固定为比例偏离，历史均值排除当前月；主力 OI 代理。",
+      "source": {
+        "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+        "authors": "Fan, Li, Qiao, Zhang",
+        "ssrn_id": "6618461",
+        "url": "https://ssrn.com/abstract=6618461",
+        "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+      },
+      "implementation": "alpha_atlas.factor_libraries.zookeeper.compute.compute_monthly",
+      "source_dependencies": {
+        "futures_kernel_5m_full": [
+          "open_interest"
+        ]
+      },
+      "formula_language": "mathematical_description; executable field is expression after preparation",
+      "lookback_trading_days": null
+    },
+    {
+      "schema_version": 1,
+      "library": "zookeeper_26",
+      "version": "zookeeper_rq_monthly_v1",
+      "name": "val",
+      "source_name": "val",
+      "description": "当前价格与 42–54 月前均价之比",
+      "family": "value",
+      "status": "adapted_proxy",
+      "input_group": "eight_fields",
+      "source_fields": [
+        "adj_vwap",
+        "volume"
+      ],
+      "prepared_field": "zk_val",
+      "expression": "$zk_val",
+      "formula": "P_m / mean(P[m-54:m-42])",
+      "lookback_months": 55,
+      "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+      "update_frequency": "monthly",
+      "available_at": "first observed 5m bar of the following trading month",
+      "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+      "adaptation_notes": "使用 13 个历史月末已复权日 VWAP 的均值；这是对历史区间 settlement 均价的月末采样适配。",
+      "source": {
+        "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+        "authors": "Fan, Li, Qiao, Zhang",
+        "ssrn_id": "6618461",
+        "url": "https://ssrn.com/abstract=6618461",
+        "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+      },
+      "implementation": "alpha_atlas.factor_libraries.zookeeper.compute.compute_monthly",
+      "source_dependencies": {
+        "futures_kernel_5m_full": [
+          "adj_vwap",
+          "volume"
+        ]
+      },
+      "formula_language": "mathematical_description; executable field is expression after preparation",
+      "lookback_trading_days": null
+    },
+    {
+      "schema_version": 1,
+      "library": "zookeeper_26",
+      "version": "zookeeper_rq_monthly_v1",
+      "name": "val36",
+      "source_name": "val36",
+      "description": "三年累计收益",
+      "family": "value",
+      "status": "adapted_proxy",
+      "input_group": "eight_fields",
+      "source_fields": [
+        "adj_vwap",
+        "volume"
+      ],
+      "prepared_field": "zk_val36",
+      "expression": "$zk_val36",
+      "formula": "prod(1 + R[m-35:m]) - 1",
+      "lookback_months": 36,
+      "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+      "update_frequency": "monthly",
+      "available_at": "first observed 5m bar of the following trading month",
+      "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+      "adaptation_notes": "完整 36 个自然月；不把 36 个月换成固定 756 天。",
+      "source": {
+        "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+        "authors": "Fan, Li, Qiao, Zhang",
+        "ssrn_id": "6618461",
+        "url": "https://ssrn.com/abstract=6618461",
+        "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+      },
+      "implementation": "alpha_atlas.factor_libraries.zookeeper.compute.compute_monthly",
+      "source_dependencies": {
+        "futures_kernel_5m_full": [
+          "adj_vwap",
+          "volume"
+        ]
+      },
+      "formula_language": "mathematical_description; executable field is expression after preparation",
+      "lookback_trading_days": null
+    },
+    {
+      "schema_version": 1,
+      "library": "zookeeper_26",
+      "version": "zookeeper_rq_monthly_v1",
+      "name": "val60",
+      "source_name": "val60",
+      "description": "五年累计收益",
+      "family": "value",
+      "status": "adapted_proxy",
+      "input_group": "eight_fields",
+      "source_fields": [
+        "adj_vwap",
+        "volume"
+      ],
+      "prepared_field": "zk_val60",
+      "expression": "$zk_val60",
+      "formula": "prod(1 + R[m-59:m]) - 1",
+      "lookback_months": 60,
+      "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+      "update_frequency": "monthly",
+      "available_at": "first observed 5m bar of the following trading month",
+      "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+      "adaptation_notes": "完整 60 个自然月；上市不足历史保持空值。",
+      "source": {
+        "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+        "authors": "Fan, Li, Qiao, Zhang",
+        "ssrn_id": "6618461",
+        "url": "https://ssrn.com/abstract=6618461",
+        "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+      },
+      "implementation": "alpha_atlas.factor_libraries.zookeeper.compute.compute_monthly",
+      "source_dependencies": {
+        "futures_kernel_5m_full": [
+          "adj_vwap",
+          "volume"
+        ]
+      },
+      "formula_language": "mathematical_description; executable field is expression after preparation",
+      "lookback_trading_days": null
+    },
+    {
+      "schema_version": 1,
+      "library": "zookeeper_26",
+      "version": "zookeeper_rq_monthly_v1",
+      "name": "basis",
+      "source_name": "basis",
+      "description": "月末主力与第一远月价格比",
+      "family": "curve",
+      "status": "adapted_proxy",
+      "input_group": "curve",
+      "source_fields": [
+        "close",
+        "close_p1"
+      ],
+      "prepared_field": "zk_basis",
+      "expression": "$zk_basis",
+      "formula": "F0_m / F1_m",
+      "lookback_months": 1,
+      "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+      "update_frequency": "monthly",
+      "available_at": "first observed 5m bar of the following trading month",
+      "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+      "adaptation_notes": "主力及其后第一到期合约替代第一、第二近月；使用同一时刻未复权收盘价。",
+      "source": {
+        "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+        "authors": "Fan, Li, Qiao, Zhang",
+        "ssrn_id": "6618461",
+        "url": "https://ssrn.com/abstract=6618461",
+        "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+      },
+      "implementation": "alpha_atlas.factor_libraries.zookeeper.compute.compute_monthly",
+      "source_dependencies": {
+        "futures_curve": [
+          "close",
+          "close_p1"
+        ]
+      },
+      "formula_language": "mathematical_description; executable field is expression after preparation",
+      "lookback_trading_days": null
+    },
+    {
+      "schema_version": 1,
+      "library": "zookeeper_26",
+      "version": "zookeeper_rq_monthly_v1",
+      "name": "basis12",
+      "source_name": "basis12",
+      "description": "十二个月平均基差",
+      "family": "curve",
+      "status": "adapted_proxy",
+      "input_group": "curve",
+      "source_fields": [
+        "close",
+        "close_p1"
+      ],
+      "prepared_field": "zk_basis12",
+      "expression": "$zk_basis12",
+      "formula": "mean(basis[m-11:m])",
+      "lookback_months": 12,
+      "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+      "update_frequency": "monthly",
+      "available_at": "first observed 5m bar of the following trading month",
+      "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+      "adaptation_notes": "月末价格比的完整 12 月均值。",
+      "source": {
+        "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+        "authors": "Fan, Li, Qiao, Zhang",
+        "ssrn_id": "6618461",
+        "url": "https://ssrn.com/abstract=6618461",
+        "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+      },
+      "implementation": "alpha_atlas.factor_libraries.zookeeper.compute.compute_monthly",
+      "source_dependencies": {
+        "futures_curve": [
+          "close",
+          "close_p1"
+        ]
+      },
+      "formula_language": "mathematical_description; executable field is expression after preparation",
+      "lookback_trading_days": null
+    },
+    {
+      "schema_version": 1,
+      "library": "zookeeper_26",
+      "version": "zookeeper_rq_monthly_v1",
+      "name": "l2basis12",
+      "source_name": "l2basis12",
+      "description": "十二月平均基差滞后两个月",
+      "family": "curve",
+      "status": "adapted_proxy",
+      "input_group": "curve",
+      "source_fields": [
+        "close",
+        "close_p1"
+      ],
+      "prepared_field": "zk_l2basis12",
+      "expression": "$zk_l2basis12",
+      "formula": "basis12[m-2]",
+      "lookback_months": 14,
+      "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+      "update_frequency": "monthly",
+      "available_at": "first observed 5m bar of the following trading month",
+      "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+      "adaptation_notes": "滞后单位为自然月。",
+      "source": {
+        "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+        "authors": "Fan, Li, Qiao, Zhang",
+        "ssrn_id": "6618461",
+        "url": "https://ssrn.com/abstract=6618461",
+        "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+      },
+      "implementation": "alpha_atlas.factor_libraries.zookeeper.compute.compute_monthly",
+      "source_dependencies": {
+        "futures_curve": [
+          "close",
+          "close_p1"
+        ]
+      },
+      "formula_language": "mathematical_description; executable field is expression after preparation",
+      "lookback_trading_days": null
+    },
+    {
+      "schema_version": 1,
+      "library": "zookeeper_26",
+      "version": "zookeeper_rq_monthly_v1",
+      "name": "bmom",
+      "source_name": "bmom",
+      "description": "主力与第一远月十二月收益之差",
+      "family": "curve",
+      "status": "adapted_proxy",
+      "input_group": "curve",
+      "source_fields": [
+        "close",
+        "close_p1",
+        "instrument_id",
+        "instrument_id_p1"
+      ],
+      "prepared_field": "zk_bmom",
+      "expression": "$zk_bmom",
+      "formula": "prod(1 + C0[m-11:m]) - prod(1 + C1[m-11:m])",
+      "lookback_months": 12,
+      "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+      "update_frequency": "monthly",
+      "available_at": "first observed 5m bar of the following trading month",
+      "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+      "adaptation_notes": "Cj 只复合相邻交易日同一真实合约的收益，剔除换腿日；每月有效收益日比例至少 80%，不会把跨合约价差当收益。",
+      "source": {
+        "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+        "authors": "Fan, Li, Qiao, Zhang",
+        "ssrn_id": "6618461",
+        "url": "https://ssrn.com/abstract=6618461",
+        "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+      },
+      "implementation": "alpha_atlas.factor_libraries.zookeeper.compute.compute_monthly",
+      "source_dependencies": {
+        "futures_curve": [
+          "close",
+          "close_p1",
+          "instrument_id",
+          "instrument_id_p1"
+        ]
+      },
+      "formula_language": "mathematical_description; executable field is expression after preparation",
+      "lookback_trading_days": null
+    },
+    {
+      "schema_version": 1,
+      "library": "zookeeper_26",
+      "version": "zookeeper_rq_monthly_v1",
+      "name": "bmom12",
+      "source_name": "bmom12",
+      "description": "十二个月平均基差动量",
+      "family": "curve",
+      "status": "adapted_proxy",
+      "input_group": "curve",
+      "source_fields": [
+        "close",
+        "close_p1",
+        "instrument_id",
+        "instrument_id_p1"
+      ],
+      "prepared_field": "zk_bmom12",
+      "expression": "$zk_bmom12",
+      "formula": "mean(bmom[m-11:m])",
+      "lookback_months": 23,
+      "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+      "update_frequency": "monthly",
+      "available_at": "first observed 5m bar of the following trading month",
+      "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+      "adaptation_notes": "完整 12 月基差动量均值。",
+      "source": {
+        "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+        "authors": "Fan, Li, Qiao, Zhang",
+        "ssrn_id": "6618461",
+        "url": "https://ssrn.com/abstract=6618461",
+        "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+      },
+      "implementation": "alpha_atlas.factor_libraries.zookeeper.compute.compute_monthly",
+      "source_dependencies": {
+        "futures_curve": [
+          "close",
+          "close_p1",
+          "instrument_id",
+          "instrument_id_p1"
+        ]
+      },
+      "formula_language": "mathematical_description; executable field is expression after preparation",
+      "lookback_trading_days": null
+    },
+    {
+      "schema_version": 1,
+      "library": "zookeeper_26",
+      "version": "zookeeper_rq_monthly_v1",
+      "name": "l2bmom12",
+      "source_name": "l2bmom12",
+      "description": "十二月平均基差动量滞后两个月",
+      "family": "curve",
+      "status": "adapted_proxy",
+      "input_group": "curve",
+      "source_fields": [
+        "close",
+        "close_p1",
+        "instrument_id",
+        "instrument_id_p1"
+      ],
+      "prepared_field": "zk_l2bmom12",
+      "expression": "$zk_l2bmom12",
+      "formula": "bmom12[m-2]",
+      "lookback_months": 25,
+      "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+      "update_frequency": "monthly",
+      "available_at": "first observed 5m bar of the following trading month",
+      "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+      "adaptation_notes": "滞后单位为自然月。",
+      "source": {
+        "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+        "authors": "Fan, Li, Qiao, Zhang",
+        "ssrn_id": "6618461",
+        "url": "https://ssrn.com/abstract=6618461",
+        "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+      },
+      "implementation": "alpha_atlas.factor_libraries.zookeeper.compute.compute_monthly",
+      "source_dependencies": {
+        "futures_curve": [
+          "close",
+          "close_p1",
+          "instrument_id",
+          "instrument_id_p1"
+        ]
+      },
+      "formula_language": "mathematical_description; executable field is expression after preparation",
+      "lookback_trading_days": null
+    },
+    {
+      "schema_version": 1,
+      "library": "zookeeper_26",
+      "version": "zookeeper_rq_monthly_v1",
+      "name": "rbasis",
+      "source_name": "rbasis",
+      "description": "相邻期限价格比之比",
+      "family": "curve",
+      "status": "adapted_proxy",
+      "input_group": "curve",
+      "source_fields": [
+        "close",
+        "close_p1",
+        "close_p2"
+      ],
+      "prepared_field": "zk_rbasis",
+      "expression": "$zk_rbasis",
+      "formula": "(F0_m / F1_m) / (F1_m / F2_m)",
+      "lookback_months": 1,
+      "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+      "update_frequency": "monthly",
+      "available_at": "first observed 5m bar of the following trading month",
+      "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+      "adaptation_notes": "按附录 ratio of basis 固定为价格比之比；不是价差之比，也不按到期天数年化。",
+      "source": {
+        "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+        "authors": "Fan, Li, Qiao, Zhang",
+        "ssrn_id": "6618461",
+        "url": "https://ssrn.com/abstract=6618461",
+        "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+      },
+      "implementation": "alpha_atlas.factor_libraries.zookeeper.compute.compute_monthly",
+      "source_dependencies": {
+        "futures_curve": [
+          "close",
+          "close_p1",
+          "close_p2"
+        ]
+      },
+      "formula_language": "mathematical_description; executable field is expression after preparation",
+      "lookback_trading_days": null
+    },
+    {
+      "schema_version": 1,
+      "library": "zookeeper_26",
+      "version": "zookeeper_rq_monthly_v1",
+      "name": "rbasis12",
+      "source_name": "rbasis12",
+      "description": "十二个月平均相对基差",
+      "family": "curve",
+      "status": "adapted_proxy",
+      "input_group": "curve",
+      "source_fields": [
+        "close",
+        "close_p1",
+        "close_p2"
+      ],
+      "prepared_field": "zk_rbasis12",
+      "expression": "$zk_rbasis12",
+      "formula": "mean(rbasis[m-11:m])",
+      "lookback_months": 12,
+      "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+      "update_frequency": "monthly",
+      "available_at": "first observed 5m bar of the following trading month",
+      "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+      "adaptation_notes": "完整 12 月相对基差均值。",
+      "source": {
+        "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+        "authors": "Fan, Li, Qiao, Zhang",
+        "ssrn_id": "6618461",
+        "url": "https://ssrn.com/abstract=6618461",
+        "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+      },
+      "implementation": "alpha_atlas.factor_libraries.zookeeper.compute.compute_monthly",
+      "source_dependencies": {
+        "futures_curve": [
+          "close",
+          "close_p1",
+          "close_p2"
+        ]
+      },
+      "formula_language": "mathematical_description; executable field is expression after preparation",
+      "lookback_trading_days": null
+    },
+    {
+      "schema_version": 1,
+      "library": "zookeeper_26",
+      "version": "zookeeper_rq_monthly_v1",
+      "name": "l2rbasis",
+      "source_name": "l2rbasis",
+      "description": "相对基差滞后两个月",
+      "family": "curve",
+      "status": "adapted_proxy",
+      "input_group": "curve",
+      "source_fields": [
+        "close",
+        "close_p1",
+        "close_p2"
+      ],
+      "prepared_field": "zk_l2rbasis",
+      "expression": "$zk_l2rbasis",
+      "formula": "rbasis[m-2]",
+      "lookback_months": 3,
+      "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+      "update_frequency": "monthly",
+      "available_at": "first observed 5m bar of the following trading month",
+      "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+      "adaptation_notes": "按名称固定为原始 rbasis 的两月滞后，非 rbasis12 的滞后。",
+      "source": {
+        "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+        "authors": "Fan, Li, Qiao, Zhang",
+        "ssrn_id": "6618461",
+        "url": "https://ssrn.com/abstract=6618461",
+        "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+      },
+      "implementation": "alpha_atlas.factor_libraries.zookeeper.compute.compute_monthly",
+      "source_dependencies": {
+        "futures_curve": [
+          "close",
+          "close_p1",
+          "close_p2"
+        ]
+      },
+      "formula_language": "mathematical_description; executable field is expression after preparation",
+      "lookback_trading_days": null
+    },
+    {
+      "schema_version": 1,
+      "library": "zookeeper_26",
+      "version": "zookeeper_rq_monthly_v1",
+      "name": "ivolaBGR",
+      "source_name": "ivolaBGR",
+      "description": "BGR 三因子模型的十二月残差波动",
+      "family": "risk",
+      "status": "adapted_proxy",
+      "input_group": "composite",
+      "source_fields": [
+        "adj_vwap",
+        "volume",
+        "close",
+        "close_p1"
+      ],
+      "prepared_field": "zk_ivolaBGR",
+      "expression": "$zk_ivolaBGR",
+      "formula": "sample_std(OLS_residual(R, [1, AVG, BASIS, MOM], window=12 calendar months))",
+      "lookback_months": 24,
+      "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+      "update_frequency": "monthly",
+      "available_at": "first observed 5m bar of the following trading month",
+      "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+      "adaptation_notes": "本版固定为 12 月内拟合并计算该窗残差标准差；含截距且矩阵满秩。上月价格、月收益均有效的品种组成候选集合；AVG 为该集合等权收益，BASIS/MOM 按上月 basis/mom12 排序取上下四分位，最少 4 个品种。组合成员先定，每个组合当月有效收益覆盖至少 80% 才对已观测成员等权平均；缺失成员不以其他品种替补。高减低，不用预测标签；这是观测收益代理，非完整可交易组合。",
+      "source": {
+        "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+        "authors": "Fan, Li, Qiao, Zhang",
+        "ssrn_id": "6618461",
+        "url": "https://ssrn.com/abstract=6618461",
+        "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+      },
+      "implementation": "alpha_atlas.factor_libraries.zookeeper.compute.compute_monthly",
+      "source_dependencies": {
+        "futures_kernel_5m_full": [
+          "adj_vwap",
+          "volume"
+        ],
+        "futures_curve": [
+          "close",
+          "close_p1"
+        ]
+      },
+      "formula_language": "mathematical_description; executable field is expression after preparation",
+      "lookback_trading_days": null
+    }
+  ],
+  "factors": [
+    {
+      "candidate": {
+        "expression": "$zk_mom1",
+        "region_ids": [],
+        "hypothesis": "一个自然月动量",
+        "name": "mom1",
+        "evaluation": {}
+      },
+      "compiled": {
+        "factor_id": "9c9c185f4236892beafbe7299674c467ed058dae04b8f84074b0508555df7dce",
+        "expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_mom1"
+        },
+        "fields": [
+          "zk_mom1"
+        ],
+        "dependencies": [],
+        "lookback": 0,
+        "nodes": 1,
+        "depth": 0
+      },
+      "report": {
+        "expression_id": "9c9c185f4236892beafbe7299674c467ed058dae04b8f84074b0508555df7dce",
+        "metrics": [
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "train",
+            "value": -0.005465574458849427,
+            "n_obs": 2801652,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 68
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val",
+            "value": 0.006441392471560192,
+            "n_obs": 2088873,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 74
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val_raw",
+            "value": -0.006441392471560192,
+            "n_obs": 2088873,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 74
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "train",
+            "value": -0.0071685822392628384,
+            "n_obs": 2801652,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 68
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val",
+            "value": 0.00741450914220294,
+            "n_obs": 2088873,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 74
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val_raw",
+            "value": -0.00741450914220294,
+            "n_obs": 2088873,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 74
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "train",
+            "value": -0.002471082465548504,
+            "n_obs": 2801652,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 68
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val",
+            "value": 0.005886328583111832,
+            "n_obs": 2088873,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 74
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val_raw",
+            "value": -0.005886328583111832,
+            "n_obs": 2088873,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 74
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "train",
+            "value": -0.004297016086028585,
+            "n_obs": 2801652,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 68
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val",
+            "value": 0.009199138453625149,
+            "n_obs": 2088873,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 74
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val_raw",
+            "value": -0.009199138453625149,
+            "n_obs": 2088873,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 74
+          }
+        ],
+        "direction": -1,
+        "coverage": 0.9154376092872826,
+        "elapsed_seconds": 2.0519257369451225,
+        "status": "success",
+        "failure_reason": null,
+        "observation_ref": "9dcc634733ddf19c125227c5afce01a771f70643e196a3fd258e3d20c50f713c",
+        "cache_hit": false,
+        "evaluation_id": "9dcc634733ddf19c125227c5afce01a771f70643e196a3fd258e3d20c50f713c",
+        "canonical_expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_mom1"
+        },
+        "diagnostics": {},
+        "clipping": {
+          "quantiles": [
+            0.01,
+            0.99
+          ],
+          "value": [
+            -0.1794718455118367,
+            0.21027834329969242
+          ],
+          "target": [
+            -0.019610968488618596,
+            0.019489469992103037
+          ]
+        }
+      },
+      "train_coverage": 0.9257760533249798,
+      "train_eligible_rows": 3026274,
+      "admission_reason": "accepted"
+    },
+    {
+      "candidate": {
+        "expression": "$zk_mom12",
+        "region_ids": [],
+        "hypothesis": "十二个自然月动量",
+        "name": "mom12",
+        "evaluation": {}
+      },
+      "compiled": {
+        "factor_id": "e1c5937577943987b2eb1d1cbc0e05afcba2775c5e584d119c4ab6f825dd42e3",
+        "expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_mom12"
+        },
+        "fields": [
+          "zk_mom12"
+        ],
+        "dependencies": [],
+        "lookback": 0,
+        "nodes": 1,
+        "depth": 0
+      },
+      "report": {
+        "expression_id": "e1c5937577943987b2eb1d1cbc0e05afcba2775c5e584d119c4ab6f825dd42e3",
+        "metrics": [
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "train",
+            "value": -0.014228339531167577,
+            "n_obs": 2478690,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 60
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val",
+            "value": 0.014142580229940803,
+            "n_obs": 1974384,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 63
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val_raw",
+            "value": -0.014142580229940803,
+            "n_obs": 1974384,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 63
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "train",
+            "value": -0.016814547532503474,
+            "n_obs": 2478690,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 60
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val",
+            "value": 0.013233809936629355,
+            "n_obs": 1974384,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 63
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val_raw",
+            "value": -0.013233809936629355,
+            "n_obs": 1974384,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 63
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "train",
+            "value": -0.006229205023600917,
+            "n_obs": 2478690,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 60
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val",
+            "value": 0.01184136508874981,
+            "n_obs": 1974384,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 63
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val_raw",
+            "value": -0.01184136508874981,
+            "n_obs": 1974384,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 63
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "train",
+            "value": -0.008858058822654,
+            "n_obs": 2478690,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 60
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val",
+            "value": 0.011168829246819093,
+            "n_obs": 1974384,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 63
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val_raw",
+            "value": -0.011168829246819093,
+            "n_obs": 1974384,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 63
+          }
+        ],
+        "direction": -1,
+        "coverage": 0.8652634070022744,
+        "elapsed_seconds": 2.0688957748934627,
+        "status": "success",
+        "failure_reason": null,
+        "observation_ref": "5ea90b552c722ec119b5603c0b2225cf146001c88e75a126116d8ad8aa92be20",
+        "cache_hit": false,
+        "evaluation_id": "5ea90b552c722ec119b5603c0b2225cf146001c88e75a126116d8ad8aa92be20",
+        "canonical_expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_mom12"
+        },
+        "diagnostics": {},
+        "clipping": {
+          "quantiles": [
+            0.01,
+            0.99
+          ],
+          "value": [
+            -0.4473997161318274,
+            0.9865532290544445
+          ],
+          "target": [
+            -0.019610968488618596,
+            0.019489469992103037
+          ]
+        }
+      },
+      "train_coverage": 0.8197555806248873,
+      "train_eligible_rows": 3026274,
+      "admission_reason": "accepted"
+    },
+    {
+      "candidate": {
+        "expression": "$zk_seasonality",
+        "region_ids": [],
+        "hypothesis": "季节性：十一月前的单月收益",
+        "name": "seasonality",
+        "evaluation": {}
+      },
+      "compiled": {
+        "factor_id": "f0091ae273204e30bbc4ef2480a1ecfc4fa45bd3729cc97c5153023b535fa555",
+        "expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_seasonality"
+        },
+        "fields": [
+          "zk_seasonality"
+        ],
+        "dependencies": [],
+        "lookback": 0,
+        "nodes": 1,
+        "depth": 0
+      },
+      "report": {
+        "expression_id": "f0091ae273204e30bbc4ef2480a1ecfc4fa45bd3729cc97c5153023b535fa555",
+        "metrics": [
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "train",
+            "value": -0.003294163997201217,
+            "n_obs": 2558715,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 65
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val",
+            "value": 0.00579965224236875,
+            "n_obs": 2051928,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 66
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val_raw",
+            "value": -0.00579965224236875,
+            "n_obs": 2051928,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 66
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "train",
+            "value": -0.004816801450852312,
+            "n_obs": 2558715,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 65
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val",
+            "value": 0.007103693892811711,
+            "n_obs": 2051928,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 66
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val_raw",
+            "value": -0.007103693892811711,
+            "n_obs": 2051928,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 66
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "train",
+            "value": -6.987799771765556e-05,
+            "n_obs": 2558715,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 65
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val",
+            "value": 0.006572560636920627,
+            "n_obs": 2051928,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 66
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val_raw",
+            "value": -0.006572560636920627,
+            "n_obs": 2051928,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 66
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "train",
+            "value": -0.0021898897407893964,
+            "n_obs": 2558715,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 65
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val",
+            "value": 0.006863501562864708,
+            "n_obs": 2051928,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 66
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val_raw",
+            "value": -0.006863501562864708,
+            "n_obs": 2051928,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 66
+          }
+        ],
+        "direction": -1,
+        "coverage": 0.8992466572882292,
+        "elapsed_seconds": 2.470324323978275,
+        "status": "success",
+        "failure_reason": null,
+        "observation_ref": "4f8167d977d1a3fd242470af64635706a0bc780debc50bd3e60defaaea1540d4",
+        "cache_hit": false,
+        "evaluation_id": "4f8167d977d1a3fd242470af64635706a0bc780debc50bd3e60defaaea1540d4",
+        "canonical_expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_seasonality"
+        },
+        "diagnostics": {},
+        "clipping": {
+          "quantiles": [
+            0.01,
+            0.99
+          ],
+          "value": [
+            -0.19128496138052997,
+            0.17666800281008865
+          ],
+          "target": [
+            -0.019610968488618596,
+            0.019489469992103037
+          ]
+        }
+      },
+      "train_coverage": 0.8461989892521299,
+      "train_eligible_rows": 3026274,
+      "admission_reason": "quality_threshold"
+    },
+    {
+      "candidate": {
+        "expression": "$zk_skew",
+        "region_ids": [],
+        "hypothesis": "过去 250 交易日收益偏度",
+        "name": "skew",
+        "evaluation": {}
+      },
+      "compiled": {
+        "factor_id": "c2a8d2f4eb0beab952a9c4a3fcc518b7ef451fc1b0f984a0e388abc4c1dabfdc",
+        "expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_skew"
+        },
+        "fields": [
+          "zk_skew"
+        ],
+        "dependencies": [],
+        "lookback": 0,
+        "nodes": 1,
+        "depth": 0
+      },
+      "report": {
+        "expression_id": "c2a8d2f4eb0beab952a9c4a3fcc518b7ef451fc1b0f984a0e388abc4c1dabfdc",
+        "metrics": [
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "train",
+            "value": -0.011766641146862652,
+            "n_obs": 2467692,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 60
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val",
+            "value": -0.005516498401596695,
+            "n_obs": 1973280,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 63
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val_raw",
+            "value": 0.005516498401596695,
+            "n_obs": 1973280,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 63
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "train",
+            "value": -0.009967989052088722,
+            "n_obs": 2467692,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 60
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val",
+            "value": -0.00267412544125228,
+            "n_obs": 1973280,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 63
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val_raw",
+            "value": 0.00267412544125228,
+            "n_obs": 1973280,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 63
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "train",
+            "value": -0.012029523634423677,
+            "n_obs": 2467692,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 60
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val",
+            "value": -0.008530912400170287,
+            "n_obs": 1973280,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 63
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val_raw",
+            "value": 0.008530912400170287,
+            "n_obs": 1973280,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 63
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "train",
+            "value": -0.010671175948245303,
+            "n_obs": 2467692,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 60
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val",
+            "value": -0.006476763724511649,
+            "n_obs": 1973280,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 63
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val_raw",
+            "value": 0.006476763724511649,
+            "n_obs": 1973280,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 63
+          }
+        ],
+        "direction": -1,
+        "coverage": 0.8647795848069313,
+        "elapsed_seconds": 2.207672717049718,
+        "status": "success",
+        "failure_reason": null,
+        "observation_ref": "7d6250e06a231722c362343334356dac1fa499dcecd9a67f665b8e726794fa91",
+        "cache_hit": false,
+        "evaluation_id": "7d6250e06a231722c362343334356dac1fa499dcecd9a67f665b8e726794fa91",
+        "canonical_expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_skew"
+        },
+        "diagnostics": {},
+        "clipping": {
+          "quantiles": [
+            0.01,
+            0.99
+          ],
+          "value": [
+            -2.3152005472828963,
+            1.3275723147157539
+          ],
+          "target": [
+            -0.019610968488618596,
+            0.019489469992103037
+          ]
+        }
+      },
+      "train_coverage": 0.8161214087025828,
+      "train_eligible_rows": 3026274,
+      "admission_reason": "quality_threshold"
+    },
+    {
+      "candidate": {
+        "expression": "$zk_kurt",
+        "region_ids": [],
+        "hypothesis": "过去 250 交易日收益超额峰度",
+        "name": "kurt",
+        "evaluation": {}
+      },
+      "compiled": {
+        "factor_id": "4620eb6f7333bd0c74ddd4923893d09eee432906cc7a151fd600ba6090559e1a",
+        "expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_kurt"
+        },
+        "fields": [
+          "zk_kurt"
+        ],
+        "dependencies": [],
+        "lookback": 0,
+        "nodes": 1,
+        "depth": 0
+      },
+      "report": {
+        "expression_id": "4620eb6f7333bd0c74ddd4923893d09eee432906cc7a151fd600ba6090559e1a",
+        "metrics": [
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "train",
+            "value": 0.0036797236354173322,
+            "n_obs": 2467692,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 60
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val",
+            "value": 0.0018009044641659794,
+            "n_obs": 1973280,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 63
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val_raw",
+            "value": 0.0018009044641659794,
+            "n_obs": 1973280,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 63
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "train",
+            "value": -0.0018057312174731151,
+            "n_obs": 2467692,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 60
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val",
+            "value": 0.0009490749188494354,
+            "n_obs": 1973280,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 63
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val_raw",
+            "value": 0.0009490749188494354,
+            "n_obs": 1973280,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 63
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "train",
+            "value": 0.006466071951534133,
+            "n_obs": 2467692,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 60
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val",
+            "value": 0.004360683373871146,
+            "n_obs": 1973280,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 63
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val_raw",
+            "value": 0.004360683373871146,
+            "n_obs": 1973280,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 63
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "train",
+            "value": 0.0010419877813232332,
+            "n_obs": 2467692,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 60
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val",
+            "value": 0.002440300862602821,
+            "n_obs": 1973280,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 63
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val_raw",
+            "value": 0.002440300862602821,
+            "n_obs": 1973280,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 63
+          }
+        ],
+        "direction": 1,
+        "coverage": 0.8647795848069313,
+        "elapsed_seconds": 2.286438446957618,
+        "status": "success",
+        "failure_reason": null,
+        "observation_ref": "28988ef4ed7b16b2df21174245c58e3bf28976675c3e38470d43dd468d2f79ca",
+        "cache_hit": false,
+        "evaluation_id": "28988ef4ed7b16b2df21174245c58e3bf28976675c3e38470d43dd468d2f79ca",
+        "canonical_expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_kurt"
+        },
+        "diagnostics": {},
+        "clipping": {
+          "quantiles": [
+            0.01,
+            0.99
+          ],
+          "value": [
+            -0.08277405003397886,
+            15.328952508555641
+          ],
+          "target": [
+            -0.019610968488618596,
+            0.019489469992103037
+          ]
+        }
+      },
+      "train_coverage": 0.8161214087025828,
+      "train_eligible_rows": 3026274,
+      "admission_reason": "quality_threshold"
+    },
+    {
+      "candidate": {
+        "expression": "$zk_max",
+        "region_ids": [],
+        "hypothesis": "最近完成月份的最大日收益",
+        "name": "max",
+        "evaluation": {}
+      },
+      "compiled": {
+        "factor_id": "2e2691ebfb33ff3b565e61ca08417351980c1fee0dabdd8527c062fa11c7558b",
+        "expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_max"
+        },
+        "fields": [
+          "zk_max"
+        ],
+        "dependencies": [],
+        "lookback": 0,
+        "nodes": 1,
+        "depth": 0
+      },
+      "report": {
+        "expression_id": "2e2691ebfb33ff3b565e61ca08417351980c1fee0dabdd8527c062fa11c7558b",
+        "metrics": [
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "train",
+            "value": -0.0073544118477305125,
+            "n_obs": 2801652,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 68
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val",
+            "value": -0.0015304648750377662,
+            "n_obs": 2088873,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 74
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val_raw",
+            "value": 0.0015304648750377662,
+            "n_obs": 2088873,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 74
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "train",
+            "value": -0.010310967781511906,
+            "n_obs": 2801652,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 68
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val",
+            "value": -2.6787096836563846e-05,
+            "n_obs": 2088873,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 74
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val_raw",
+            "value": 2.6787096836563846e-05,
+            "n_obs": 2088873,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 74
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "train",
+            "value": -0.0029189473915572604,
+            "n_obs": 2801652,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 68
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val",
+            "value": -0.002944617396340414,
+            "n_obs": 2088873,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 74
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val_raw",
+            "value": 0.002944617396340414,
+            "n_obs": 2088873,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 74
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "train",
+            "value": -0.003613776043591798,
+            "n_obs": 2801652,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 68
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val",
+            "value": -8.058490220680391e-05,
+            "n_obs": 2088873,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 74
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val_raw",
+            "value": 8.058490220680391e-05,
+            "n_obs": 2088873,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 74
+          }
+        ],
+        "direction": -1,
+        "coverage": 0.9154376092872826,
+        "elapsed_seconds": 2.3568577030673623,
+        "status": "success",
+        "failure_reason": null,
+        "observation_ref": "698adcb244db320c217de57a4806f579e0cb19c114ebee6eecdb3b99d5c50806",
+        "cache_hit": false,
+        "evaluation_id": "698adcb244db320c217de57a4806f579e0cb19c114ebee6eecdb3b99d5c50806",
+        "canonical_expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_max"
+        },
+        "diagnostics": {},
+        "clipping": {
+          "quantiles": [
+            0.01,
+            0.99
+          ],
+          "value": [
+            0.0013743458404367193,
+            0.07319743014353164
+          ],
+          "target": [
+            -0.019610968488618596,
+            0.019489469992103037
+          ]
+        }
+      },
+      "train_coverage": 0.9257760533249798,
+      "train_eligible_rows": 3026274,
+      "admission_reason": "quality_threshold"
+    },
+    {
+      "candidate": {
+        "expression": "$zk_var",
+        "region_ids": [],
+        "hypothesis": "过去 250 交易日日收益标准差",
+        "name": "var",
+        "evaluation": {}
+      },
+      "compiled": {
+        "factor_id": "2986ead82b9d4f6c597b0d3d4727e2a3e51ce0067181b89b7793859191bb7670",
+        "expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_var"
+        },
+        "fields": [
+          "zk_var"
+        ],
+        "dependencies": [],
+        "lookback": 0,
+        "nodes": 1,
+        "depth": 0
+      },
+      "report": {
+        "expression_id": "2986ead82b9d4f6c597b0d3d4727e2a3e51ce0067181b89b7793859191bb7670",
+        "metrics": [
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "train",
+            "value": -0.00047855773114425945,
+            "n_obs": 2467692,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 60
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val",
+            "value": -0.00042799187550980383,
+            "n_obs": 1940763,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 61
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val_raw",
+            "value": 0.00042799187550980383,
+            "n_obs": 1940763,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 61
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "train",
+            "value": 0.00039196456090728743,
+            "n_obs": 2467692,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 60
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val",
+            "value": -0.0010376369891183645,
+            "n_obs": 1940763,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 61
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val_raw",
+            "value": 0.0010376369891183645,
+            "n_obs": 1940763,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 61
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "train",
+            "value": 0.002767632243519369,
+            "n_obs": 2467692,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 60
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val",
+            "value": 0.0008940086122629743,
+            "n_obs": 1940763,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 61
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val_raw",
+            "value": -0.0008940086122629743,
+            "n_obs": 1940763,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 61
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "train",
+            "value": 0.0033952991260670557,
+            "n_obs": 2467692,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 60
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val",
+            "value": 0.0008940904176504016,
+            "n_obs": 1940763,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 61
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val_raw",
+            "value": -0.0008940904176504016,
+            "n_obs": 1940763,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 61
+          }
+        ],
+        "direction": -1,
+        "coverage": 0.8647795848069313,
+        "elapsed_seconds": 2.550409205723554,
+        "status": "success",
+        "failure_reason": null,
+        "observation_ref": "2f3a1aa4112a14521e2e7508463b6e7e207283ce76654dae46b3e3af57be629e",
+        "cache_hit": false,
+        "evaluation_id": "2f3a1aa4112a14521e2e7508463b6e7e207283ce76654dae46b3e3af57be629e",
+        "canonical_expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_var"
+        },
+        "diagnostics": {},
+        "clipping": {
+          "quantiles": [
+            0.01,
+            0.99
+          ],
+          "value": [
+            0.0008254951838422331,
+            0.024817576836569752
+          ],
+          "target": [
+            -0.019610968488618596,
+            0.019489469992103037
+          ]
+        }
+      },
+      "train_coverage": 0.8161214087025828,
+      "train_eligible_rows": 3026274,
+      "admission_reason": "quality_threshold"
+    },
+    {
+      "candidate": {
+        "expression": "$zk_cv",
+        "region_ids": [],
+        "hypothesis": "十二个月日收益方差与均值之比",
+        "name": "cv",
+        "evaluation": {}
+      },
+      "compiled": {
+        "factor_id": "391875065e047d932cef4593374620e23e2e1efe26d1dd7194e8741632625c29",
+        "expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_cv"
+        },
+        "fields": [
+          "zk_cv"
+        ],
+        "dependencies": [],
+        "lookback": 0,
+        "nodes": 1,
+        "depth": 0
+      },
+      "report": {
+        "expression_id": "391875065e047d932cef4593374620e23e2e1efe26d1dd7194e8741632625c29",
+        "metrics": [
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "train",
+            "value": 0.00013937415633605586,
+            "n_obs": 2478690,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 60
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val",
+            "value": -0.0008309488644314478,
+            "n_obs": 1974384,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 63
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val_raw",
+            "value": -0.0008309488644314478,
+            "n_obs": 1974384,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 63
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "train",
+            "value": 0.0028078224717633894,
+            "n_obs": 2478690,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 60
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val",
+            "value": -0.0016103647633746697,
+            "n_obs": 1974384,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 63
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val_raw",
+            "value": -0.0016103647633746697,
+            "n_obs": 1974384,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 63
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "train",
+            "value": 0.001957419407050471,
+            "n_obs": 2478690,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 60
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val",
+            "value": 0.000810260690503054,
+            "n_obs": 1974384,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 63
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val_raw",
+            "value": 0.000810260690503054,
+            "n_obs": 1974384,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 63
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "train",
+            "value": 0.004255717703332942,
+            "n_obs": 2478690,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 60
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val",
+            "value": -0.0011895011681823642,
+            "n_obs": 1974384,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 63
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val_raw",
+            "value": -0.0011895011681823642,
+            "n_obs": 1974384,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 63
+          }
+        ],
+        "direction": 1,
+        "coverage": 0.8652634070022744,
+        "elapsed_seconds": 2.1738343820907176,
+        "status": "success",
+        "failure_reason": null,
+        "observation_ref": "14abca7b6a5a9a93c72b25c85c520af7b5e2c805e15841d3fe51223389606f2b",
+        "cache_hit": false,
+        "evaluation_id": "14abca7b6a5a9a93c72b25c85c520af7b5e2c805e15841d3fe51223389606f2b",
+        "canonical_expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_cv"
+        },
+        "diagnostics": {},
+        "clipping": {
+          "quantiles": [
+            0.01,
+            0.99
+          ],
+          "value": [
+            -5.4444276366575535,
+            4.923161642966541
+          ],
+          "target": [
+            -0.019610968488618596,
+            0.019489469992103037
+          ]
+        }
+      },
+      "train_coverage": 0.8197555806248873,
+      "train_eligible_rows": 3026274,
+      "admission_reason": "quality_threshold"
+    },
+    {
+      "candidate": {
+        "expression": "$zk_vov",
+        "region_ids": [],
+        "hypothesis": "波动率的波动率",
+        "name": "vov",
+        "evaluation": {}
+      },
+      "compiled": {
+        "factor_id": "57e8d50d9be6c43b83e58a79d965b4b6f6ab225f87aa36df964ab4544f8d1d4e",
+        "expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_vov"
+        },
+        "fields": [
+          "zk_vov"
+        ],
+        "dependencies": [],
+        "lookback": 0,
+        "nodes": 1,
+        "depth": 0
+      },
+      "report": {
+        "expression_id": "57e8d50d9be6c43b83e58a79d965b4b6f6ab225f87aa36df964ab4544f8d1d4e",
+        "metrics": [
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "train",
+            "value": 0.0010112235921944164,
+            "n_obs": 2199792,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 55
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val",
+            "value": -0.005104640373535069,
+            "n_obs": 1866273,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 60
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val_raw",
+            "value": -0.005104640373535069,
+            "n_obs": 1866273,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 60
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "train",
+            "value": -0.0021743725475399313,
+            "n_obs": 2199792,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 55
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val",
+            "value": -0.004982634946661037,
+            "n_obs": 1866273,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 60
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val_raw",
+            "value": -0.004982634946661037,
+            "n_obs": 1866273,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 60
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "train",
+            "value": 0.0020970262715270032,
+            "n_obs": 2199792,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 55
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val",
+            "value": -0.006355817142484913,
+            "n_obs": 1866273,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 60
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val_raw",
+            "value": -0.006355817142484913,
+            "n_obs": 1866273,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 60
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "train",
+            "value": -0.0012947852803721592,
+            "n_obs": 2199792,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 55
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val",
+            "value": -0.0067481609359559816,
+            "n_obs": 1866273,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 60
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val_raw",
+            "value": -0.0067481609359559816,
+            "n_obs": 1866273,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 60
+          }
+        ],
+        "direction": 1,
+        "coverage": 0.8213644311802369,
+        "elapsed_seconds": 2.144840219989419,
+        "status": "success",
+        "failure_reason": null,
+        "observation_ref": "8a468724541028231431cbc7803c5dabdbbd408d4811c4a1b147267ba27903e5",
+        "cache_hit": false,
+        "evaluation_id": "8a468724541028231431cbc7803c5dabdbbd408d4811c4a1b147267ba27903e5",
+        "canonical_expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_vov"
+        },
+        "diagnostics": {},
+        "clipping": {
+          "quantiles": [
+            0.01,
+            0.99
+          ],
+          "value": [
+            6.064886520180379e-05,
+            0.004153823233209102
+          ],
+          "target": [
+            -0.019610968488618596,
+            0.019489469992103037
+          ]
+        }
+      },
+      "train_coverage": 0.7268978288152361,
+      "train_eligible_rows": 3026274,
+      "admission_reason": "quality_threshold"
+    },
+    {
+      "candidate": {
+        "expression": "$zk_atv",
+        "region_ids": [],
+        "hypothesis": "相对前十二个月平均成交量的异常成交量",
+        "name": "atv",
+        "evaluation": {}
+      },
+      "compiled": {
+        "factor_id": "b455c94f85c8982454c9e7478a38467f9ece8aa8ff1f72fa66edff129dec17c9",
+        "expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_atv"
+        },
+        "fields": [
+          "zk_atv"
+        ],
+        "dependencies": [],
+        "lookback": 0,
+        "nodes": 1,
+        "depth": 0
+      },
+      "report": {
+        "expression_id": "b455c94f85c8982454c9e7478a38467f9ece8aa8ff1f72fa66edff129dec17c9",
+        "metrics": [
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "train",
+            "value": -0.0013915061464631919,
+            "n_obs": 2769825,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 67
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val",
+            "value": -0.004194296623215874,
+            "n_obs": 2188323,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 71
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val_raw",
+            "value": 0.004194296623215874,
+            "n_obs": 2188323,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 71
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "train",
+            "value": -0.0027408755527244125,
+            "n_obs": 2769825,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 67
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val",
+            "value": -0.0014074790163577315,
+            "n_obs": 2188323,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 71
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val_raw",
+            "value": 0.0014074790163577315,
+            "n_obs": 2188323,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 71
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "train",
+            "value": -0.0001690085703744011,
+            "n_obs": 2769825,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 67
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val",
+            "value": -0.0033888167290693,
+            "n_obs": 2188323,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 71
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val_raw",
+            "value": 0.0033888167290693,
+            "n_obs": 2188323,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 71
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "train",
+            "value": -0.0014670848718145708,
+            "n_obs": 2769825,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 67
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val",
+            "value": -0.0014416110827479495,
+            "n_obs": 2188323,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 71
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val_raw",
+            "value": 0.0014416110827479495,
+            "n_obs": 2188323,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 71
+          }
+        ],
+        "direction": -1,
+        "coverage": 0.9590210488949659,
+        "elapsed_seconds": 2.0640183207578957,
+        "status": "success",
+        "failure_reason": null,
+        "observation_ref": "b42cd14f592631775f17787676b442e967cf5dcd7061fee6062aae968484d2bc",
+        "cache_hit": false,
+        "evaluation_id": "b42cd14f592631775f17787676b442e967cf5dcd7061fee6062aae968484d2bc",
+        "canonical_expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_atv"
+        },
+        "diagnostics": {},
+        "clipping": {
+          "quantiles": [
+            0.01,
+            0.99
+          ],
+          "value": [
+            -1.0,
+            4.2917134809886175
+          ],
+          "target": [
+            -0.019610968488618596,
+            0.019489469992103037
+          ]
+        }
+      },
+      "train_coverage": 0.9159580394901453,
+      "train_eligible_rows": 3026274,
+      "admission_reason": "quality_threshold"
+    },
+    {
+      "candidate": {
+        "expression": "$zk_iliq",
+        "region_ids": [],
+        "hypothesis": "月度 Amivest 流动性倒数",
+        "name": "iliq",
+        "evaluation": {}
+      },
+      "compiled": {
+        "factor_id": "6e8b82bb8968a475d59bc991c57a67bc92ad511a917a4d9b56e301b4946ad85d",
+        "expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_iliq"
+        },
+        "fields": [
+          "zk_iliq"
+        ],
+        "dependencies": [],
+        "lookback": 0,
+        "nodes": 1,
+        "depth": 0
+      },
+      "report": {
+        "expression_id": "6e8b82bb8968a475d59bc991c57a67bc92ad511a917a4d9b56e301b4946ad85d",
+        "metrics": [
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "train",
+            "value": -2.492846822963734e-05,
+            "n_obs": 2834517,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 68
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val",
+            "value": -0.0002995990681098736,
+            "n_obs": 2110179,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 74
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val_raw",
+            "value": 0.0002995990681098736,
+            "n_obs": 2110179,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 74
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "train",
+            "value": -0.0018351935759276634,
+            "n_obs": 2834517,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 68
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val",
+            "value": -0.004185641100775325,
+            "n_obs": 2110179,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 74
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val_raw",
+            "value": 0.004185641100775325,
+            "n_obs": 2110179,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 74
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "train",
+            "value": -0.0019763807731075925,
+            "n_obs": 2834517,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 68
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val",
+            "value": -0.0003106567382195438,
+            "n_obs": 2110179,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 74
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val_raw",
+            "value": 0.0003106567382195438,
+            "n_obs": 2110179,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 74
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "train",
+            "value": -0.0023272376697426544,
+            "n_obs": 2834517,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 68
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val",
+            "value": -0.004162055125302349,
+            "n_obs": 2110179,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 74
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val_raw",
+            "value": 0.004162055125302349,
+            "n_obs": 2110179,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 74
+          }
+        ],
+        "direction": -1,
+        "coverage": 0.924774851763716,
+        "elapsed_seconds": 2.348836726974696,
+        "status": "success",
+        "failure_reason": null,
+        "observation_ref": "b0b9de0b2af929fe0e68d0b06dcb979325fac4c05eb2a2b22682c9ef6b295cb3",
+        "cache_hit": false,
+        "evaluation_id": "b0b9de0b2af929fe0e68d0b06dcb979325fac4c05eb2a2b22682c9ef6b295cb3",
+        "canonical_expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_iliq"
+        },
+        "diagnostics": {},
+        "clipping": {
+          "quantiles": [
+            0.01,
+            0.99
+          ],
+          "value": [
+            3.0083887302019356e-15,
+            1.0779179237821925e-09
+          ],
+          "target": [
+            -0.019610968488618596,
+            0.019489469992103037
+          ]
+        }
+      },
+      "train_coverage": 0.9366359424163179,
+      "train_eligible_rows": 3026274,
+      "admission_reason": "quality_threshold"
+    },
+    {
+      "candidate": {
+        "expression": "$zk_dOI",
+        "region_ids": [],
+        "hypothesis": "月末主力持仓量环比差",
+        "name": "dOI",
+        "evaluation": {}
+      },
+      "compiled": {
+        "factor_id": "4c287504c495b21f9e960db48c2fac414e175d7be46b81508d38ecc0a226b1da",
+        "expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_dOI"
+        },
+        "fields": [
+          "zk_dOI"
+        ],
+        "dependencies": [],
+        "lookback": 0,
+        "nodes": 1,
+        "depth": 0
+      },
+      "report": {
+        "expression_id": "4c287504c495b21f9e960db48c2fac414e175d7be46b81508d38ecc0a226b1da",
+        "metrics": [
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "train",
+            "value": -0.0009108533350078446,
+            "n_obs": 3001287,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 70
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val",
+            "value": -0.003775058691592381,
+            "n_obs": 2245989,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 78
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val_raw",
+            "value": 0.003775058691592381,
+            "n_obs": 2245989,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 78
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "train",
+            "value": -0.0010645656963165868,
+            "n_obs": 3001287,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 70
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val",
+            "value": -0.0022008300733329686,
+            "n_obs": 2245989,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 78
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val_raw",
+            "value": 0.0022008300733329686,
+            "n_obs": 2245989,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 78
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "train",
+            "value": -0.0010797028973130436,
+            "n_obs": 3001287,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 70
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val",
+            "value": -0.0059139002132822804,
+            "n_obs": 2245989,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 78
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val_raw",
+            "value": 0.0059139002132822804,
+            "n_obs": 2245989,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 78
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "train",
+            "value": -0.0010967789485637472,
+            "n_obs": 3001287,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 70
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val",
+            "value": -0.004329608566083461,
+            "n_obs": 2245989,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 78
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val_raw",
+            "value": 0.004329608566083461,
+            "n_obs": 2245989,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 78
+          }
+        ],
+        "direction": -1,
+        "coverage": 0.9937063672578588,
+        "elapsed_seconds": 2.2541836029849946,
+        "status": "success",
+        "failure_reason": null,
+        "observation_ref": "9dd48f36847a6b5ee80fca0b0e87920336cb28e9d94ee8beb3b26a527533212a",
+        "cache_hit": false,
+        "evaluation_id": "9dd48f36847a6b5ee80fca0b0e87920336cb28e9d94ee8beb3b26a527533212a",
+        "canonical_expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_dOI"
+        },
+        "diagnostics": {},
+        "clipping": {
+          "quantiles": [
+            0.01,
+            0.99
+          ],
+          "value": [
+            -414608.0,
+            511686.0
+          ],
+          "target": [
+            -0.019610968488618596,
+            0.019489469992103037
+          ]
+        }
+      },
+      "train_coverage": 0.9917433120728658,
+      "train_eligible_rows": 3026274,
+      "admission_reason": "quality_threshold"
+    },
+    {
+      "candidate": {
+        "expression": "$zk_dmaOI",
+        "region_ids": [],
+        "hypothesis": "月末主力持仓量相对过去十二月均值偏离",
+        "name": "dmaOI",
+        "evaluation": {}
+      },
+      "compiled": {
+        "factor_id": "7d772b81c8af6a3198cf87574040fab8d3f4f5bda2ce0cea50f6452e2e9553a1",
+        "expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_dmaOI"
+        },
+        "fields": [
+          "zk_dmaOI"
+        ],
+        "dependencies": [],
+        "lookback": 0,
+        "nodes": 1,
+        "depth": 0
+      },
+      "report": {
+        "expression_id": "7d772b81c8af6a3198cf87574040fab8d3f4f5bda2ce0cea50f6452e2e9553a1",
+        "metrics": [
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "train",
+            "value": -0.0034782166161012114,
+            "n_obs": 2767791,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 67
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val",
+            "value": -0.0058288982847636735,
+            "n_obs": 2155956,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 69
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val_raw",
+            "value": 0.0058288982847636735,
+            "n_obs": 2155956,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 69
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "train",
+            "value": 0.0006712908351376918,
+            "n_obs": 2767791,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 67
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val",
+            "value": -0.004817542150419236,
+            "n_obs": 2155956,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 69
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val_raw",
+            "value": 0.004817542150419236,
+            "n_obs": 2155956,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 69
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "train",
+            "value": -0.005676644205749421,
+            "n_obs": 2767791,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 67
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val",
+            "value": -0.003858529709941711,
+            "n_obs": 2155956,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 69
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val_raw",
+            "value": 0.003858529709941711,
+            "n_obs": 2155956,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 69
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "train",
+            "value": -0.0012418727633170784,
+            "n_obs": 2767791,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 67
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val",
+            "value": -0.004400910175234573,
+            "n_obs": 2155956,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 69
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val_raw",
+            "value": 0.004400910175234573,
+            "n_obs": 2155956,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 69
+          }
+        ],
+        "direction": -1,
+        "coverage": 0.9495970339595851,
+        "elapsed_seconds": 2.2189556951634586,
+        "status": "success",
+        "failure_reason": null,
+        "observation_ref": "9e63ba0fe166116aeccdaf145334ae5ad192354bc0f88b21f6ea0c60210549ca",
+        "cache_hit": false,
+        "evaluation_id": "9e63ba0fe166116aeccdaf145334ae5ad192354bc0f88b21f6ea0c60210549ca",
+        "canonical_expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_dmaOI"
+        },
+        "diagnostics": {},
+        "clipping": {
+          "quantiles": [
+            0.01,
+            0.99
+          ],
+          "value": [
+            -1.0,
+            3.3229789697086627
+          ],
+          "target": [
+            -0.019610968488618596,
+            0.019489469992103037
+          ]
+        }
+      },
+      "train_coverage": 0.9152859258613066,
+      "train_eligible_rows": 3026274,
+      "admission_reason": "quality_threshold"
+    },
+    {
+      "candidate": {
+        "expression": "$zk_val",
+        "region_ids": [],
+        "hypothesis": "当前价格与 42–54 月前均价之比",
+        "name": "val",
+        "evaluation": {}
+      },
+      "compiled": {
+        "factor_id": "756fa2f17667a53428a5b48831cfad3fb3ec1dfe9ea5f77a978288fdf461f183",
+        "expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_val"
+        },
+        "fields": [
+          "zk_val"
+        ],
+        "dependencies": [],
+        "lookback": 0,
+        "nodes": 1,
+        "depth": 0
+      },
+      "report": {
+        "expression_id": "756fa2f17667a53428a5b48831cfad3fb3ec1dfe9ea5f77a978288fdf461f183",
+        "metrics": [
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "train",
+            "value": -0.024732164509315764,
+            "n_obs": 1883169,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 42
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val",
+            "value": 0.029788304866310903,
+            "n_obs": 1483467,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 51
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val_raw",
+            "value": -0.029788304866310903,
+            "n_obs": 1483467,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 51
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "train",
+            "value": -0.02564421523722273,
+            "n_obs": 1883169,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 42
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val",
+            "value": 0.0333829336189553,
+            "n_obs": 1483467,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 51
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val_raw",
+            "value": -0.0333829336189553,
+            "n_obs": 1483467,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 51
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "train",
+            "value": -0.020127705990460033,
+            "n_obs": 1883169,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 42
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val",
+            "value": 0.027791136222362074,
+            "n_obs": 1483467,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 51
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val_raw",
+            "value": -0.027791136222362074,
+            "n_obs": 1483467,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 51
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "train",
+            "value": -0.020963059251698384,
+            "n_obs": 1883169,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 42
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val",
+            "value": 0.03332682730762976,
+            "n_obs": 1483467,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 51
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val_raw",
+            "value": -0.03332682730762976,
+            "n_obs": 1483467,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 51
+          }
+        ],
+        "direction": -1,
+        "coverage": 0.650121612915949,
+        "elapsed_seconds": 1.9803942367434502,
+        "status": "success",
+        "failure_reason": null,
+        "observation_ref": "8031258dc6f2a0b7ae2e74aec17ebf334314c532fade3990e603aeae7827c21b",
+        "cache_hit": false,
+        "evaluation_id": "8031258dc6f2a0b7ae2e74aec17ebf334314c532fade3990e603aeae7827c21b",
+        "canonical_expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_val"
+        },
+        "diagnostics": {},
+        "clipping": {
+          "quantiles": [
+            0.01,
+            0.99
+          ],
+          "value": [
+            0.43018645248733545,
+            4.039583345475546
+          ],
+          "target": [
+            -0.019610968488618596,
+            0.019489469992103037
+          ]
+        }
+      },
+      "train_coverage": 0.6234359479676989,
+      "train_eligible_rows": 3026274,
+      "admission_reason": "low_coverage"
+    },
+    {
+      "candidate": {
+        "expression": "$zk_val36",
+        "region_ids": [],
+        "hypothesis": "三年累计收益",
+        "name": "val36",
+        "evaluation": {}
+      },
+      "compiled": {
+        "factor_id": "7e783525d4bbb2adbad27814e2b9d02fa2d23f5532619f8567242696bb4c9d67",
+        "expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_val36"
+        },
+        "fields": [
+          "zk_val36"
+        ],
+        "dependencies": [],
+        "lookback": 0,
+        "nodes": 1,
+        "depth": 0
+      },
+      "report": {
+        "expression_id": "7e783525d4bbb2adbad27814e2b9d02fa2d23f5532619f8567242696bb4c9d67",
+        "metrics": [
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "train",
+            "value": -0.020035651165468484,
+            "n_obs": 2032011,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 47
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val",
+            "value": 0.02429171622325311,
+            "n_obs": 1709229,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 58
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val_raw",
+            "value": -0.02429171622325311,
+            "n_obs": 1709229,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 58
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "train",
+            "value": -0.022665108485509046,
+            "n_obs": 2032011,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 47
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val",
+            "value": 0.024781361090543564,
+            "n_obs": 1709229,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 58
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val_raw",
+            "value": -0.024781361090543564,
+            "n_obs": 1709229,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 58
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "train",
+            "value": -0.016537236845389873,
+            "n_obs": 2032011,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 47
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val",
+            "value": 0.02432106535118485,
+            "n_obs": 1709229,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 58
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val_raw",
+            "value": -0.02432106535118485,
+            "n_obs": 1709229,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 58
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "train",
+            "value": -0.018040312439798003,
+            "n_obs": 2032011,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 47
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val",
+            "value": 0.02526995359400853,
+            "n_obs": 1709229,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 58
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val_raw",
+            "value": -0.02526995359400853,
+            "n_obs": 1709229,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 58
+          }
+        ],
+        "direction": -1,
+        "coverage": 0.749905996502807,
+        "elapsed_seconds": 1.9937014956958592,
+        "status": "success",
+        "failure_reason": null,
+        "observation_ref": "581cee2d3fb4c2add36991d288c9a275288656a439a7508d998eec83f561344e",
+        "cache_hit": false,
+        "evaluation_id": "581cee2d3fb4c2add36991d288c9a275288656a439a7508d998eec83f561344e",
+        "canonical_expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_val36"
+        },
+        "diagnostics": {},
+        "clipping": {
+          "quantiles": [
+            0.01,
+            0.99
+          ],
+          "value": [
+            -0.5038809305682683,
+            2.332643811769974
+          ],
+          "target": [
+            -0.019610968488618596,
+            0.019489469992103037
+          ]
+        }
+      },
+      "train_coverage": 0.6719728616774291,
+      "train_eligible_rows": 3026274,
+      "admission_reason": "low_coverage"
+    },
+    {
+      "candidate": {
+        "expression": "$zk_val60",
+        "region_ids": [],
+        "hypothesis": "五年累计收益",
+        "name": "val60",
+        "evaluation": {}
+      },
+      "compiled": {
+        "factor_id": "fb6064462d3a301d860b252463a2c29a94dba952faa22179d8205285bf0b6692",
+        "expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_val60"
+        },
+        "fields": [
+          "zk_val60"
+        ],
+        "dependencies": [],
+        "lookback": 0,
+        "nodes": 1,
+        "depth": 0
+      },
+      "report": {
+        "expression_id": "fb6064462d3a301d860b252463a2c29a94dba952faa22179d8205285bf0b6692",
+        "metrics": [
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "train",
+            "value": -0.012870483312451476,
+            "n_obs": 1756332,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 40
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val",
+            "value": 0.03212009954460777,
+            "n_obs": 1343721,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 46
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val_raw",
+            "value": -0.03212009954460777,
+            "n_obs": 1343721,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 46
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "train",
+            "value": -0.011290050238491642,
+            "n_obs": 1756332,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 40
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val",
+            "value": 0.03053934919593601,
+            "n_obs": 1343721,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 46
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val_raw",
+            "value": -0.03053934919593601,
+            "n_obs": 1343721,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 46
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "train",
+            "value": -0.005264697020124554,
+            "n_obs": 1756332,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 40
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val",
+            "value": 0.02899124682742705,
+            "n_obs": 1343721,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 46
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val_raw",
+            "value": -0.02899124682742705,
+            "n_obs": 1343721,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 46
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "train",
+            "value": -0.003944504642375058,
+            "n_obs": 1756332,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 40
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val",
+            "value": 0.026998948223504488,
+            "n_obs": 1343721,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 46
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val_raw",
+            "value": -0.026998948223504488,
+            "n_obs": 1343721,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 46
+          }
+        ],
+        "direction": -1,
+        "coverage": 0.5895031619358146,
+        "elapsed_seconds": 1.8996705180034041,
+        "status": "success",
+        "failure_reason": null,
+        "observation_ref": "d5c2c4482ca81444bb96cb495ba43e0e26df0c1b4381815bce0172de9b2f29d8",
+        "cache_hit": false,
+        "evaluation_id": "d5c2c4482ca81444bb96cb495ba43e0e26df0c1b4381815bce0172de9b2f29d8",
+        "canonical_expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_val60"
+        },
+        "diagnostics": {},
+        "clipping": {
+          "quantiles": [
+            0.01,
+            0.99
+          ],
+          "value": [
+            -0.6184181521428834,
+            5.22006785384373
+          ],
+          "target": [
+            -0.019610968488618596,
+            0.019489469992103037
+          ]
+        }
+      },
+      "train_coverage": 0.5803611966398284,
+      "train_eligible_rows": 3026274,
+      "admission_reason": "low_coverage"
+    },
+    {
+      "candidate": {
+        "expression": "$zk_basis",
+        "region_ids": [],
+        "hypothesis": "月末主力与第一远月价格比",
+        "name": "basis",
+        "evaluation": {}
+      },
+      "compiled": {
+        "factor_id": "7438b787a4f115706794f4359d4c05987adc8c8d1c1ddd5ca0e92601165cc357",
+        "expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_basis"
+        },
+        "fields": [
+          "zk_basis"
+        ],
+        "dependencies": [],
+        "lookback": 0,
+        "nodes": 1,
+        "depth": 0
+      },
+      "report": {
+        "expression_id": "7438b787a4f115706794f4359d4c05987adc8c8d1c1ddd5ca0e92601165cc357",
+        "metrics": [
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "train",
+            "value": -0.0031008086712646338,
+            "n_obs": 3011265,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 70
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val",
+            "value": 0.003418455935617982,
+            "n_obs": 2275317,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 79
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val_raw",
+            "value": -0.003418455935617982,
+            "n_obs": 2275317,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 79
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "train",
+            "value": -0.003703808467248179,
+            "n_obs": 3011265,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 70
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val",
+            "value": 0.007817082908246181,
+            "n_obs": 2275317,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 79
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val_raw",
+            "value": -0.007817082908246181,
+            "n_obs": 2275317,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 79
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "train",
+            "value": 1.4995144744021193e-05,
+            "n_obs": 3011265,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 70
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val",
+            "value": 0.0036857139740569885,
+            "n_obs": 2275317,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 79
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val_raw",
+            "value": -0.0036857139740569885,
+            "n_obs": 2275317,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 79
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "train",
+            "value": 0.00037852832844312696,
+            "n_obs": 3011265,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 70
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val",
+            "value": 0.005810942570410438,
+            "n_obs": 2275317,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 79
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val_raw",
+            "value": -0.005810942570410438,
+            "n_obs": 2275317,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 79
+          }
+        ],
+        "direction": -1,
+        "coverage": 0.9971457119943203,
+        "elapsed_seconds": 1.9879075773060322,
+        "status": "success",
+        "failure_reason": null,
+        "observation_ref": "b3648c10b94f71444aaea57d69190116bd2f781b1049d2d2c86812112c5d3318",
+        "cache_hit": false,
+        "evaluation_id": "b3648c10b94f71444aaea57d69190116bd2f781b1049d2d2c86812112c5d3318",
+        "canonical_expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_basis"
+        },
+        "diagnostics": {},
+        "clipping": {
+          "quantiles": [
+            0.01,
+            0.99
+          ],
+          "value": [
+            0.9267192784667418,
+            1.1078573499565092
+          ],
+          "target": [
+            -0.019610968488618596,
+            0.019489469992103037
+          ]
+        }
+      },
+      "train_coverage": 0.9950404358627144,
+      "train_eligible_rows": 3026274,
+      "admission_reason": "quality_threshold"
+    },
+    {
+      "candidate": {
+        "expression": "$zk_basis12",
+        "region_ids": [],
+        "hypothesis": "十二个月平均基差",
+        "name": "basis12",
+        "evaluation": {}
+      },
+      "compiled": {
+        "factor_id": "6005030d7be2c77936dbad6f3d2180d04ccbfa9b39ef81da79428b22ec3fd1e2",
+        "expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_basis12"
+        },
+        "fields": [
+          "zk_basis12"
+        ],
+        "dependencies": [],
+        "lookback": 0,
+        "nodes": 1,
+        "depth": 0
+      },
+      "report": {
+        "expression_id": "6005030d7be2c77936dbad6f3d2180d04ccbfa9b39ef81da79428b22ec3fd1e2",
+        "metrics": [
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "train",
+            "value": -0.006434122598294663,
+            "n_obs": 2755326,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 68
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val",
+            "value": 0.004425351680381532,
+            "n_obs": 2205327,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 71
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val_raw",
+            "value": -0.004425351680381532,
+            "n_obs": 2205327,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 71
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "train",
+            "value": -0.007949122630601243,
+            "n_obs": 2755326,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 68
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val",
+            "value": 0.004310009341971581,
+            "n_obs": 2205327,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 71
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val_raw",
+            "value": -0.004310009341971581,
+            "n_obs": 2205327,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 71
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "train",
+            "value": -0.0031546014149029,
+            "n_obs": 2755326,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 68
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val",
+            "value": 0.0028099029419083833,
+            "n_obs": 2205327,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 71
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val_raw",
+            "value": -0.0028099029419083833,
+            "n_obs": 2205327,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 71
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "train",
+            "value": -0.004444778595289745,
+            "n_obs": 2755326,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 68
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val",
+            "value": 0.002535372592757421,
+            "n_obs": 2205327,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 71
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val_raw",
+            "value": -0.002535372592757421,
+            "n_obs": 2205327,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 71
+          }
+        ],
+        "direction": -1,
+        "coverage": 0.9668765858981607,
+        "elapsed_seconds": 2.137970197945833,
+        "status": "success",
+        "failure_reason": null,
+        "observation_ref": "3bd651581c78798074b77812e55a4dca80b7a542f8c4f11c5d14501f179c1ff7",
+        "cache_hit": false,
+        "evaluation_id": "3bd651581c78798074b77812e55a4dca80b7a542f8c4f11c5d14501f179c1ff7",
+        "canonical_expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_basis12"
+        },
+        "diagnostics": {},
+        "clipping": {
+          "quantiles": [
+            0.01,
+            0.99
+          ],
+          "value": [
+            0.9676451414210755,
+            1.069874317809708
+          ],
+          "target": [
+            -0.019610968488618596,
+            0.019489469992103037
+          ]
+        }
+      },
+      "train_coverage": 0.9104681202032598,
+      "train_eligible_rows": 3026274,
+      "admission_reason": "quality_threshold"
+    },
+    {
+      "candidate": {
+        "expression": "$zk_l2basis12",
+        "region_ids": [],
+        "hypothesis": "十二月平均基差滞后两个月",
+        "name": "l2basis12",
+        "evaluation": {}
+      },
+      "compiled": {
+        "factor_id": "2be8a5b4853aa607f5235ece09142bc6348d306be48422d9f19d6caf55945e02",
+        "expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_l2basis12"
+        },
+        "fields": [
+          "zk_l2basis12"
+        ],
+        "dependencies": [],
+        "lookback": 0,
+        "nodes": 1,
+        "depth": 0
+      },
+      "report": {
+        "expression_id": "2be8a5b4853aa607f5235ece09142bc6348d306be48422d9f19d6caf55945e02",
+        "metrics": [
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "train",
+            "value": -0.00615886714799017,
+            "n_obs": 2700705,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 66
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val",
+            "value": 0.002244270307218795,
+            "n_obs": 2201733,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 71
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val_raw",
+            "value": -0.002244270307218795,
+            "n_obs": 2201733,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 71
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "train",
+            "value": -0.004655269152888512,
+            "n_obs": 2700705,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 66
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val",
+            "value": 0.0012156858711457133,
+            "n_obs": 2201733,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 71
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val_raw",
+            "value": -0.0012156858711457133,
+            "n_obs": 2201733,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 71
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "train",
+            "value": -0.003163103312843229,
+            "n_obs": 2700705,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 66
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val",
+            "value": 0.0012708856866905445,
+            "n_obs": 2201733,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 71
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val_raw",
+            "value": -0.0012708856866905445,
+            "n_obs": 2201733,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 71
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "train",
+            "value": -0.001583780624845179,
+            "n_obs": 2700705,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 66
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val",
+            "value": 0.0004882941120509244,
+            "n_obs": 2201733,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 71
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val_raw",
+            "value": -0.0004882941120509244,
+            "n_obs": 2201733,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 71
+          }
+        ],
+        "direction": -1,
+        "coverage": 0.9648979108873141,
+        "elapsed_seconds": 2.2619203412905335,
+        "status": "success",
+        "failure_reason": null,
+        "observation_ref": "94d4f73b8485ed566d3158cc746cd629cf490b13161f586abce181533d9257a6",
+        "cache_hit": false,
+        "evaluation_id": "94d4f73b8485ed566d3158cc746cd629cf490b13161f586abce181533d9257a6",
+        "canonical_expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_l2basis12"
+        },
+        "diagnostics": {},
+        "clipping": {
+          "quantiles": [
+            0.01,
+            0.99
+          ],
+          "value": [
+            0.9695147063717814,
+            1.0734640186913766
+          ],
+          "target": [
+            -0.019610968488618596,
+            0.019489469992103037
+          ]
+        }
+      },
+      "train_coverage": 0.8929356694073306,
+      "train_eligible_rows": 3026274,
+      "admission_reason": "quality_threshold"
+    },
+    {
+      "candidate": {
+        "expression": "$zk_bmom",
+        "region_ids": [],
+        "hypothesis": "主力与第一远月十二月收益之差",
+        "name": "bmom",
+        "evaluation": {}
+      },
+      "compiled": {
+        "factor_id": "64e342e39d1c0b8cb59c04919051af7898a489ffb2d289dc7178c772dd3ea980",
+        "expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_bmom"
+        },
+        "fields": [
+          "zk_bmom"
+        ],
+        "dependencies": [],
+        "lookback": 0,
+        "nodes": 1,
+        "depth": 0
+      },
+      "report": {
+        "expression_id": "64e342e39d1c0b8cb59c04919051af7898a489ffb2d289dc7178c772dd3ea980",
+        "metrics": [
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "train",
+            "value": -0.00022156227516301915,
+            "n_obs": 2745063,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 68
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val",
+            "value": 0.0016510978674800381,
+            "n_obs": 2194371,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 71
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val_raw",
+            "value": -0.0016510978674800381,
+            "n_obs": 2194371,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 71
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "train",
+            "value": -0.0019836410410838286,
+            "n_obs": 2745063,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 68
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val",
+            "value": 0.0004476295500698624,
+            "n_obs": 2194371,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 71
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val_raw",
+            "value": -0.0004476295500698624,
+            "n_obs": 2194371,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 71
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "train",
+            "value": 0.0016420101077630513,
+            "n_obs": 2745063,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 68
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val",
+            "value": -0.000246585828611999,
+            "n_obs": 2194371,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 71
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val_raw",
+            "value": 0.000246585828611999,
+            "n_obs": 2194371,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 71
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "train",
+            "value": -0.0005625599558184062,
+            "n_obs": 2745063,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 68
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val",
+            "value": -0.00042619517167095006,
+            "n_obs": 2194371,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 71
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val_raw",
+            "value": 0.00042619517167095006,
+            "n_obs": 2194371,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 71
+          }
+        ],
+        "direction": -1,
+        "coverage": 0.96207517650307,
+        "elapsed_seconds": 2.432368380948901,
+        "status": "success",
+        "failure_reason": null,
+        "observation_ref": "33d04ebf9cc91514cce0cdbdbaffed2aeb10138e524cdb90d4e0d07e956e233a",
+        "cache_hit": false,
+        "evaluation_id": "33d04ebf9cc91514cce0cdbdbaffed2aeb10138e524cdb90d4e0d07e956e233a",
+        "canonical_expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_bmom"
+        },
+        "diagnostics": {},
+        "clipping": {
+          "quantiles": [
+            0.01,
+            0.99
+          ],
+          "value": [
+            -0.3124532818435757,
+            0.624875184821374
+          ],
+          "target": [
+            -0.019610968488618596,
+            0.019489469992103037
+          ]
+        }
+      },
+      "train_coverage": 0.907076821199931,
+      "train_eligible_rows": 3026274,
+      "admission_reason": "quality_threshold"
+    },
+    {
+      "candidate": {
+        "expression": "$zk_bmom12",
+        "region_ids": [],
+        "hypothesis": "十二个月平均基差动量",
+        "name": "bmom12",
+        "evaluation": {}
+      },
+      "compiled": {
+        "factor_id": "083cb7e8d65ff728ae28953a9e08b78935ce7762d3115597c29a3d04a8a7bf88",
+        "expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_bmom12"
+        },
+        "fields": [
+          "zk_bmom12"
+        ],
+        "dependencies": [],
+        "lookback": 0,
+        "nodes": 1,
+        "depth": 0
+      },
+      "report": {
+        "expression_id": "083cb7e8d65ff728ae28953a9e08b78935ce7762d3115597c29a3d04a8a7bf88",
+        "metrics": [
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "train",
+            "value": -0.002970749423619699,
+            "n_obs": 2477937,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 64
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val",
+            "value": 4.153174180765529e-05,
+            "n_obs": 2105601,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 69
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val_raw",
+            "value": -4.153174180765529e-05,
+            "n_obs": 2105601,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 69
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "train",
+            "value": -0.0037789055650569027,
+            "n_obs": 2477937,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 64
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val",
+            "value": -0.0016227540503801951,
+            "n_obs": 2105601,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 69
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val_raw",
+            "value": 0.0016227540503801951,
+            "n_obs": 2105601,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 69
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "train",
+            "value": -0.0031853793809658235,
+            "n_obs": 2477937,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 64
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val",
+            "value": -0.0011746727317803393,
+            "n_obs": 2105601,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 69
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val_raw",
+            "value": 0.0011746727317803393,
+            "n_obs": 2105601,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 69
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "train",
+            "value": -0.004591402210094513,
+            "n_obs": 2477937,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 64
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val",
+            "value": -0.0017664457332840647,
+            "n_obs": 2105601,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 69
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val_raw",
+            "value": 0.0017664457332840647,
+            "n_obs": 2105601,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 69
+          }
+        ],
+        "direction": -1,
+        "coverage": 0.9299535898818054,
+        "elapsed_seconds": 2.2495981086976826,
+        "status": "success",
+        "failure_reason": null,
+        "observation_ref": "c9c1dc02bc47c607741e430b480f64baf318cbf99866245f613422e39828a189",
+        "cache_hit": false,
+        "evaluation_id": "c9c1dc02bc47c607741e430b480f64baf318cbf99866245f613422e39828a189",
+        "canonical_expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_bmom12"
+        },
+        "diagnostics": {},
+        "clipping": {
+          "quantiles": [
+            0.01,
+            0.99
+          ],
+          "value": [
+            -0.2499844912575561,
+            0.7767837123627513
+          ],
+          "target": [
+            -0.019610968488618596,
+            0.019489469992103037
+          ]
+        }
+      },
+      "train_coverage": 0.818807880581864,
+      "train_eligible_rows": 3026274,
+      "admission_reason": "quality_threshold"
+    },
+    {
+      "candidate": {
+        "expression": "$zk_l2bmom12",
+        "region_ids": [],
+        "hypothesis": "十二月平均基差动量滞后两个月",
+        "name": "l2bmom12",
+        "evaluation": {}
+      },
+      "compiled": {
+        "factor_id": "c0f1ad185ab22f08fa018fff68770883b0c97e272874dd0d34132f968d7e1a4f",
+        "expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_l2bmom12"
+        },
+        "fields": [
+          "zk_l2bmom12"
+        ],
+        "dependencies": [],
+        "lookback": 0,
+        "nodes": 1,
+        "depth": 0
+      },
+      "report": {
+        "expression_id": "c0f1ad185ab22f08fa018fff68770883b0c97e272874dd0d34132f968d7e1a4f",
+        "metrics": [
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "train",
+            "value": 0.001244149542486576,
+            "n_obs": 2434821,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 63
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val",
+            "value": 0.0002577870810447981,
+            "n_obs": 2094480,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 69
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val_raw",
+            "value": 0.0002577870810447981,
+            "n_obs": 2094480,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 69
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "train",
+            "value": 0.0018347225408381627,
+            "n_obs": 2434821,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 63
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val",
+            "value": 0.0013684005309580168,
+            "n_obs": 2094480,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 69
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val_raw",
+            "value": 0.0013684005309580168,
+            "n_obs": 2094480,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 69
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "train",
+            "value": 0.000504619818621387,
+            "n_obs": 2434821,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 63
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val",
+            "value": 0.0004124063917318715,
+            "n_obs": 2094480,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 69
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val_raw",
+            "value": 0.0004124063917318715,
+            "n_obs": 2094480,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 69
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "train",
+            "value": 0.0012172064905756393,
+            "n_obs": 2434821,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 63
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val",
+            "value": 0.0012588680203809359,
+            "n_obs": 2094480,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 69
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val_raw",
+            "value": 0.0012588680203809359,
+            "n_obs": 2094480,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 69
+          }
+        ],
+        "direction": 1,
+        "coverage": 0.9242174044516901,
+        "elapsed_seconds": 2.0527276531793177,
+        "status": "success",
+        "failure_reason": null,
+        "observation_ref": "96fcb75e2ffc18148b4f308f01e5c20a680d1d7304696b498b8d01cfaa6cbf68",
+        "cache_hit": false,
+        "evaluation_id": "96fcb75e2ffc18148b4f308f01e5c20a680d1d7304696b498b8d01cfaa6cbf68",
+        "canonical_expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_l2bmom12"
+        },
+        "diagnostics": {},
+        "clipping": {
+          "quantiles": [
+            0.01,
+            0.99
+          ],
+          "value": [
+            -0.24996707184433342,
+            0.6310994696853579
+          ],
+          "target": [
+            -0.019610968488618596,
+            0.019489469992103037
+          ]
+        }
+      },
+      "train_coverage": 0.8045606577593437,
+      "train_eligible_rows": 3026274,
+      "admission_reason": "quality_threshold"
+    },
+    {
+      "candidate": {
+        "expression": "$zk_rbasis",
+        "region_ids": [],
+        "hypothesis": "相邻期限价格比之比",
+        "name": "rbasis",
+        "evaluation": {}
+      },
+      "compiled": {
+        "factor_id": "b693ae9733eadc9e9ca24e2c34bd15ef641003a0e1e88fded956e341e8fa38d7",
+        "expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_rbasis"
+        },
+        "fields": [
+          "zk_rbasis"
+        ],
+        "dependencies": [],
+        "lookback": 0,
+        "nodes": 1,
+        "depth": 0
+      },
+      "report": {
+        "expression_id": "b693ae9733eadc9e9ca24e2c34bd15ef641003a0e1e88fded956e341e8fa38d7",
+        "metrics": [
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "train",
+            "value": -0.002145024015968907,
+            "n_obs": 2964909,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 70
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val",
+            "value": -0.00042443973403004425,
+            "n_obs": 2238711,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 79
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val_raw",
+            "value": 0.00042443973403004425,
+            "n_obs": 2238711,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 79
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "train",
+            "value": -0.003234913691153086,
+            "n_obs": 2964909,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 70
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val",
+            "value": 0.00033127409044524044,
+            "n_obs": 2238711,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 79
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val_raw",
+            "value": -0.00033127409044524044,
+            "n_obs": 2238711,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 79
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "train",
+            "value": -0.0033166040771484156,
+            "n_obs": 2964909,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 70
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val",
+            "value": 0.0008516378386589483,
+            "n_obs": 2238711,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 79
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val_raw",
+            "value": -0.0008516378386589483,
+            "n_obs": 2238711,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 79
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "train",
+            "value": -0.003342464807898937,
+            "n_obs": 2964909,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 70
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val",
+            "value": 0.002417579263423426,
+            "n_obs": 2238711,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 79
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val_raw",
+            "value": -0.002417579263423426,
+            "n_obs": 2238711,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 79
+          }
+        ],
+        "direction": -1,
+        "coverage": 0.9811033249628588,
+        "elapsed_seconds": 1.9551764652132988,
+        "status": "success",
+        "failure_reason": null,
+        "observation_ref": "705cfa2524386acc8a77550ca2e8a07f16ca761b23c0cde3b8ba6d79a7ebb13f",
+        "cache_hit": false,
+        "evaluation_id": "705cfa2524386acc8a77550ca2e8a07f16ca761b23c0cde3b8ba6d79a7ebb13f",
+        "canonical_expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_rbasis"
+        },
+        "diagnostics": {},
+        "clipping": {
+          "quantiles": [
+            0.01,
+            0.99
+          ],
+          "value": [
+            0.9058102704492667,
+            1.1523468178505925
+          ],
+          "target": [
+            -0.019610968488618596,
+            0.019489469992103037
+          ]
+        }
+      },
+      "train_coverage": 0.979722589560628,
+      "train_eligible_rows": 3026274,
+      "admission_reason": "quality_threshold"
+    },
+    {
+      "candidate": {
+        "expression": "$zk_rbasis12",
+        "region_ids": [],
+        "hypothesis": "十二个月平均相对基差",
+        "name": "rbasis12",
+        "evaluation": {}
+      },
+      "compiled": {
+        "factor_id": "ab183aff7816f29e8eb69d2155289d37b60491e7d4017cbfacfb5e7b33c404a5",
+        "expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_rbasis12"
+        },
+        "fields": [
+          "zk_rbasis12"
+        ],
+        "dependencies": [],
+        "lookback": 0,
+        "nodes": 1,
+        "depth": 0
+      },
+      "report": {
+        "expression_id": "ab183aff7816f29e8eb69d2155289d37b60491e7d4017cbfacfb5e7b33c404a5",
+        "metrics": [
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "train",
+            "value": -0.0008330296216452951,
+            "n_obs": 2600568,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 65
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val",
+            "value": -0.00520620385531218,
+            "n_obs": 2097066,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 68
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val_raw",
+            "value": 0.00520620385531218,
+            "n_obs": 2097066,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 68
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "train",
+            "value": -0.004352535664519036,
+            "n_obs": 2600568,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 65
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val",
+            "value": -0.004857009909921587,
+            "n_obs": 2097066,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 68
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val_raw",
+            "value": 0.004857009909921587,
+            "n_obs": 2097066,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 68
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "train",
+            "value": -0.001127254235319615,
+            "n_obs": 2600568,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 65
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val",
+            "value": -0.004726352727782638,
+            "n_obs": 2097066,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 68
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val_raw",
+            "value": 0.004726352727782638,
+            "n_obs": 2097066,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 68
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "train",
+            "value": -0.004435739258609981,
+            "n_obs": 2600568,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 65
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val",
+            "value": -0.0041587055467980465,
+            "n_obs": 2097066,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 68
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val_raw",
+            "value": 0.0041587055467980465,
+            "n_obs": 2097066,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 68
+          }
+        ],
+        "direction": -1,
+        "coverage": 0.9194317718673171,
+        "elapsed_seconds": 1.854245156981051,
+        "status": "success",
+        "failure_reason": null,
+        "observation_ref": "f47f6f5140c1128e4f593cb24d5d86cac78d7af8bfaba91137fb0add9443283c",
+        "cache_hit": false,
+        "evaluation_id": "f47f6f5140c1128e4f593cb24d5d86cac78d7af8bfaba91137fb0add9443283c",
+        "canonical_expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_rbasis12"
+        },
+        "diagnostics": {},
+        "clipping": {
+          "quantiles": [
+            0.01,
+            0.99
+          ],
+          "value": [
+            0.9611678337167985,
+            1.0959112060970417
+          ],
+          "target": [
+            -0.019610968488618596,
+            0.019489469992103037
+          ]
+        }
+      },
+      "train_coverage": 0.8593299879653991,
+      "train_eligible_rows": 3026274,
+      "admission_reason": "quality_threshold"
+    },
+    {
+      "candidate": {
+        "expression": "$zk_l2rbasis",
+        "region_ids": [],
+        "hypothesis": "相对基差滞后两个月",
+        "name": "l2rbasis",
+        "evaluation": {}
+      },
+      "compiled": {
+        "factor_id": "87b0564b835de52b2fb7694a3753031c27a2b072ef40ba0ba6d720748ea49ea1",
+        "expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_l2rbasis"
+        },
+        "fields": [
+          "zk_l2rbasis"
+        ],
+        "dependencies": [],
+        "lookback": 0,
+        "nodes": 1,
+        "depth": 0
+      },
+      "report": {
+        "expression_id": "87b0564b835de52b2fb7694a3753031c27a2b072ef40ba0ba6d720748ea49ea1",
+        "metrics": [
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "train",
+            "value": -0.0003280410947667976,
+            "n_obs": 2930487,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 70
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val",
+            "value": -0.0026989066358477695,
+            "n_obs": 2215803,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 77
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val_raw",
+            "value": 0.0026989066358477695,
+            "n_obs": 2215803,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 77
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "train",
+            "value": -0.0003526135550755375,
+            "n_obs": 2930487,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 70
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val",
+            "value": -0.001859967574501309,
+            "n_obs": 2215803,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 77
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val_raw",
+            "value": 0.001859967574501309,
+            "n_obs": 2215803,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 77
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "train",
+            "value": -0.000653078578089695,
+            "n_obs": 2930487,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 70
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val",
+            "value": -0.0035783100280312474,
+            "n_obs": 2215803,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 77
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val_raw",
+            "value": 0.0035783100280312474,
+            "n_obs": 2215803,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 77
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "train",
+            "value": -0.0008830360072475109,
+            "n_obs": 2930487,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 70
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val",
+            "value": -0.0030375297330934195,
+            "n_obs": 2215803,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 77
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val_raw",
+            "value": 0.0030375297330934195,
+            "n_obs": 2215803,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 77
+          }
+        ],
+        "direction": -1,
+        "coverage": 0.9723235297984513,
+        "elapsed_seconds": 1.9791217548772693,
+        "status": "success",
+        "failure_reason": null,
+        "observation_ref": "971e85c6332fcee41107774d8f99a839b3743933af2f62657223607de9eb1c90",
+        "cache_hit": false,
+        "evaluation_id": "971e85c6332fcee41107774d8f99a839b3743933af2f62657223607de9eb1c90",
+        "canonical_expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_l2rbasis"
+        },
+        "diagnostics": {},
+        "clipping": {
+          "quantiles": [
+            0.01,
+            0.99
+          ],
+          "value": [
+            0.9063351804144909,
+            1.1503613937113386
+          ],
+          "target": [
+            -0.019610968488618596,
+            0.019489469992103037
+          ]
+        }
+      },
+      "train_coverage": 0.9683482064082763,
+      "train_eligible_rows": 3026274,
+      "admission_reason": "quality_threshold"
+    },
+    {
+      "candidate": {
+        "expression": "$zk_ivolaBGR",
+        "region_ids": [],
+        "hypothesis": "BGR 三因子模型的十二月残差波动",
+        "name": "ivolaBGR",
+        "evaluation": {}
+      },
+      "compiled": {
+        "factor_id": "3bd6d4a98411a6ffd2d3ba4cacb108efee83d02f58ebac9a8f3f119e81c327db",
+        "expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_ivolaBGR"
+        },
+        "fields": [
+          "zk_ivolaBGR"
+        ],
+        "dependencies": [],
+        "lookback": 0,
+        "nodes": 1,
+        "depth": 0
+      },
+      "report": {
+        "expression_id": "3bd6d4a98411a6ffd2d3ba4cacb108efee83d02f58ebac9a8f3f119e81c327db",
+        "metrics": [
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "train",
+            "value": -0.008290796485927525,
+            "n_obs": 2478690,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 60
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val",
+            "value": 0.005919201529275307,
+            "n_obs": 1949808,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 62
+          },
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "val_raw",
+            "value": -0.005919201529275307,
+            "n_obs": 1949808,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 62
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "train",
+            "value": -0.009794295250816194,
+            "n_obs": 2478690,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 60
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val",
+            "value": 0.005582777526699962,
+            "n_obs": 1949808,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 62
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "val_raw",
+            "value": -0.005582777526699962,
+            "n_obs": 1949808,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 62
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "train",
+            "value": -0.003958583859104541,
+            "n_obs": 2478690,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 60
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val",
+            "value": 0.007705216517064299,
+            "n_obs": 1949808,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 62
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "val_raw",
+            "value": -0.007705216517064299,
+            "n_obs": 1949808,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 62
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "train",
+            "value": -0.004749213018763783,
+            "n_obs": 2478690,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 60
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val",
+            "value": 0.0068031585233892,
+            "n_obs": 1949808,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 62
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "val_raw",
+            "value": -0.0068031585233892,
+            "n_obs": 1949808,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 62
+          }
+        ],
+        "direction": -1,
+        "coverage": 0.8652634070022744,
+        "elapsed_seconds": 1.9869116223417222,
+        "status": "success",
+        "failure_reason": null,
+        "observation_ref": "2d012599569b1b2b1470b17f49d13ce8c4571a55dd5134b9d8c372e5e8210e64",
+        "cache_hit": false,
+        "evaluation_id": "2d012599569b1b2b1470b17f49d13ce8c4571a55dd5134b9d8c372e5e8210e64",
+        "canonical_expression": {
+          "op": "field",
+          "args": [],
+          "value": "zk_ivolaBGR"
+        },
+        "diagnostics": {},
+        "clipping": {
+          "quantiles": [
+            0.01,
+            0.99
+          ],
+          "value": [
+            0.0033930654696421726,
+            0.09341375567891926
+          ],
+          "target": [
+            -0.019610968488618596,
+            0.019489469992103037
+          ]
+        }
+      },
+      "train_coverage": 0.8197555806248873,
+      "train_eligible_rows": 3026274,
+      "admission_reason": "accepted"
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "version": "rq8_zk26_seeded_fold2_overview_luna_v5",
+  "overview": "experiment_overview.md",
+  "model_config_matches_overview": true,
+  "reference_baseline_fitted": "docs/records/zookeeper26_fold2/model_overview/fit.json",
+  "reference_baseline_training_rows": 5296605,
+  "source_configurations": {
+    "overview": "experiment_overview.md#期货因子搜索fold2",
+    "v1_async": "artifacts/runs/futures_kernel_5m_full-all-fold2-v1_async-42-382bb38611/run.json",
+    "alphaschema": "artifacts/comparisons/alphaschema_luna_fold2_20261102/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-alphaschema-42-7ce881f635/run.json",
+    "downstream_model": "artifacts/comparisons/lgbm_leaf2000_depth5_fold2_20261030/luna36/artifacts/runs/futures_kernel_5m_full-all-fold2-v1_async-42-382bb38611-leaf2000-depth5/model/fit.json"
+  },
+  "methods": {
+    "v1_async": {
+      "run_id": "futures_kernel_5m_full-all-fold2-v1_async-42-5f77947f20",
+      "config_fingerprint": "93fefc014f822e230f47fdbd8defd3695ba593449ccfa90ed6523ea5dc08a98b",
+      "implementation": "atlas_explorer_v1_async",
+      "model": "gpt-6-luna",
+      "saved_method_config_matches_historical_run": true,
+      "same_fold": true,
+      "same_seed": true,
+      "current_attempt_limit": 300,
+      "historical_attempt_limit": 1000,
+      "current_field_count": 34,
+      "historical_field_count": 8,
+      "current_initial_members": 26,
+      "historical_initial_members": 0,
+      "current_search_diagnostics": "icir_turnover_lag1_v2",
+      "historical_search_diagnostics": "icir_turnover_v1"
+    },
+    "alphaschema": {
+      "run_id": "futures_kernel_5m_full-all-fold2-alphaschema-42-3a4f640d02",
+      "config_fingerprint": "1ef6d7960f92189df233aebe2ec984e344230d4d127eb0990960423c8d1b8fb8",
+      "implementation": "alphaschema_atlas_v1",
+      "model": "gpt-6-luna",
+      "saved_method_config_matches_historical_run": true,
+      "same_fold": true,
+      "same_seed": true,
+      "current_attempt_limit": 300,
+      "historical_attempt_limit": 1000,
+      "current_field_count": 34,
+      "historical_field_count": 8,
+      "current_initial_members": 26,
+      "historical_initial_members": 0,
+      "current_search_diagnostics": "icir_turnover_lag1_v2",
+      "historical_search_diagnostics": "icir_turnover_lag1_v2"
+    }
+  },
+  "interpretation": "Exact method parameter and downstream configuration match on the current implementation; preserve the separately requested B26 incremental study conditions. Not an exact replay of the historical eight-field, empty-library, 1000-attempt experiment.",
+  "initial_members_reports_identical": true,
+  "initial_members_compared": 26
+}

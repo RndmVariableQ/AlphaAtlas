@@ -11,14 +11,12 @@ import numpy as np
 import polars as pl
 
 from alpha_atlas.assets.common import atomic_json
-from alpha_atlas.assets.market import ParqMarketData
 from alpha_atlas.checkpoint import read_json, run_lock
 from alpha_atlas.config import load_toml
 from alpha_atlas.contracts import fingerprint
 from alpha_atlas.evaluation import FUTURES_METRICS, product_weights, split_panel
 from alpha_atlas.history import warmup_period
 from alpha_atlas.model import evaluate_models, factor_panel
-from alpha_atlas.operators import OperatorRegistry
 from alpha_atlas.reporting import (
     refresh_report,
     terminal_progress,
@@ -30,6 +28,8 @@ from alpha_atlas.runner import (
     _data_fields,
     _frozen_factor_result,
     _frozen_scores,
+    _market,
+    _registry,
     _runtime,
     run_model,
 )
@@ -88,7 +88,7 @@ def _similarity(spec, frozen, panel, fold):
                 }
             )
         if len(pairs) % 80 == 0 or len(pairs) == total:
-            terminal_progress("Val 库内相似度", 配对=f"{len(pairs)}/{total}")
+            terminal_progress("Val 库内相似度", transient=True, 配对=f"{len(pairs)}/{total}")
     absolute = [pair["absolute_spearman"] for pair in pairs]
     return {
         "run_id": spec["run_id"],
@@ -151,7 +151,7 @@ def _finish_experiment(root, directory):
         raise ValueError("frozen library membership mismatch")
     if warmup_period(fold.train.start) != spec["warmup"]:
         raise ValueError("frozen warmup budget changed")
-    registry = OperatorRegistry(runtime=_runtime(root, frozen["runtime"]))
+    registry = _registry(spec, _runtime(root, frozen["runtime"]))
     registry.restore(frozen["operators"])
     oos_path, model_path, similarity_path = (
         directory / name for name in ("oos.json", "model/test.json", "library_similarity.json")
@@ -171,7 +171,12 @@ def _finish_experiment(root, directory):
     fitted = read_json(directory / "model/fit.json") if identities else None
     if fitted is not None and (
         fitted["factor_ids"] != identities
-        or fitted["spec"]["config"] != load_toml(root / "configs/model.toml")
+        or fitted["spec"]["config"]
+        != (
+            spec["experiment_version"]["model"]
+            if "experiment_version" in spec
+            else load_toml(root / "configs/model.toml")
+        )
     ):
         raise ValueError("saved model input or configuration changed")
     if tested is not None and (fitted is None or tested["spec"] != fitted["spec"]):
@@ -201,9 +206,7 @@ def _finish_experiment(root, directory):
             raise ValueError("cached similarity is incomplete")
     need_oos = oos is None or any(item["status"] != "success" for item in oos["results"])
     need_model = bool(identities) and tested is None
-    with ParqMarketData(
-        root / profile["data_dir"], spec["universe"], allow_incomplete=spec["allow_incomplete"]
-    ) as market:
+    with _market(root, spec) as market:
         if market.snapshot_id() != spec["snapshot_id"]:
             raise ValueError("dataset changed after search")
         if need_oos or need_model or similarity is None:

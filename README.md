@@ -75,7 +75,8 @@ uv sync --extra ricequant
 ```
 
 LLM 方法还需要配置模型服务。使用前参阅各方法说明：
-[AlphaPROBE](docs/methods/alphaprobe.md)、[MCTS-LLM](docs/methods/mcts_llm.md)、
+[AlphaPROBE](docs/methods/alphaprobe.md)、[AlphaSchema](docs/methods/alphaschema.md)、
+[MCTS-LLM](docs/methods/mcts_llm.md)、
 [三 Agent 区域退火搜索](docs/methods/annealing.md)、
 [V1 Explorer 更新版](docs/methods/v1.md)、[V1 异步版](docs/methods/v1_async.md)、[ReAct](docs/methods/react.md)。
 下方最小运行示例使用无需模型服务的 Random 基线。
@@ -113,6 +114,19 @@ uv run atlas audit-data --asset ashare
 数据口径与已知例外见[研究协议](docs/research_protocol.md)和[数据验收记录](docs/records/data.md)。
 
 ## 主入口与最小运行
+
+已固定的数据与算子版本可直接选择，无须重复填写资产、字段和 fold：
+
+```powershell
+uv run atlas versions
+uv run atlas run --version rq8_zk26_fold2_v2 --method random
+```
+
+`rq8_fold2_v1` 固定原八字段和 60 个算子；`rq8_zk26_fold2_v2` 固定八字段加 26 项月频
+Zookeeper 特征和 66 个算子。两个版本均固定 fold2、数据快照、评价规则、方法配置与
+Linear/LightGBM 参数。默认命令在冻结后完成模型/OOS；批量研究先加 `--search-only`。
+已有付费数据需在本地准备，数据不随 Git 分发；缺少或不匹配的快照会报错。
+版本入口与复现边界见[研究协议](docs/research_protocol.md#数据与算子版本)。
 
 命令行入口是 `atlas`，定义于 [cli.py](src/alpha_atlas/cli.py)，统一研究流程由
 [runner.py](src/alpha_atlas/runner.py) 执行。完成数据准备后，可运行一个小预算实验：
@@ -179,6 +193,7 @@ test 不参与搜索、入库或因子选择，持续反馈给搜索的 val 属�
 | --- | --- |
 | [知识地图设计](docs/design.md) | 原理、研究设想与后续验收目标 |
 | [开发指南](docs/development.md) | 开发原则、模块职责、检查与文档维护 |
+| [Zookeeper 26/37](src/alpha_atlas/factor_libraries/zookeeper/README.md) | JSONL 定义、固定模型 baseline、RiceQuant 代理适配与 PIT 保证范围 |
 | [数据与实验规范](docs/research_protocol.md) | 数据边界、评价口径与实验流程 |
 | [方法接入规范](docs/method_reproduction.md) | 复现边界、预算、公平比较与恢复 |
 | [DSL](docs/dsl.md) / [算子目录](docs/operators.md) | 表达式、数值语义与算子开发 |

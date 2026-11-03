@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "zk26_seeded_fold2_three_methods_300_v2",
+  "parent_plan": "configs/experiments/zk26_seeded_fold2_300_v2/plan.json",
+  "experiment_version": "rq8_zk26_seeded_fold2_luna_v4",
+  "methods": [
+    "alphaprobe",
+    "alphaschema",
+    "mcts_llm"
+  ],
+  "seeds": [
+    42
+  ],
+  "attempts_per_method": 300,
+  "total_attempt_ceiling": 900,
+  "evaluation_nodes": [
+    200,
+    300
+  ],
+  "oos_release": "all three searches frozen and all paired models saved before Test",
+  "union_label": "three_method_union; not the full eleven-method union",
+  "other_methods": "not launched in this batch",
+  "optional_replication": false,
+  "runs": [
+    "artifacts/runs/futures_kernel_5m_full-all-fold2-alphaprobe-42-b448e9fb48",
+    "artifacts/runs/futures_kernel_5m_full-all-fold2-alphaschema-42-fbac3f9a28",
+    "artifacts/runs/futures_kernel_5m_full-all-fold2-mcts_llm-42-d8d6f22a47"
+  ]
+}

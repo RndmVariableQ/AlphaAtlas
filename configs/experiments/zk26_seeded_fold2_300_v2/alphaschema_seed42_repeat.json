@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "id": "zk26_seeded_fold2_alphaschema_seed42_repeat_300_v2",
+  "parent_plan": "configs/experiments/zk26_seeded_fold2_300_v2/plan.json",
+  "experiment_version": "rq8_zk26_seeded_fold2_luna_v4",
+  "methods": [
+    "alphaschema"
+  ],
+  "seeds": [
+    42
+  ],
+  "attempts_per_method": 300,
+  "total_attempt_ceiling": 300,
+  "evaluation_nodes": [
+    200,
+    300
+  ],
+  "method_group": "llm_semantic_search",
+  "purpose": "User-requested concurrent AlphaSchema repeat with the same version, seed and budget as the Atlas repeat.",
+  "repeat_of_run": "futures_kernel_5m_full-all-fold2-alphaschema-42-fbac3f9a28",
+  "repeat_of_scope": "configs/experiments/zk26_seeded_fold2_300_v2/three_methods.json",
+  "oos_release": "both Atlas and AlphaSchema repeat searches frozen and all paired models saved before either Test evaluation",
+  "companion_scope": "configs/experiments/zk26_seeded_fold2_300_v2/atlas_seed42_repeat.json",
+  "union_label": "single_method_alias; identical to alphaschema, not an additional search",
+  "optional_replication": false,
+  "limitations": [
+    "Same search seed does not make stochastic LLM responses deterministic; not an independent search-seed replication.",
+    "Historical Test was already viewed; no new blind holdout claim or parameter selection.",
+    "The frozen schedule still requires 150 finite complete plan rewards before proxy exploitation."
+  ],
+  "runs": [
+    "artifacts/runs/futures_kernel_5m_full-all-fold2-alphaschema-42-69e8ee0b7b"
+  ],
+  "status": "superseded_before_oos",
+  "superseded_by": "configs/experiments/zk26_seeded_fold2_overview_300_v3/two_methods.json",
+  "stop_reason": "User clarified experiment_overview.md method/settings; stop old configuration and preserve artifacts."
+}

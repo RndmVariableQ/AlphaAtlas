@@ -21,8 +21,117 @@ from alpha_atlas.runner import _check_config, run, run_model
 @pytest.fixture
 def config():
     result = load_toml(Path(__file__).resolve().parents[1] / "configs/model.toml")
+    result.pop("preprocessing", None)
     result["lightgbm"].update(num_boost_round=60, min_data_in_leaf=5, num_threads=1)
     return result
+
+
+def test_global_clipping_freezes_feature_and_label_bounds(config):
+    config["preprocessing"] = {"clip_quantiles": [0.01, 0.99], "product_demean": True}
+    x = np.r_[np.arange(100.0), 10000.0]
+    y = np.r_[np.arange(100.0) / 100, -10000.0]
+    labels = np.r_[y, 100000.0]
+    train = pl.DataFrame({"a": np.r_[x, np.nan], "target": labels})
+    fitted = fit_models(train, ["a"], config)
+    prep = fitted["preprocessing"]
+    lo, hi = np.quantile(x, [0.01, 0.99])
+    clipped = np.clip(x, lo, hi)
+    assert prep["lower"] == [lo] and prep["upper"] == [hi]
+    assert prep["mean"] == pytest.approx([clipped.mean()])
+    assert prep["scale"] == pytest.approx([clipped.std()])
+    assert prep["label_bounds"] == pytest.approx(np.quantile(labels, [0.01, 0.99]))
+    saved = json.loads(json.dumps(prep))
+    values, valid = transform(pl.DataFrame({"a": [-1e20, 1e20, None, float("inf")]}), prep)
+    assert valid.tolist() == [True, True, False, False]
+    assert values[:, 0] == pytest.approx(
+        [(lo - clipped.mean()) / clipped.std(), (hi - clipped.mean()) / clipped.std(), 0, 0]
+    )
+    assert prep == saved
+
+
+def test_whole_product_centering_matches_within_product_regression(config, monkeypatch):
+    config["preprocessing"] = {"clip_quantiles": [0.01, 0.99], "product_demean": True}
+    x = np.r_[np.arange(60.0), np.arange(60.0) + 100]
+    y = np.r_[2 * np.arange(60.0), 2 * np.arange(60.0) - 1000]
+    products = np.array(["A"] * 60 + ["B"] * 60)
+    train = pl.DataFrame(
+        {
+            "a": x,
+            "target": y,
+            "product": products,
+            "trading_day": [date(2020, 1, 1)] * 30
+            + [date(2021, 1, 1)] * 30
+            + [date(2020, 1, 1)] * 30
+            + [date(2021, 1, 1)] * 30,
+        }
+    )
+    captured = {}
+    original = lgb.train
+
+    def capture(params, dataset, **kwargs):
+        captured["labels"] = np.asarray(dataset.label).copy()
+        return original(params, dataset, **kwargs)
+
+    monkeypatch.setattr(lgb, "train", capture)
+    fitted = fit_models(train, ["a"], config)
+    xclip = np.clip(x, *np.quantile(x, [0.01, 0.99]))
+    yclip = np.clip(y, *np.quantile(y, [0.01, 0.99]))
+    z = (xclip - xclip.mean()) / xclip.std()
+    centered_x, centered_y = z.copy(), yclip.copy()
+    for product in ["A", "B"]:
+        rows = products == product
+        centered_x[rows] -= z[rows].mean()
+        centered_y[rows] -= yclip[rows].mean()
+    beta = centered_x @ centered_y / (centered_x @ centered_x)
+    model = json.loads(json.dumps(fitted["models"]["linear"]))
+    assert model["coefficients"] == pytest.approx([beta])
+    values, _ = transform(train, fitted["preprocessing"])
+    assert predict(model, values, threads=1, products=products) == pytest.approx(centered_x * beta)
+    assert captured["labels"] == pytest.approx(centered_y, rel=1e-6, abs=1e-5)
+    with pytest.raises(ValueError, match="row products"):
+        predict(model, values, threads=1)
+    assert predict(model, values[:1], threads=1, products=["NEW"]) == pytest.approx(z[:1] * beta)
+
+
+def test_clipped_training_does_not_clip_test_labels(config, monkeypatch):
+    config["preprocessing"] = {"clip_quantiles": [0.01, 0.99], "product_demean": True}
+    fitted = fit_models(
+        pl.DataFrame({"a": [1.0, 2.0, 3.0], "target": [1.0, 2.0, 3.0]}), ["a"], config
+    )
+    day = date(2024, 1, 1)
+    panel = pl.DataFrame(
+        {
+            "a": [1.0, 2.0, 3.0],
+            "target": [-1000.0, 0.0, 2000.0],
+            "eligible": [True] * 3,
+            "trading_day": [day] * 3,
+            "target_end": [day] * 3,
+        }
+    )
+    targets = []
+
+    def capture(scored, *args, **kwargs):
+        targets.append(scored["target"].to_list())
+        return []
+
+    monkeypatch.setattr("alpha_atlas.model.metrics", capture)
+    evaluate_models(
+        panel,
+        fitted,
+        {"metric": "cross_sectional_spearman"},
+        panel,
+        DateRange(day, day),
+        "test",
+        config,
+    )
+    assert targets == [[-1000.0, 0.0, 2000.0]] * 2
+
+
+@pytest.mark.parametrize("quantiles", [[0.9, 0.1], [0.01], [False, 0.99], [0, float("nan")]])
+def test_invalid_preprocessing_quantiles_fail(config, quantiles):
+    config["preprocessing"] = {"clip_quantiles": quantiles, "product_demean": True}
+    with pytest.raises(ValueError, match="preprocessing"):
+        validate_config(config)
 
 
 def test_linear_exact_fit_collinearity_missing_columns_and_serialization(config):
@@ -81,6 +190,22 @@ def test_lightgbm_learns_nonlinearity_and_is_repeatable(config):
     assert np.mean((tree - x**2) ** 2) < np.mean((linear - x**2) ** 2) * 0.1
 
 
+def test_lightgbm_respects_configured_max_depth(config):
+    config["lightgbm"]["max_depth"] = 2
+    x = np.linspace(-2, 2, 300)
+    fitted = fit_models(pl.DataFrame({"a": x, "target": x**2}), ["a"], config)
+    booster = lgb.Booster(model_str=fitted["models"]["lightgbm"]["model_text"])
+
+    def depth(node):
+        if "leaf_index" in node:
+            return 0
+        return 1 + max(depth(node["left_child"]), depth(node["right_child"]))
+
+    assert max(depth(t["tree_structure"]) for t in booster.dump_model()["tree_info"]) == 2
+    config["lightgbm"]["max_depth"] = -1
+    validate_config(config)
+
+
 @pytest.mark.parametrize("problem", ["empty", "constant_factors", "missing_factors", "constant_y"])
 def test_unusable_training_data_fails(config, problem):
     a = [1.0, 2.0, 3.0]
@@ -105,6 +230,10 @@ def test_unusable_training_data_fails(config, problem):
         ("num_leaves", True),
         ("learning_rate", float("nan")),
         ("lambda_l2", -1e-301),
+        ("max_depth", 0),
+        ("max_depth", -2),
+        ("max_depth", True),
+        ("max_depth", 2.5),
     ],
 )
 def test_invalid_model_settings_fail(config, key, value):

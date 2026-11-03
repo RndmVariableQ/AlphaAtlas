@@ -1,0 +1,27 @@
+{
+  "study_id": "zk26_seeded_fold2_atlas_300_v2",
+  "factor_id": "ec9ac8fc78f698df953fcf7f1aab837298f219ec24117d2b57d60d3dd0e4b502",
+  "expression": "RETURN($zk_basis12, 24)",
+  "source_trial": 41,
+  "training_rows": 5296605,
+  "finite_rows": 4960998,
+  "zero_rows": 4871214,
+  "negative_rows": 42240,
+  "positive_rows": 47544,
+  "model_fit_clipping_quantiles": [
+    0.01,
+    0.99
+  ],
+  "model_fit_clipping_bounds": [
+    0.0,
+    0.0
+  ],
+  "clipped_mean": 0.0,
+  "clipped_std": 0.0,
+  "search_train_clipping_bounds": [
+    0.0,
+    1.4241312000118356e-05
+  ],
+  "drop_rule": "finite training standard deviation after clipping must exceed 1e-12",
+  "data_access": "Train+Val only; baseline-usable cohort verified against saved fit; no Test or model refit"
+}

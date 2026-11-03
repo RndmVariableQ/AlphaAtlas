@@ -13,9 +13,10 @@ from dataclasses import asdict, dataclass
 from urllib.parse import urlsplit
 
 from alpha_atlas.contracts import Candidate, Expression
-from alpha_atlas.methods.models import HTTPModels
+from alpha_atlas.methods.models import HTTPModels, parse_json_object
 from alpha_atlas.methods.prompt_examples import render_factor_examples
 from alpha_atlas.reporting import terminal_progress
+from alpha_atlas.session import READ_ONLY_QUERY_HELP
 from alpha_atlas.storage import candidate_from_dict
 
 DIMENSIONS = ("effectiveness", "stability", "turnover", "diversity", "overfitting")
@@ -181,8 +182,7 @@ SYSTEM = (
     "Return a JSON object matching the current phase instruction. Do not invent observed "
     "performance. Rules, fields, full operator semantics and reference access come from context. "
     'To query shared read-only tools, return {"queries": [{"name": "get_context", '
-    "\"arguments\": {}}]}. Tools: get_context(), library_search(query='', source='all', "
-    "offset=0, limit=10), library_get(factor_id), library_list(offset=0, limit=20), library_stats(). "
+    '"arguments": {}}]}.\n' + READ_ONLY_QUERY_HELP + "\n"
     "At most 16 requests per reply. Reference definitions have no measured performance. "
     "The runner submits each proposed candidate to the common evaluate; you cannot admit it. "
     "Use parent/children/sibling refinement history to avoid repeated edits. "
@@ -374,16 +374,32 @@ class MCTSLLMSearch:
 
     def _phase(self, phase, instruction, validate):
         records = self.work["responses"].setdefault(phase, [])
+        scope = f"[MCTS-LLM · 候选 #{self._session.factor_trial_count + 1}]"
+        action = {"suggestion": "生成建议", "risk": "风险判断"}.get(
+            phase, "生成公式" if phase == "formula_0" else "修复公式"
+        )
         while True:
             if records and not ({"result", "error", "query_results"} & records[-1].keys()):
                 self._parse_response(records[-1], validate)
                 self._checkpoint()
             if records and "result" in records[-1]:
-                return records[-1]["result"]
+                result = records[-1]["result"]
+                if phase == "suggestion":
+                    terminal_progress(f"{scope} 建议已返回", 建议=result["suggestion"])
+                elif phase == "risk":
+                    terminal_progress(
+                        f"{scope} 风险判断已返回",
+                        **{"评分（高分表示低风险）": result["score"], "依据": result["reason"]},
+                    )
+                else:
+                    terminal_progress(f"{scope} 公式已返回", 假设=result.get("hypothesis"))
+                return result
             if len(records) >= self.config.max_dialogue_rounds:
                 raise ValueError(f"{phase}: response/query limit exhausted")
             self._start_request("chat")
-            terminal_progress("MCTS-LLM 模型阶段", 阶段=phase)
+            terminal_progress(
+                f"{scope} {action} · 对话={len(records) + 1}/{self.config.max_dialogue_rounds}"
+            )
             text, usage = self.models.chat(
                 SYSTEM
                 + "\n\n"
@@ -424,13 +440,17 @@ class MCTSLLMSearch:
             self._checkpoint()  # Save responses before parsing or executing read-only queries.
             self._parse_response(record, validate)
             self._checkpoint()
+            if "error" in record:
+                terminal_progress(f"{scope} 回复需修正", 阶段=action, 原因=record["error"])
+            elif "query_results" in record:
+                terminal_progress(
+                    f"{scope} 只读查询已完成", 阶段=action, 数量=len(record["query_results"])
+                )
 
     def _parse_response(self, record, validate):
         try:
-            response = json.loads(record["text"])
-            if not isinstance(response, dict):
-                raise ValueError("response must be an object")
-            if "queries" in response:
+            response = parse_json_object(record["text"])
+            if "queries" in response and (response["queries"] != [] or len(response) == 1):
                 requests = response["queries"]
                 if not isinstance(requests, list) or not 1 <= len(requests) <= 16:
                     raise ValueError("expected 1..16 read-only queries")
@@ -518,7 +538,10 @@ class MCTSLLMSearch:
             raise ValueError("attempt budget exhausted")
         if self.context is None:
             self.context = self._session.query("get_context", {})
-        if self.context["evaluation_rules"]["search_diagnostics"]["version"] != "icir_turnover_v1":
+        if self.context["evaluation_rules"]["search_diagnostics"]["version"] not in {
+            "icir_turnover_v1",
+            "icir_turnover_lag1_v2",
+        }:
             raise ValueError("MCTS-LLM requires shared icir_turnover_v1 diagnostics")
         if self.work is None:
             parent = self._select_parent()
@@ -537,7 +560,7 @@ class MCTSLLMSearch:
                 "dimension": dimension,
                 "history": self._history(parent),
                 "examples": self._examples(parent, dimension),
-                "library_before": list(self.members),
+                "library_before": [m.factor_id for m in self._session.get_library().members],
                 "library_version": self._session.get_library().version,
                 "forbidden": frequent_patterns(self.pattern_counts, self.config.fsa_top_k),
                 "responses": {},
@@ -581,7 +604,11 @@ class MCTSLLMSearch:
         scores = {
             d: relative_score(
                 raw[d],
-                [self.members[i]["raw"][d] for i in references if i != identity],
+                [
+                    self.members[i]["raw"][d]
+                    for i in references
+                    if i != identity and i in self.members
+                ],
                 higher=d != "turnover",
             )
             for d in DIMENSIONS[:-1]
@@ -618,7 +645,7 @@ class MCTSLLMSearch:
         self.steps.append(
             {
                 **self.work,
-                "trial_index": feedback.trial_index,
+                "factor_trial_index": feedback.factor_trial_index,
                 "candidate": self.pending,
                 "raw": raw,
                 "scores": scores,

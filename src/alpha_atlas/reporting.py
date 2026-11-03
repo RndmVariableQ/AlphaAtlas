@@ -23,6 +23,7 @@ from alpha_atlas.storage import FORMAT_VERSION, RunStore
 
 _PROGRESS_TEXT = ""
 _ACTIVE_STREAM = None
+_STATUS_VISIBLE = False
 _REPLY_TAIL_COLUMNS = 512
 
 
@@ -87,29 +88,67 @@ def _terminal_grid(rows, widths):
     return "\n".join(lines)
 
 
-def terminal_progress(title, **values):
-    """Print a compact one-line status, or refresh an active response line."""
+def _clear_terminal_status():
+    global _STATUS_VISIBLE
+    if _STATUS_VISIBLE:
+        if sys.stderr.isatty():
+            sys.stderr.write("\r\x1b[K")
+            sys.stderr.flush()
+        _STATUS_VISIBLE = False
+
+
+def terminal_progress(title, *, transient=False, **values):
+    """Keep events in the transcript and refresh transient work on one TTY row."""
     logger = logging.getLogger("alpha_atlas.progress")
-    if logger.isEnabledFor(logging.INFO):
-        details = "  ·  ".join(
-            f"{key}={value if value is not None else '—'}" for key, value in values.items()
-        )
-        text = f"{title}" + (f" │ {details}" if details else "")
+    if not logger.isEnabledFor(logging.INFO):
+        return
+    global _PROGRESS_TEXT, _STATUS_VISIBLE
+    details = " · ".join(f"{key}={value}" for key, value in values.items() if value is not None)
+    text = f"{title}" + (f" │ {details}" if details else "")
+    if transient:
+        _PROGRESS_TEXT = text
         if _ACTIVE_STREAM is not None:
             with _ACTIVE_STREAM.lock:
                 _ACTIVE_STREAM.notice = text
                 _ACTIVE_STREAM._write_line()
             return
-        global _PROGRESS_TEXT
+        if sys.stderr.isatty():
+            line = _fit_terminal_line(
+                f"  … {text}", _terminal_width(), measure=_stream_display_width
+            )
+            sys.stderr.write("\r" + line + "\x1b[K")
+            sys.stderr.flush()
+            _STATUS_VISIBLE = True
+            return
+        # A file is a transcript, not a terminal: keep each request without animation or clipping.
+        lines = _terminal_wrap(f"› {text}", _terminal_width() - 2)
+        logger.info("\n".join("  " + line for line in lines))
+        return
+
+    lines = ["  " + line for line in _terminal_wrap(title, _terminal_width() - 2)]
+    for key, value in values.items():
+        if value is not None:
+            lines.extend(
+                "    " + line for line in _terminal_wrap(f"{key}: {value}", _terminal_width() - 4)
+            )
+    if _ACTIVE_STREAM is not None:
+        with _ACTIVE_STREAM.lock:
+            _clear_terminal_status()
+            logger.info("\n".join(lines))
+            _ACTIVE_STREAM.notice = text
+            _ACTIVE_STREAM._write_line()
+    else:
         _PROGRESS_TEXT = text
-        logger.info(_fit_progress_line(f"  › {text}", _terminal_width()))
+        _clear_terminal_status()
+        logger.info("\n".join(lines) + "\n")
 
 
 class TerminalStream:
     """Show response text on one terminal line without exposing model reasoning."""
 
-    def __init__(self, *, summary=False):
+    def __init__(self, *, summary=False, enabled=True):
         self.summary = summary
+        self.requested = enabled
         self.started = None
         self.stop = None
         self.thread = None
@@ -119,6 +158,8 @@ class TerminalStream:
         self.response = ""
         self.pending = ""
         self.thinking = False
+        self.activity = "等待首字"
+        self.last_delta = None
         self.tick = 0
         self.status = ""
         self.notice = None
@@ -126,19 +167,17 @@ class TerminalStream:
     def __enter__(self):
         global _ACTIVE_STREAM
         logger = logging.getLogger("alpha_atlas.progress")
-        if not logger.isEnabledFor(logging.INFO):
+        if not self.requested or not logger.isEnabledFor(logging.INFO):
             return self
         self.enabled = True
         self.started = time.monotonic()
         self.interactive = sys.stderr.isatty()
-        self.status = _PROGRESS_TEXT or ("摘要生成" if self.summary else "模型回复")
+        self.status = "摘要生成" if self.summary else _PROGRESS_TEXT or "模型回复"
         if self.interactive:
             _ACTIVE_STREAM = self
             self.stop = threading.Event()
             self.thread = threading.Thread(target=self._refresh, daemon=True)
             self.thread.start()
-        else:
-            logger.info(_fit_progress_line(f"  … {self.status} │ 生成中", _terminal_width()))
         return self
 
     def _refresh(self):
@@ -149,40 +188,38 @@ class TerminalStream:
             self.stop.wait(0.15)
 
     def _write_line(self, *, done=False, failed=False):
+        global _STATUS_VISIBLE
         sys.stderr.write("\r" + self._render_line(done=done, failed=failed) + "\x1b[K")
         sys.stderr.flush()
+        _STATUS_VISIBLE = True
 
     def _render_line(self, *, done=False, failed=False):
         width = _terminal_width()
         measure = _stream_display_width
-        elapsed = int(time.monotonic() - self.started)
+        now = time.monotonic()
+        elapsed = int(now - self.started)
         status = self.notice or self.status
-        status = _compact_annealing_status(status)
         marker = "!" if failed else "✓" if done else "|/-\\"[self.tick % 4]
         elapsed_text = f"{elapsed // 60:02d}:{elapsed % 60:02d}"
-        if failed:
-            return _fit_terminal_line(
-                f"  {marker} {status} │ 请求失败 · {elapsed_text}", width, measure=measure
-            )
-        suffix = f" │ {elapsed_text}"
-        if self.response:
-            suffix += " → "
-            response_width = min(32, max(12, (width - 38) // 2))
-            status_width = max(12, width - measure(suffix) - response_width)
-            status_line = _fit_progress_line(f"  {marker} {status}", status_width, measure=measure)
-            response_line = _fit_terminal_line(
-                self.response, response_width, preserve_tail=True, measure=measure
-            )
-            line = status_line + suffix + response_line
+        activity = "请求失败" if failed else "完成" if done else self.activity
+        suffix = f" │ {elapsed_text} · {activity}"
+        if not done and not failed and self.last_delta is not None:
+            idle = int(now - self.last_delta)
+            if idle >= 30:
+                suffix += f" · 无新内容 {idle}s"
+        status_line = _fit_terminal_line(f"  {marker} {status}", width, measure=measure)
+        response_width = min(32, width - measure(status_line + suffix + " → "))
+        if self.response and not failed and response_width >= 12:
             return (
-                _fit_terminal_line(line, width, preserve_tail=True, measure=measure)
-                if measure(line) > width
-                else line
+                status_line
+                + suffix
+                + " → "
+                + _fit_terminal_line(
+                    self.response, response_width, preserve_tail=True, measure=measure
+                )
             )
-        activity = "完成" if done else "生成中"
-        return _fit_terminal_line(
-            f"  {marker} {status} │ {elapsed_text} · {activity}", width, measure=measure
-        )
+        line = _fit_terminal_line(status_line, max(2, width - measure(suffix)), measure=measure)
+        return _fit_terminal_line(line + suffix, width, measure=measure)
 
     def _append_response(self, text):
         self.response += text
@@ -234,9 +271,14 @@ class TerminalStream:
                 self.response = ""
                 self.pending = ""
                 self.thinking = False
-            elif channel == "content":
+                self.activity = "等待首字"
+                self.last_delta = None
+            elif channel in {"content", "reasoning"} and text:
                 self.notice = None
-                self._content_delta(text)
+                self.last_delta = time.monotonic()
+                if channel == "content":
+                    self._content_delta(text)
+                self.activity = "思考中" if channel == "reasoning" or self.thinking else "接收回复"
             else:
                 return
             if self.interactive:
@@ -253,20 +295,10 @@ class TerminalStream:
                     self._append_response(self.pending)
                 self.pending = ""
                 self._write_line(done=exc_type is None, failed=exc_type is not None)
-                sys.stderr.write("\n")
-                sys.stderr.flush()
             if _ACTIVE_STREAM is self:
                 _ACTIVE_STREAM = None
-        elif self.enabled:
-            logger = logging.getLogger("alpha_atlas.progress")
-            if exc_type is not None:
-                terminal_progress("模型请求失败")
-            else:
-                with self.lock:
-                    if not self.thinking and self.pending:
-                        self._append_response(self.pending)
-                    self.pending = ""
-                    logger.info(self._render_line(done=True))
+        if self.enabled and exc_type is not None:
+            terminal_progress("模型请求失败", 阶段=self.status, 类型=exc_type.__name__)
 
 
 def _fit_terminal_line(text, width, *, preserve_tail=False, measure=_display_width):
@@ -296,44 +328,24 @@ def _fit_terminal_line(text, width, *, preserve_tail=False, measure=_display_wid
     return "".join(kept) + "…"
 
 
-def _compact_annealing_status(status):
-    if not status.startswith(("退火 │ ", "区域退火 │ ")):
-        return status
-    parts = [part.strip() for part in status.replace(" │ ", "  ·  ").split("  ·  ")]
-    title = parts[0]
-    if title == "区域退火":
-        title = "退火"
-    progress = next((part for part in parts[1:] if part.startswith("进度=")), None)
-    agent = next((part for part in parts[1:] if part.startswith("Agent=")), None)
-    details = " · ".join(part for part in (progress, agent) if part)
-    return f"{title} │ {details}" if details else title
-
-
 def _terminal_width():
     if sys.stderr.isatty():
         return max(24, shutil.get_terminal_size(fallback=(80, 24)).columns - 1)
     return 78
 
 
-def _fit_progress_line(text, width, *, measure=_display_width):
-    """Keep the start and end of long statuses visible on a single terminal row."""
-    text = "".join(" " if char.isspace() else char for char in text)
-    text = "".join(char for char in text if not unicodedata.category(char).startswith("C"))
-    if measure(text) <= width:
-        return text
-    ellipsis_width = measure("…")
-    left_width = (width - ellipsis_width) // 2
-    right_width = width - left_width - ellipsis_width
-    left = _fit_terminal_line(text, left_width, measure=measure)
-    right = _fit_terminal_line(text, right_width, preserve_tail=True, measure=measure)
-    return left[:-1] + "…" + right[1:]
+def terminal_evaluation(candidate, *, index, limit, research_plan_index=None):
+    scope = (
+        f"[计划 #{research_plan_index} · 评估] " if research_plan_index is not None else "[评估] "
+    )
+    terminal_progress(
+        scope + "评估候选", transient=True, 进度=f"{index}/{limit}", 名称=candidate.name or "未命名"
+    )
 
 
-def terminal_evaluation(candidate, *, index, limit):
-    terminal_progress("评估候选", 进度=f"{index}/{limit}", 名称=candidate.name or "未命名")
-
-
-def terminal_candidate(feedback, *, index, limit, elapsed, total):
+def terminal_candidate(
+    feedback, *, index, limit, elapsed, total, research_plan_index=None, initial_count=0
+):
     """Print the committed outcome, primary evaluation and full candidate expression."""
     logger = logging.getLogger("alpha_atlas.progress")
     if not logger.isEnabledFor(logging.INFO):
@@ -344,53 +356,58 @@ def terminal_candidate(feedback, *, index, limit, elapsed, total):
         if report
         else None
     )
-    measured = (
-        {
-            metric.split: metric.value
-            for metric in report.metrics
-            if metric.name == primary_name and metric.split in {"train", "val"}
-        }
-        if report and primary_name
-        else {}
-    )
-    numbers = "/".join(
-        f"{measured[split]:+.4f}" if measured.get(split) is not None else "—"
-        for split in ("train", "val")
-    )
     coverage = f"{report.coverage:.1%}" if report and report.coverage is not None else "—"
     status = "入库" if feedback.accepted else "拒绝"
     width = _terminal_width()
-    line = (
-        f"  {'✓' if feedback.accepted else '!'} {status} · {index}/{limit}"
-        f" · 已入库 {feedback.library_version} · IC(train/val) {numbers} · 覆盖 {coverage}"
+    scope = (
+        f"[计划 #{research_plan_index} · 评估] " if research_plan_index is not None else "[评估] "
+    )
+    line = f"{scope}{'✓' if feedback.accepted else '!'} {status} · {index}/{limit}"
+    line += (
+        f" · 初始 {initial_count} / 新增 {feedback.library_version - initial_count}"
+        if initial_count
+        else f" · 已入库 {feedback.library_version}"
     )
     duration = f"耗时 {elapsed:.1f}s / 累计 {total:.1f}s"
-    if _display_width(line) + 3 + _display_width(duration) <= width:
-        line += " · " + duration
 
     expression = _expression(feedback.candidate.expression) or "—"
-    if feedback.candidate.name:
-        expression = f"{feedback.candidate.name} = {expression}"
-    prefix = "  ↳ 公式: "
-    wrapped = _terminal_wrap(expression, width - _display_width(prefix), preserve_spaces=True)
-    lines = [_fit_terminal_line(line, width), prefix + wrapped[0]]
-    continuation = "     "
-    lines.extend(continuation + part for part in wrapped[1:])
+    lines = ["  " + part for part in _terminal_wrap(line, width - 2)]
+    lines.extend(
+        "    " + part
+        for part in _terminal_wrap(f"名称: {feedback.candidate.name or '未命名'}", width - 4)
+    )
+    direction = {1: "正向 (+1)", -1: "反向 (-1)"}.get(report.direction if report else None, "—")
+    lines.extend(
+        "    " + part
+        for part in _terminal_wrap(f"覆盖: {coverage} · 因子方向: {direction}", width - 4)
+    )
+    if report:
+        lines.extend("  " + part for part in _candidate_metric_lines(report, primary_name))
+    lines.append("    公式:")
+    lines.extend(
+        "      " + part for part in _terminal_wrap(expression, width - 6, preserve_spaces=True)
+    )
+    continuation = "    "
     if not feedback.accepted:
-        reason = _terminal_wrap(feedback.reason, width - _display_width(continuation))[0]
-        lines.append(f"{continuation}原因: {reason}")
+        lines.extend(
+            continuation + part
+            for part in _terminal_wrap(f"原因: {feedback.reason}", width - len(continuation))
+        )
     elif report and report.status != "success":
         lines.append(f"{continuation}评估状态: {report.status}")
-    if report:
-        metric_lines = _candidate_metric_lines(report, primary_name)
-        if metric_lines:
-            lines.append("")
-            lines.extend(metric_lines)
-    logger.info("\n".join(lines))
+    lines.append(f"    {duration}")
+    _clear_terminal_status()
+    logger.info("\n".join(lines) + "\n")
 
 
 def _candidate_metric_lines(report, primary_name):
-    names = list(dict.fromkeys(m.name for m in report.metrics if m.split == "train"))
+    names = list(
+        dict.fromkeys(
+            m.name
+            for m in report.metrics
+            if m.split == "train" and metric_label(m.name) != "品种等权"
+        )
+    )
     if not names:
         return []
     train = {m.name: m.value for m in report.metrics if m.split == "train"}
@@ -424,7 +441,7 @@ def _candidate_metric_lines(report, primary_name):
             + pad(val_value, val_width)
         )
     if primary_name:
-        lines.append(f"  * 主指标：{primary_name}")
+        lines.append("  * 主指标")
     return lines
 
 
@@ -501,6 +518,7 @@ def metric_text(items):
         if m.value is not None
         else f"{metric_title(m.name)} —"
         for m in items
+        if metric_label(m.name) != "品种等权"
     )
 
 
@@ -544,7 +562,8 @@ def write_report(directory: Path) -> Path:
     spec = read_json(directory / "run.json")
     if spec.get("format_version") != FORMAT_VERSION:
         raise ValueError("unsupported run format; old artifacts are not migrated")
-    trials = RunStore(directory).trials()
+    store = RunStore(directory)
+    trials = store.trials()
     registrations = [read_json(p) for p in sorted((directory / "operators").glob("*.json"))]
     failures = (
         read_json(directory / "failures.json") if (directory / "failures.json").exists() else []
@@ -553,6 +572,8 @@ def write_report(directory: Path) -> Path:
         read_json(directory / "checkpoint.json") if (directory / "checkpoint.json").exists() else {}
     )
     accepted = [t for t in trials if t["feedback"]["accepted"]]
+    initial = spec.get("initial_library", {})
+    initial_count = len(initial.get("members", []))
     used = sum(t["feedback"]["reason"] != "budget_rejected" for t in trials)
     elapsed = max(
         spec.get("total_seconds", 0),
@@ -565,9 +586,19 @@ def write_report(directory: Path) -> Path:
         ["项目", "记录"],
         [
             ("状态", spec["status"]),
+            *(
+                [("提前结束原因", spec["search_stop_reason"])]
+                if spec.get("search_stop_reason")
+                else []
+            ),
             ("资产 / 股票池", f"{spec['asset']} / {spec['universe']}"),
             ("方法 / seed", f"{spec['method']} / {spec['seed']}"),
             ("实现", spec.get("implementation")),
+            *(
+                ([("数据 / 算子版本", spec["experiment_version"]["id"])])
+                if "experiment_version" in spec
+                else []
+            ),
             ("数据快照", spec.get("snapshot_id")),
             ("频率", profile.get("frequency")),
             (
@@ -603,7 +634,16 @@ def write_report(directory: Path) -> Path:
             ("已提交尝试", used),
             ("剩余尝试", max(0, spec["attempts"] - used)),
             ("trial 记录数（含预算拒绝）", len(trials)),
-            ("入库成员", len(accepted)),
+            *(
+                [
+                    ("初始成员", initial_count),
+                    ("新增入库", len(accepted)),
+                    ("库成员总数", initial_count + len(accepted)),
+                    ("初始成员测量耗时（秒）", initial.get("elapsed_seconds", 0)),
+                ]
+                if initial_count
+                else [("入库成员", len(accepted))]
+            ),
             ("已记录活动时间（秒）", elapsed),
             ("已提交评估与准入耗时（秒）", sum(t["elapsed_seconds"] for t in trials)),
             ("已提交候选生成耗时（秒）", sum(t["generation_seconds"] for t in trials)),
@@ -615,9 +655,41 @@ def write_report(directory: Path) -> Path:
         "",
     ]
     method_state = checkpoint.get("method_state", {})
+    if spec.get("method") in {"annealing", "v1", "v1_async"}:
+        records = method_state.get("factor_trial_records", method_state.get("steps", []))
+        lines += _table(["研究记录", "数量"], [("计划内因子尝试记录", len(records))])
     if "method_config" in spec:
         lines += ["## 搜索方法配置", ""]
         lines += _table(["参数", "值"], spec["method_config"].items())
+    if spec.get("method") == "alphaschema" and method_state:
+        history = method_state.get("history", [])
+        lines += ["## AlphaSchema 计划搜索", ""]
+        lines += _table(
+            ["选择轮数", "已结束计划", "有测量奖励", "失败", "预算截断"],
+            [
+                (
+                    method_state.get("round_index", 0),
+                    len(history),
+                    sum(p["status"] == "measured" for p in history),
+                    sum(p["status"] == "failed" for p in history),
+                    sum(p["status"] == "budget_partial" for p in history),
+                )
+            ],
+        )
+        lines += _table(
+            ["轮次", "选择", "计划", "状态", "训练奖励", "最佳周期"],
+            [
+                (
+                    p["round_index"] + 1,
+                    p["selection_reason"],
+                    p["plan"],
+                    p["status"],
+                    p["reward"],
+                    p["best_period"],
+                )
+                for p in history
+            ],
+        )
     if "usage" in method_state:
         lines += _table(["模型调用 / token", "累计值"], method_state["usage"].items())
         lines += [
@@ -646,10 +718,9 @@ def write_report(directory: Path) -> Path:
         )
     pending = checkpoint.get("pending")
     if pending:
-        state = (
-            "结果已提交，等待恢复反馈" if pending["trial_index"] <= len(trials) else "结果未提交"
-        )
-        lines += [f"待完成 trial {pending['trial_index']}：{state}。", ""]
+        factor_trial_index = pending.get("factor_trial_index", pending.get("trial_index"))
+        state = "结果已提交，等待恢复反馈" if factor_trial_index <= len(trials) else "结果未提交"
+        lines += [f"待完成 trial {factor_trial_index}：{state}。", ""]
     reasons = Counter(t["feedback"]["reason"] for t in trials)
     lines += ["## 评估与准入", ""]
     lines += (
@@ -685,7 +756,7 @@ def write_report(directory: Path) -> Path:
                 values = {m["split"]: m["value"] for m in report["metrics"] if m["name"] == name}
                 rows.append(
                     (
-                        trial["trial_index"],
+                        trial["factor_trial_index"],
                         _expression(feedback["candidate"]["expression"]),
                         metric_title(name),
                         values.get("train"),
@@ -711,12 +782,15 @@ def write_report(directory: Path) -> Path:
         lines += ["入库进度：", ""]
         lines += _table(
             ["trial", "累计成员", "累计活动秒"],
-            [(t["trial_index"], t["library_size"], t["cumulative_seconds"]) for t in accepted],
+            [
+                (t["factor_trial_index"], t["library_size"], t["cumulative_seconds"])
+                for t in accepted
+            ],
         )
     else:
         lines += ["因子库为空。", ""]
     diagnostics = [
-        (t["trial_index"], t["feedback"]["report"].get("diagnostics", {}))
+        (t["factor_trial_index"], t["feedback"]["report"].get("diagnostics", {}))
         for t in trials
         if t["feedback"].get("report")
     ]
@@ -742,6 +816,29 @@ def write_report(directory: Path) -> Path:
                 if d
             ],
         )
+        if any("lag1_rank_ic" in d for _, d in diagnostics):
+            lines += _table(
+                [
+                    "trial",
+                    "原符号 RankIC",
+                    "原符号 RankICIR",
+                    "滞后一 Bar RankIC",
+                    "正向衰减",
+                    "滞后样本数",
+                ],
+                [
+                    (
+                        i,
+                        d.get("rank_ic"),
+                        d.get("rank_icir"),
+                        d.get("lag1_rank_ic"),
+                        d.get("lag1_gap"),
+                        d.get("lag1_n_obs"),
+                    )
+                    for i, d in diagnostics
+                    if "lag1_rank_ic" in d
+                ],
+            )
     regions = {}
     for trial in trials:
         for region in trial["feedback"]["candidate"].get("region_ids", []):
@@ -775,7 +872,13 @@ def write_report(directory: Path) -> Path:
         lines += _table(
             ["时间", "阶段", "trial", "类型", "信息"],
             [
-                (f["time"], f["stage"], f.get("trial_index"), f["type"], f["message"])
+                (
+                    f["time"],
+                    f["stage"],
+                    f.get("factor_trial_index", f.get("trial_index")),
+                    f["type"],
+                    f["message"],
+                )
                 for f in failures
             ],
         )
@@ -829,7 +932,7 @@ def write_report(directory: Path) -> Path:
             ],
         )
         lines += ["拟合与模型详情：[模型报告](model/report.md)。", ""]
-    elif spec["status"] == "frozen" and not accepted:
+    elif spec["status"] == "frozen" and not accepted and not initial_count:
         lines += ["冻结因子库为空，组合模型不适用。", ""]
     else:
         lines += ["尚未完成组合模型 Test；atlas finish 会补齐后自动填表。", ""]
@@ -863,7 +966,8 @@ def write_report(directory: Path) -> Path:
         "",
         _cell(spec.get("continuity", "未记录连续性说明。")),
         "",
-        "原始记录：[运行配置](run.json)、[逐次记录](trials/)、[算子记录](operators/)。",
+        "原始记录：[运行配置](run.json)、"
+        f"[因子评估记录]({store.factor_trials_directory.name}/)、[算子记录](operators/)。",
         "报告仅汇总已落盘记录，不重新计算因子、评估或 OOS。",
         "",
     ]
@@ -904,6 +1008,25 @@ def _overview_row(text, heading, headers, row, identity, description):
         (i for i in range(start + 1, len(lines)) if re.match(r"#{1,3} ", lines[i])), len(lines)
     )
     table = next((i for i in range(start + 1, end) if lines[i].startswith("| ")), None)
+    if table is not None:
+        displayed = lines[table].strip("| ").split(" | ")
+        for name, label, error in (
+            ("数据", "数据设置", "data"),
+            ("Fold / seed", "Fold / seed", "fold/seed"),
+        ):
+            if name in headers and name not in displayed:
+                column = headers.index(name)
+                if f"**{label}**：{_cell(row[column])}。" not in lines[start + 1 : table]:
+                    raise ValueError(f"overview common {error} setting changed: {heading}")
+                headers = headers[:column] + headers[column + 1 :]
+                row = row[:column] + row[column + 1 :]
+        if headers[0] == "方法 / 模型" and any(
+            line.startswith("**Fold / seed**：") for line in lines[start + 1 : table]
+        ):
+            label, fold_id, seed = row[0].rsplit(" / ", 2)
+            if f"**Fold / seed**：{fold_id} / {seed}。" not in lines[start + 1 : table]:
+                raise ValueError(f"overview common fold/seed setting changed: {heading}")
+            row = [label, *row[1:]]
     if table is None or lines[table] != "| " + " | ".join(headers) + " |":
         raise ValueError(f"overview table headers changed: {heading}")
     stop = table + 2
@@ -974,6 +1097,7 @@ def update_experiment_overview(root, directory, spec, oos, tested, similarity):
     )
     methods = {
         "alphaprobe": "AlphaPROBE",
+        "alphaschema": "AlphaSchema",
         "react": "ReAct",
         "mcts_llm": "MCTS-LLM",
         "v1_async": "AlphaAtlas+Annealing V1 Async",
@@ -982,7 +1106,7 @@ def update_experiment_overview(root, directory, spec, oos, tested, similarity):
         "mcts": "UCT MCTS",
     }
     method = methods.get(spec["method"], spec["method"])
-    relative = directory.relative_to(root).as_posix()
+    relative = directory.resolve().relative_to(root.resolve(), walk_up=True).as_posix()
     identity = f"({relative}/report.md)"
     method_link = f"[{method}]{identity}"
     asset = spec["asset"]
@@ -1117,13 +1241,30 @@ def write_model_report(directory: Path, fitted: dict, tested: dict | None = None
     """Report downstream predictive IC separately from single-factor and trading results."""
     spec = fitted["spec"]
     preprocessing = fitted["fitted"]["preprocessing"]
+    clipping = preprocessing.get("clip_quantiles")
+    preprocessing_note = (
+        f"特征与训练标签按拟合区间全局 P{clipping[0] * 100:g}–"
+        f"P{clipping[1] * 100:g} 裁剪；特征以裁剪后的均值和标准差处理，test 标签保持原值。"
+        if clipping is not None
+        else "特征与标签使用原值；特征按拟合区间均值和标准差处理。"
+    )
+    centering_note = (
+        "Linear 对特征和标签按品种在整个拟合区间去均值，并冻结预测偏移；"
+        "LightGBM 使用全局预处理特征和按品种去均值的标签。"
+        if preprocessing.get("product_demean")
+        else "模型使用混合样本拟合，不做品种去均值。"
+    )
     lines = [
         "# 因子库预测模型",
         "",
         f"搜索运行：{spec['search_run_id']}。主指标：{spec['primary_metric']}。",
         "",
         "这是独立的下游模型实验，不回写搜索结果，不是交易收益回测。",
-        "linear 为带截距的最小二乘回归；LightGBM 使用固定参数，无自动调参或早停。",
+        (
+            "linear 为品种固定效应最小二乘回归；LightGBM 使用固定参数，无自动调参或早停。"
+            if preprocessing.get("product_demean")
+            else "linear 为带截距的最小二乘回归；LightGBM 使用固定参数，无自动调参或早停。"
+        ),
         "模型与预处理在 train+val 合并集拟合；test 仅用于最终冻结后汇报。",
         "test 仅使用保存的模型，不重新训练、选因子或翻转预测方向。",
         "",
@@ -1133,6 +1274,8 @@ def write_model_report(directory: Path, fitted: dict, tested: dict | None = None
         f"训练行 {fitted['fitted']['training_rows']}。",
         "",
         "缺失值按训练均值填补；训练常量／全缺失列移除；所有有效因子均缺失的行不预测。",
+        preprocessing_note,
+        centering_note,
         "训练目标按样本等权拟合，指标聚合沿用资产主指标；两者权重口径不同。",
         "",
         "| 模型 | split | 指标 | IC | 覆盖率 | 预测行数 / 可评估行数 |",
@@ -1185,8 +1328,9 @@ def compare(root: Path) -> dict:
             curve.append(
                 {
                     "attempt": used,
-                    "trial_index": trial["trial_index"],
-                    "count": trial["library_size"],
+                    "factor_trial_index": trial["factor_trial_index"],
+                    "count": trial["library_size"]
+                    - len(spec.get("initial_library", {}).get("members", [])),
                     "seconds": trial["cumulative_seconds"],
                 }
             )
@@ -1210,10 +1354,13 @@ def compare(root: Path) -> dict:
                 "fold": spec["fold"]["id"],
                 "implementation": spec.get("implementation"),
                 "method_config": spec.get("method_config"),
+                "experiment_version": spec.get("experiment_version", {}).get("id"),
                 "model_usage": model_usage,
                 "attempts": used,
                 "trial_records": len(trials),
-                "accepted": spec["library_size"],
+                "accepted": spec["library_size"]
+                - len(spec.get("initial_library", {}).get("members", [])),
+                "initial_members": len(spec.get("initial_library", {}).get("members", [])),
                 "reasons": reasons,
                 "curve": curve,
             }

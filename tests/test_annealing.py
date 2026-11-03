@@ -1,3 +1,4 @@
+import copy
 import json
 import logging
 import math
@@ -12,11 +13,12 @@ from alpha_atlas.annealing import acceptance_probability, temperature
 from alpha_atlas.atlas import FactorAtlas
 from alpha_atlas.checkpoint import read_json
 from alpha_atlas.config import load_toml
-from alpha_atlas.contracts import Candidate, EvaluationReport, TrialFeedback
+from alpha_atlas.contracts import EvaluationReport, Metric, TrialFeedback
 from alpha_atlas.methods.annealing import AnnealingLLMConfig, AnnealingLLMSearch
 from alpha_atlas.methods.baselines import default_regions
 from alpha_atlas.runner import resume, run
 from alpha_atlas.runner import test_frozen as evaluate_frozen
+from alpha_atlas.storage import candidate_from_dict
 
 
 class AgentModels:
@@ -73,12 +75,15 @@ class FixedFeedbackSession:
     def validate_expression(self, expression):
         return self.base.validate_expression(expression)
 
+    def get_trial(self, factor_trial_index):
+        return self.base.get_trial(factor_trial_index)
+
     def evaluation_result(self, feedback):
         return {
             "candidate": asdict(feedback.candidate),
             "accepted": feedback.accepted,
             "reason": feedback.reason,
-            "trial_index": feedback.trial_index,
+            "factor_trial_index": feedback.factor_trial_index,
         }
 
     def remaining_budget(self):
@@ -102,17 +107,167 @@ def setup_method(tmp_path, *, attempts=8, config=None, models=None, session=None
 
 
 def tell(method, session, accepted, index):
-    candidate = Candidate(**method.pending)
+    candidate = candidate_from_dict(method.pending)
     feedback = TrialFeedback(
         candidate,
         EvaluationReport(None, (), None, None, 0.0),
         accepted,
         "accepted" if accepted else "quality_threshold",
-        trial_index=index,
+        factor_trial_index=index,
     )
+    session.base._store.record(index, feedback, 0, 0, 0, feedback.library_version)
     method.tell([feedback])
     session.remaining -= 1
     return feedback
+
+
+class BlockedModels(AgentModels):
+    def __init__(self, stage="analyst", block_at=1):
+        super().__init__(
+            regions=[
+                {"region_id": "mean", "direction": "Compare target horizons"},
+                {"region_id": "std", "direction": "Test volatility as a feature"},
+            ]
+        )
+        self.stage, self.block_at, self.stage_calls = stage, block_at, 0
+
+    def _response(self, system, payload):
+        role = "analyst" if "Research Analyst Agent" in system else "miner"
+        if "Atlas Explorer Agent" not in system and role == self.stage:
+            self.stage_calls += 1
+            if self.stage_calls == self.block_at:
+                return json.dumps(
+                    {"blocked": "Separate target-horizon evaluations unavailable"}
+                ), {}
+        return super()._response(system, payload)
+
+
+@pytest.mark.parametrize("stage", ["analyst", "miner"])
+def test_blocked_plan_changes_question_without_a_trial(tmp_path, stage):
+    models = BlockedModels(stage)
+    method, current = setup_method(tmp_path, attempts=3, models=models)
+    candidate = method.ask(current.base.get_context())[0]
+    assert candidate.region_ids == ("std",)
+    assert method.completed_attempts == 0 and current.remaining == 3
+    assert method.completed_research_plan_count == 1
+    assert method.factor_trial_records == [] and current.base._store.trials() == []
+    blocked = method.blocked_plans[0]
+    assert blocked["plan"]["direction"] == "Compare target horizons"
+    assert "horizon" in blocked["plan"]["blocked"]
+    explorers = [payload for system, payload, _ in models.calls if "Explorer Agent" in system]
+    assert explorers[-1]["atlas"]["blocked_plans"][0]["plan"] == blocked["plan"]
+    assert "completed_attempts" not in explorers[-1]["atlas"]["blocked_plans"][0]
+    miners = [system for system, _, _ in models.calls if "Factor Miner Agent" in system]
+    assert len(miners) == (1 if stage == "analyst" else 2)
+
+
+def test_miner_block_after_trial_keeps_evidence_and_ends_plan(tmp_path):
+    method, current = setup_method(tmp_path, models=BlockedModels("miner", block_at=2))
+    method.ask(current.base.get_context())
+    tell(method, current, False, 1)
+    record = copy.deepcopy(method.factor_trial_records[0])
+    next_candidate = method.ask(current.base.get_context())[0]
+    assert next_candidate.region_ids == ("std",)
+    assert method.factor_trial_records == [record]
+    assert method.completed_attempts == 1 and len(current.base._store.trials()) == 1
+    assert method.region_scores["mean"] == {"attempts": 1, "accepted": 0}
+    assert method.active_region_id is None
+
+
+@pytest.mark.parametrize("cut", ["response", "plan", "archived"])
+def test_blocked_plan_recovery_reuses_reply_and_does_not_archive_twice(tmp_path, cut):
+    models = BlockedModels()
+    method, current = setup_method(tmp_path, models=models)
+    saved = None
+
+    def interrupt():
+        nonlocal saved
+        state = method.dump_state()
+        active = state["research_plan_state"]
+        records = active["responses"]["analyst"] if active else []
+        ready = (
+            bool(records and "blocked" in records[-1]["text"] and "result" not in records[-1])
+            if cut == "response"
+            else bool(active and active["plan"] and "blocked" in active["plan"])
+            if cut == "plan"
+            else bool(state["blocked_plans"])
+        )
+        if ready:
+            saved = json.loads(json.dumps(state))
+            raise KeyboardInterrupt
+
+    method.set_checkpoint(interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        method.ask(current.base.get_context())
+    restored, _ = setup_method(tmp_path / "restored", models=models)
+    restored.set_session(current)
+    restored.load_state(saved)
+    assert restored.ask(current.base.get_context())[0].region_ids == ("std",)
+    assert len(restored.blocked_plans) == 1 and restored.completed_attempts == 0
+    assert models.stage_calls == 2  # One blocked Analyst, one executable Analyst.
+
+
+def test_repeated_blocking_is_bounded_across_recovery(tmp_path):
+    class AlwaysBlocked(AgentModels):
+        def _response(self, system, payload):
+            if "Research Analyst Agent" in system:
+                return '{"blocked":"Missing far-leg field"}', {}
+            return super()._response(system, payload)
+
+    config = AnnealingLLMConfig(max_dialogue_rounds=2)
+    method, current = setup_method(tmp_path, models=AlwaysBlocked(), config=config)
+    with pytest.raises(ValueError, match="blocked plan limit"):
+        method.ask(current.base.get_context())
+    assert len(method.blocked_plans) == 2 and method.completed_attempts == 0
+    restored, _ = setup_method(tmp_path / "restored", models=AlwaysBlocked(), config=config)
+    restored.set_session(current)
+    restored.load_state(json.loads(json.dumps(method.dump_state())))
+    with pytest.raises(ValueError, match="blocked plan limit"):
+        restored.ask(current.base.get_context())
+    assert restored.models.calls == []
+
+
+@pytest.mark.parametrize(
+    "raw", [{"blocked": ""}, {"blocked": True}, {"blocked": "x", "expression": "$x"}]
+)
+def test_invalid_blocked_response_is_not_a_blocked_plan(raw):
+    with pytest.raises(ValueError, match="specific missing capability"):
+        AnnealingLLMSearch._blocked_reason(raw)
+
+
+def commit_records(current, records):
+    """Commit synthetic measurements separately from their lean method-side records."""
+    result = []
+    for record in records:
+        evaluation = record["evaluation"]
+        report = EvaluationReport(
+            evaluation.get("factor_id"),
+            tuple(
+                Metric(**{"n_obs": 100, "aggregation": "synthetic", **metric})
+                for metric in evaluation.get("metrics", [])
+            ),
+            evaluation.get("direction"),
+            evaluation.get("coverage"),
+            0.0,
+            status=evaluation["status"],
+            failure_reason=evaluation.get("failure_reason"),
+        )
+        feedback = TrialFeedback(
+            candidate_from_dict(record["candidate"]),
+            report,
+            record["accepted"],
+            evaluation.get("reason", "accepted" if record["accepted"] else "quality_threshold"),
+            factor_trial_index=record["factor_trial_index"],
+        )
+        current.base._store.record(feedback.factor_trial_index, feedback, 0, 0, 0, 0)
+        result.append(
+            {
+                key: value
+                for key, value in record.items()
+                if key not in {"candidate", "evaluation", "accepted"}
+            }
+        )
+    return result
 
 
 def test_schedule_and_region_metropolis_probability():
@@ -144,10 +299,10 @@ def test_config_uses_shared_generation_settings_without_mcts_tree_controls():
     root = Path(__file__).resolve().parents[1]
     annealing = load_toml(root / "configs/annealing.toml")
     mcts = load_toml(root / "configs/mcts_llm.toml")
+    # Service timeouts depend on the backend, independently of generation settings.
     shared = (
         "temperature",
         "repair_temperature",
-        "timeout_seconds",
         "max_formula_repairs",
         "max_dialogue_rounds",
     )
@@ -155,6 +310,39 @@ def test_config_uses_shared_generation_settings_without_mcts_tree_controls():
     assert "tree_budget" not in annealing and "exploration" not in annealing
     assert AnnealingLLMConfig.from_mapping(annealing).candidates_per_plan == 5
     assert AnnealingLLMConfig.from_mapping(annealing).analyst_feedback_top_k == 5
+
+
+def test_structured_miner_instructions_preserve_content_and_upstream_constraints():
+    instructions = {
+        "instructions": "用价差验证反转",
+        "candidates": [{"expression": "$x", "window": 10}],
+        "rules": ["Use only allowed fields", "Do not change the direction"],
+    }
+    raw = {
+        "hypothesis": "Short-term reversal",
+        "allowed_fields": ["x"],
+        "measurement_plan": "Compare rolling deviations",
+        "miner_instruction": instructions,
+        "region_id": "invented",
+        "direction": "invented",
+    }
+    exploration = {"region_id": "mean", "direction": "study mean reversion"}
+    plan = AnnealingLLMSearch._validate_plan(raw, exploration, {"fields": ["x"]})
+    assert json.loads(plan["miner_instruction"]) == instructions
+    assert raw["miner_instruction"] is instructions
+    assert plan["region_id"] == "mean" and plan["direction"] == exploration["direction"]
+    with pytest.raises(ValueError, match="fields must be a nonempty subset"):
+        AnnealingLLMSearch._validate_plan({**raw, "allowed_fields": ["missing"]}, exploration, {})
+
+
+@pytest.mark.parametrize("instruction", [None, "", "  ", {}, [], ["Use x"], 0, False])
+def test_miner_instruction_compatibility_rejects_empty_or_unsupported_types(instruction):
+    with pytest.raises(ValueError, match="miner_instruction must be nonempty"):
+        AnnealingLLMSearch._validate_plan(
+            {"hypothesis": "reversal", "allowed_fields": ["x"], "miner_instruction": instruction},
+            {"region_id": "mean", "direction": "study mean reversion"},
+            {"fields": ["x"]},
+        )
 
 
 def test_three_agents_run_in_order_and_plan_spans_candidate_budget(tmp_path, caplog):
@@ -166,9 +354,12 @@ def test_three_agents_run_in_order_and_plan_spans_candidate_budget(tmp_path, cap
         tell(method, current, True, 1)
         method.ask(current.base.get_context())
         tell(method, current, True, 2)
-    assert method.round_state is None
-    assert "Explorer │ 方向=study mean reversion" in caplog.text
-    assert "Analyst │ 假设=Short-term price reversal predicts the next period" in caplog.text
+    assert method.research_plan_state is None
+    assert "[计划 #1 · Explorer] 方向已提交\n    方向: study mean reversion" in caplog.text
+    assert (
+        "[计划 #1 · Analyst] 计划已提交\n    假设: Short-term price reversal predicts the next period"
+        in caplog.text
+    )
     roles = [
         "explorer"
         if "Atlas Explorer Agent" in call[0]
@@ -180,7 +371,10 @@ def test_three_agents_run_in_order_and_plan_spans_candidate_budget(tmp_path, cap
     assert roles == ["explorer", "analyst", "miner", "miner"]
     assert method.active_region_id == "mean"
     assert method.region_scores["mean"] == {"accepted": 2, "attempts": 2}
-    assert method.steps[-1]["annealing_result"]["reason"] == "initialize_or_continue_region"
+    assert (
+        method.factor_trial_records[-1]["annealing_result"]["reason"]
+        == "initialize_or_continue_region"
+    )
 
 
 def test_miner_preserves_allowed_adjusted_timeframes_and_rejects_other_base_fields(tmp_path):
@@ -197,7 +391,7 @@ def test_miner_preserves_allowed_adjusted_timeframes_and_rejects_other_base_fiel
     assert "$adj_close@30m / $adj_vwap@30m - 1" in miner
     assert "adj_close_zscore_15m_64" in miner and "$close@" not in miner
     assert not current.base.attempts_used
-    method.round_state["plan"]["allowed_fields"] = ["adj_close", "adj_vwap"]
+    method.research_plan_state["plan"]["allowed_fields"] = ["adj_close", "adj_vwap"]
     assert method._validate_miner({"expression": expression})["expression"] == expression
     with pytest.raises(ValueError, match="outside the Analyst plan: volume"):
         method._validate_miner({"expression": "$adj_close@30m + $volume@30m"})
@@ -244,13 +438,13 @@ def test_analyst_receives_top_qualified_factors_from_previous_round(tmp_path):
         config=AnnealingLLMConfig(analyst_feedback_top_k=2),
     )
     method.context = current.query("get_context", {})
-    method.round_index = 1
+    method.completed_research_plan_count = 1
     metric_name = method.context["metric"]
 
-    def prior_step(index, accepted, coverage, val_ic, round_index=1):
+    def prior_step(index, accepted, coverage, val_ic, research_plan_index=1):
         return {
-            "round_index": round_index,
-            "trial_index": index,
+            "research_plan_index": research_plan_index,
+            "factor_trial_index": index,
             "accepted": accepted,
             "candidate": {"expression": f"$x + {index}", "hypothesis": f"factor {index}"},
             "evaluation": {
@@ -263,29 +457,38 @@ def test_analyst_receives_top_qualified_factors_from_previous_round(tmp_path):
             },
         }
 
-    method.steps = [
-        prior_step(0, True, 1.0, 0.9, round_index=0),
-        prior_step(1, True, 0.9, 0.04),
-        prior_step(2, True, 0.95, -0.08),
-        prior_step(3, False, 0.99, 0.20),
-        prior_step(4, True, 0.79, 0.07),
-        prior_step(5, True, 0.85, 0.03),
-    ]
+    method.factor_trial_records = commit_records(
+        current,
+        [
+            prior_step(10, True, 1.0, 0.9, research_plan_index=0),
+            prior_step(1, True, 0.9, 0.04),
+            prior_step(2, True, 0.95, -0.08),
+            prior_step(3, False, 0.99, 0.20),
+            prior_step(4, True, 0.79, 0.07),
+            prior_step(5, True, 0.85, 0.03),
+        ],
+    )
 
     method.ask(current.base.get_context())
     analyst_call = next(call for call in models.calls if "Research Analyst Agent" in call[0])
     summary = analyst_call[1]["previous_round_results"]
     assert summary["attempted_candidates"] == 5
     assert summary["qualified_candidates"] == 3
-    assert [item["trial_index"] for item in summary["top_factors"]] == [2, 1]
+    assert [item["factor_trial_index"] for item in summary["top_factors"]] == [2, 1]
     assert [item["absolute_primary_val_ic"] for item in summary["top_factors"]] == [0.08, 0.04]
 
 
-def test_logged_agent_direction_is_one_sentence_and_bounded():
-    from alpha_atlas.methods.annealing import _one_sentence
-
-    assert _one_sentence("先研究反转。然后研究波动。") == "先研究反转。"
-    assert len(_one_sentence("x" * 130)) == 120
+def test_logged_agent_direction_is_complete_and_has_agent_and_plan(tmp_path, caplog):
+    direction = "研究反转信号与成交量变化的关系。" * 12
+    models = AgentModels(regions=[{"region_id": "mean", "direction": direction}])
+    method, current = setup_method(tmp_path, models=models)
+    with caplog.at_level(logging.INFO, logger="alpha_atlas.progress"):
+        method.ask(current.base.get_context())
+    assert "[计划 #1 · Explorer] 方向已提交" in caplog.text
+    message = next(
+        record.getMessage() for record in caplog.records if "方向已提交" in record.getMessage()
+    )
+    assert direction in "".join(line.strip() for line in message.splitlines())
 
 
 def test_explorer_region_is_registered_and_metropolis_can_reject_it(tmp_path, monkeypatch):
@@ -315,7 +518,7 @@ def test_explorer_region_is_registered_and_metropolis_can_reject_it(tmp_path, mo
     monkeypatch.setattr("alpha_atlas.methods.annealing.acceptance_probability", lambda *_: 0.0)
     tell(method, current, False, 2)
     assert method.active_region_id == "mean"
-    assert method.steps[-1]["annealing_result"]["reason"] == "metropolis_reject"
+    assert method.factor_trial_records[-1]["annealing_result"]["reason"] == "metropolis_reject"
 
     restored = AnnealingLLMSearch(999, method.config, models=AgentModels())
     restored.load_state(json.loads(json.dumps(method.dump_state())))
@@ -371,7 +574,7 @@ def test_runner_resume_restores_three_agent_region_state(project, monkeypatch):
 
     def interrupt_after_second(self, feedback):
         original(self, feedback)
-        if feedback[0].trial_index == 2:
+        if feedback[0].factor_trial_index == 2:
             raise KeyboardInterrupt("injected")
 
     with monkeypatch.context() as patch:
@@ -412,8 +615,8 @@ def test_runner_resume_restores_three_agent_region_state(project, monkeypatch):
     right = read_json(baseline / "checkpoint.json")["method_state"]
     assert left["active_region_id"] == right["active_region_id"]
     assert left["region_scores"] == right["region_scores"]
-    assert left["round_index"] == right["round_index"]
-    assert left["steps"] == right["steps"]
+    assert left["completed_research_plan_count"] == right["completed_research_plan_count"]
+    assert left["factor_trial_records"] == right["factor_trial_records"]
     resumed_miner_call = next(
         call for call in resumed_models.calls if "Factor Miner Agent" in call[0]
     )

@@ -1,6 +1,6 @@
 # 基础算子目录
 
-共 60 个规范名称；别名不重复计数。
+共 66 个规范名称；别名不重复计数。
 由 `uv run python scripts/operator_catalog.py` 生成。数值与扩展协议见 [DSL](dsl.md)。
 
 | 名称 | 参数类型 | 输出 | 作用域 | 历史规则 | 含义 |
@@ -10,6 +10,8 @@
 | `AND` | condition, condition | condition | elementwise | none | Logical AND of two conditions. Either unknown input yields unknown. |
 | `CLIP` | series, float, float | series | elementwise | none | Clamp x to the fixed lower and upper bounds, inclusive. |
 | `CS_DEMEAN` | series | series | cs | none | Subtract the mean of eligible finite values at the same timestamp. |
+| `CS_LAGGED_MEAN` | series, condition, window, float | series | panel | previous_timestamp | Current mean return of members selected at the previous panel timestamp. Arguments: return, membership condition, minimum holdings, coverage in (0,1]. Missing holdings count against coverage; observed holdings are equally reweighted. |
+| `CS_LAGGED_SPREAD` | series, series, condition, float, float | series | panel | previous_timestamp | Current top-minus-bottom return using previous-timestamp signal and membership. Arguments: return, signal, membership condition, tail fraction in (0,0.5], coverage. Floor(N*fraction) holdings per tail; ties use exchange/instrument identity. Missing holdings are never replaced; each tail must meet coverage independently. |
 | `CS_RANK` | series | series | cs | none | Ascending average rank / count among eligible finite values at the same timestamp. |
 | `CS_SCALE` | series | series | cs | none | Divide x by sum(abs(x)) among eligible finite values. Null if total <= 1e-12. |
 | `CS_WINSORIZE` | series, float=0.01, float=0.99 | series | cs | none | Clamp eligible x to same-timestamp lower/upper quantiles (linear interpolation). |
@@ -34,6 +36,7 @@
 | `NE` | series, series | condition | elementwise | none | Condition x != y. |
 | `NEG` | series | series | elementwise | none | Negate x. |
 | `NOT` | condition | condition | elementwise | none | Logical negation. An unknown condition stays unknown. |
+| `OBS_LAG` | series, window | series | ts | lag | Value exactly n rows ago within the continuity group; interior nulls are allowed. |
 | `OR` | condition, condition | condition | elementwise | none | Logical OR of two conditions. Either unknown input yields unknown. |
 | `POWER` | series, float | series | elementwise | none | Raise x to a fixed exponent p. Invalid/nonfinite results become null. |
 | `RETURN` | series, window | series | ts | lag | Simple return x / x[n bars ago] - 1, not log return. Requires n+1 valid bars. |
@@ -49,6 +52,7 @@
 | `TS_COUNT` | condition, window | series | ts | window | Number of true conditions over n bars. Any unknown invalidates the window. |
 | `TS_COV` | series, series, window | series | ts | window | Rolling sample covariance of x and y over n jointly valid bars, ddof=1. |
 | `TS_KURT` | series, window | series | ts | window | Bias-corrected excess kurtosis over n bars (normal=0). Null for constant windows. |
+| `TS_KURT_POP` | series, window | series | ts | window | Population excess kurtosis (bias=True, Fisher) over n finite bars. |
 | `TS_LINEAR_DECAY` | series, window | series | ts | window | Weighted mean over n bars, with weights 1 (oldest) through n (newest). |
 | `TS_MAX` | series, window | series | ts | window | Maximum x over the last n bars. |
 | `TS_MEAN` | series, window | series | ts | window | Arithmetic mean of x over the last n bars. |
@@ -59,7 +63,9 @@
 | `TS_RANK` | series, window | series | ts | window | Current x's ascending average rank within n bars, divided by n. |
 | `TS_RANKCORR` | series, series, window | series | ts | window | Rolling Spearman correlation, reranking x and y inside each n-bar window. |
 | `TS_RATE` | condition, window | series | ts | window | Fraction of true conditions over n bars. Any unknown invalidates the window. |
+| `TS_RESID_STD3` | series, series, series, series, window | series | ts | window | Sample std of OLS residuals of y on intercept, x1, x2, x3 over n bars. Requires complete observations and rank 4; ddof=1, not regression degrees of freedom. |
 | `TS_SKEW` | series, window | series | ts | window | Bias-corrected skewness over n bars. Constant windows yield null. |
+| `TS_SKEW_POP` | series, window | series | ts | window | Population skewness (bias=True) over n finite bars; constant windows null. |
 | `TS_STD` | series, window | series | ts | window | Sample standard deviation over n bars, ddof=1. |
 | `TS_SUM` | series, window | series | ts | window | Sum of x over the last n bars, including the current bar. |
 | `TS_VAR` | series, window | series | ts | window | Sample variance over n bars, ddof=1. |

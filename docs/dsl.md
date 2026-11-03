@@ -50,7 +50,12 @@ profile 的 `panel` 决定。
 - Float64；每个中间结果的 NaN/Inf 归一为 null。窗口包含当前 Bar，要求完整有效历史。
 - 除数绝对值不超过 `1e-12`、非法对数/平方根/幂返回 null；0 的非正数次幂返回 null。
 - `POWER(x,p)` 使用静态指数；`SIGNED_POWER` 为 `sign(x)*abs(x)^p`。
-- 方差、标准差、协方差采用 ddof=1；偏度和 Fisher 超额峰度采用偏差修正。
+- 方差、标准差、协方差采用 ddof=1；`TS_SKEW/TS_KURT` 采用偏差修正。
+  `TS_SKEW_POP/TS_KURT_POP` 显式使用总体矩（bias=True），不改变原算子的身份或数值。
+- `OBS_LAG(x,n)` 只读取同一连续组内第 n 行之前的端点，允许中间有 null；
+  原 `DELAY` 仍要求 n+1 行完整。自然月稀疏数据须先补齐日历月的空行，不能压缩时间。
+- `TS_RESID_STD3(y,x1,x2,x3,n)` 对完整窗口拟合带截距的三因子 OLS，要求 n≥5、设计矩阵
+  秩为 4；返回残差样本标准差 ddof=1，不是按回归自由度计算的标准误。
 - `TS_RANK` 为当前值平均秩/窗口长度；`TS_ARGMIN/MAX` 为距今 Bar 数，并列取最近者。
 - `TS_CORR` 为 Pearson；`TS_RANKCORR` 在每个同一窗口内分别求平均秩后计算 Pearson。
 - `TS_PROD` 保留负数和零；溢出返回 null。线性衰减权重从旧到新为 1…n，并归一化。
@@ -68,8 +73,29 @@ profile 的 `panel` 决定。
   并在已知缺失交易日、无效行情或停牌处重置。期货 `close` 是未复权真实合约价格，
   product panel 的价格窗口会包含换月价差跳变。未建立完整历史日内时段表，不能识别所有缺 Bar。
 
-基础清单见 [60 个算子](operators.md)。排名和极值等需要专用计算时使用有界数组批处理，
+`CS_LAGGED_MEAN(return,membership,min_holdings,coverage)` 和
+`CS_LAGGED_SPREAD(return,signal,membership,tail_fraction,coverage)` 使用上一面板时间戳的
+成员条件与信号决定持仓，再计算当前特征收益。前者要求最少持仓数，后者每端取
+`floor(N*tail_fraction)`；并列按当前 panel 的 exchange 与资产身份稳定排序。
+coverage 范围 `(0,1]`，tail_fraction 范围 `(0,0.5]`。缺失持仓计入覆盖分母，不能用别的
+排名成员替换；通过覆盖后对仍有报价的固定持仓等权重算。组合收益广播给当前截面所有行。
+输入必须是历史可知的特征收益，不允许标签字段；月频 BGR 配方使用上一自然月持仓。
+在普通 5m 表达式中，“上一时间戳”就是上一面板 5m 时刻，不自动变成上月。
+
+基础清单见 [算子目录](operators.md)。版本可固定允许的规范算子及语义版本；未列入的算子
+不能通过别名调用。排名和极值等需要专用计算时使用有界数组批处理，
 不把单个因子整体转换为 pandas，也不在窗口上调用逐行 Python 回调。
+
+自然月降频由 `operators/calendar.py::calendar_months` 在数据适配层执行。支持 last、sum、
+sum_squares、count、mean、max、compound，显式声明覆盖率和最少观察数，缺月保留空行。
+这是有日期的面板聚合接口，不能作为普通 series DSL 函数调用。
+Zookeeper 的日频表达式、月聚合规则、月频因子表达式分别见
+[pipeline.json](../src/alpha_atlas/factor_libraries/zookeeper/pipeline.json) 和
+[factors_v2.jsonl](../src/alpha_atlas/factor_libraries/zookeeper/factors_v2.jsonl)。
+月频表达式在独立月面板运行，适配器随后精确连接上月值到 5m 行。
+`$zk_mom12` 已发布到 5m 后，`TS_MEAN($zk_mom12,12)` 是 12 根 5m，不是 12 个月；
+本次没有新增 `@1mo` 语法。公共 context 的 `prepared_fields` 会说明这些字段的频率、
+发布时间和准备公式，不暴露版本 ID、fold、日期或数据路径。
 
 ## 高周期特征与无前视广播
 

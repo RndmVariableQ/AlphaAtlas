@@ -183,11 +183,11 @@ class TrialFeedback:
     accepted: bool
     reason: str
     max_abs_corr: float | None = None
-    nearest_factor: str | None = None
+    nearest_factor_id: str | None = None
     comparison_complete: bool = True
     library_version: int = 0
     correlation_scope: str = "validation_pooled_spearman"
-    trial_index: int = 0
+    factor_trial_index: int = 0
 
 
 @dataclass(frozen=True)

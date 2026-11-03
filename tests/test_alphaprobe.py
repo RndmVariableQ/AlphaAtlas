@@ -32,10 +32,11 @@ from alpha_atlas.storage import RunStore
 class FakeModels:
     """Deterministic protocol responses, no credentials, network, or vendor SDK."""
 
-    def __init__(self, *, interrupt_phase=None, malformed=False):
+    def __init__(self, *, interrupt_phase=None, malformed=False, fenced=False):
         self.calls = []
         self.interrupt_phase = interrupt_phase
         self.malformed = malformed
+        self.fenced = fenced
 
     def chat(self, system, payload):
         phase = ("analyst", "execution", "validator")[len(payload["previous_stages"])]
@@ -58,7 +59,10 @@ class FakeModels:
                     for i in range(count)
                 ]
             }
-        return json.dumps(response), {"prompt_tokens": 5, "completion_tokens": 2}
+        text = json.dumps(response)
+        if self.fenced:
+            text = "```json\n" + text + "\n```"
+        return text, {"prompt_tokens": 5, "completion_tokens": 2}
 
     def embed(self, texts):
         self.calls.append(("embedding", list(texts)))
@@ -313,8 +317,9 @@ def test_failed_root_evaluation_cannot_enter_graph(tmp_path):
 
 
 @pytest.mark.parametrize("attempts", [1, 5, 6])
-def test_default_cold_start_generates_roots_within_budget_then_evolves(project, attempts):
-    models = FakeModels()
+@pytest.mark.parametrize("fenced", [False, True])
+def test_default_cold_start_generates_roots_within_budget_then_evolves(project, attempts, fenced):
+    models = FakeModels(fenced=fenced)
     search = AlphaProbeSearch(7, models=models)
     path = run(project, "ashare", "fold1", "alphaprobe", 7, attempts=attempts, method_impl=search)
     trials = RunStore(path).trials()
@@ -322,6 +327,7 @@ def test_default_cold_start_generates_roots_within_budget_then_evolves(project, 
     assert len(trials) == attempts
     assert search.roots == [] and search.root_index == 0
     first = search.batches[0]
+    assert all(text.startswith("```json") == fenced for text in first["responses"].values())
     assert first["parent"] is None and first["trace"] == [] and first["count"] == count
     assert len(first["outcomes"]) == count
     assert [t["feedback"]["candidate"]["expression"] for t in trials[:count]] == [
@@ -456,7 +462,7 @@ class QueryModels(FakeModels):
                 raise KeyboardInterrupt("after lookup")
             results = payload["query_results"][0]["results"]
             assert "adj_close" in results[0]["fields"]
-            assert len(results[0]["operators"]) == 60
+            assert len(results[0]["operators"]) == 66
             assert results[0]["expression_rules"]["max_nodes"] == 100
             assert "members" in results[1] and "results" in results[2] and "error" in results[3]
             assert set(payload["context"]) == {
@@ -472,6 +478,19 @@ class QueryModels(FakeModels):
                 "reference_library",
             }
         return super().chat(system, payload)
+
+
+def test_empty_queries_do_not_hide_alphaprobe_final_responses(project):
+    class EmptyQueries(FakeModels):
+        def chat(self, system, payload):
+            text, usage = super().chat(system, payload)
+            return json.dumps({**json.loads(text), "queries": []}), usage
+
+    search = method(EmptyQueries(), initial_expressions=())
+    path = run(project, "ashare", "fold1", "alphaprobe", 7, attempts=1, method_impl=search)
+    assert search.usage["chat_requests"] == 3
+    assert len(RunStore(path).trials()) == 1
+    assert all(not records for records in search.batches[0]["queries"].values())
 
 
 def test_model_metadata_queries_resume_without_repeating_lookup(project):
@@ -554,7 +573,7 @@ def test_trial_and_batch_resume_does_not_repeat_evaluation_or_generation(
 
     def tell(self, feedback):
         original_tell(self, feedback)
-        if boundary == "after_tell" and feedback[0].trial_index == 3:
+        if boundary == "after_tell" and feedback[0].factor_trial_index == 3:
             raise KeyboardInterrupt("injected tell")
 
     def save(self, search, *args, **kwargs):
@@ -581,7 +600,7 @@ def test_trial_and_batch_resume_does_not_repeat_evaluation_or_generation(
                 method_impl=method(**options),
             )
     path = next((project / "artifacts/runs").iterdir())
-    committed = {p: p.read_bytes() for p in (path / "trials").glob("*.json")}
+    committed = {p: p.read_bytes() for p in (path / "factor_trials").glob("*.json")}
     models = FakeModels()
     resume(project, path, method_impl=method(models, **options))
     assert not models.calls

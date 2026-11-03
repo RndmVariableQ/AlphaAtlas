@@ -31,7 +31,7 @@ def test_context_is_immutable_current_and_run_local(project):
             context = session.get_context()
             snapshots.append(context)
             catalog_before = session.list_operators()
-            assert len(catalog_before) == 60
+            assert len(catalog_before) == 66
             assert session.get_fields() == ("adj_close", "volume")
             assert set(asdict(context)) == {
                 "asset",
@@ -74,7 +74,7 @@ def test_context_is_immutable_current_and_run_local(project):
             assert registration.accepted
             assert not session.register_operator(recipe).accepted
             catalog = {o["name"]: session.get_operator(o["name"]) for o in session.list_operators()}
-            assert len(catalog) == 61 and len(catalog_before) == 60
+            assert len(catalog) == 67 and len(catalog_before) == 66
             custom = catalog["MEAN_TWICE"]
             assert custom["version"] == registration.operator_id
             assert custom["kind"] == "composite" and custom["history"] == "expanded"
@@ -137,7 +137,7 @@ def test_context_describes_code_operator_history_and_excludes_rejected(
     bad = replace(submitted, name="bad_name")
     assert not session.register_operator(bad).accepted
     catalog = {o["name"]: session.get_operator(o["name"]) for o in session.list_operators()}
-    assert len(catalog) == 61 and "bad_name" not in catalog
+    assert len(catalog) == 67 and "bad_name" not in catalog
     operator = catalog[submitted.name]
     assert operator["kind"] == "group_batch" and operator["scope"] == scope
     assert operator["output"] == "series" and operator["version"] == feedback.operator_id
@@ -172,8 +172,13 @@ def test_report_budget_registration_empty_library_and_oos(project):
     assert "OOS 已执行，冻结因子库为空" in (path / "report.md").read_text(encoding="utf-8")
 
 
-def test_report_rebuild_only_reads_records_and_renders_members_and_failed_oos(project, monkeypatch):
+@pytest.mark.parametrize("legacy_directory", [False, True])
+def test_report_rebuild_only_reads_records_and_renders_members_and_failed_oos(
+    project, monkeypatch, legacy_directory
+):
     path = run(project, "ashare", "fold1", "atlas", 42, attempts=5)
+    if legacy_directory:
+        (path / "factor_trials").rename(path / "trials")
     frozen = read_json(path / "frozen/library.json")
     assert frozen["factors"]
     identity = frozen["factors"][0]["compiled"]["factor_id"]
@@ -204,6 +209,8 @@ def test_report_rebuild_only_reads_records_and_renders_members_and_failed_oos(pr
     monkeypatch.setattr("alpha_atlas.runner.ParqMarketData.load_features", forbid)
     monkeypatch.setattr("alpha_atlas.runner.execute", forbid)
     report = write_report(path).read_text(encoding="utf-8")
+    trial_directory = "trials" if legacy_directory else "factor_trials"
+    assert f"[因子评估记录]({trial_directory}/)" in report
     assert "val 原始 IC" in report and "val 正向 IC" in report and "累计成员" in report
     assert "compute_error" in report and "bad \\| &lt;script&gt;<br>line" in report
     assert "有效样本为 0" in report
@@ -264,7 +271,26 @@ def test_progress_lines_handle_chinese_wrapping_and_control_characters(caplog):
     lines = message.splitlines()
     assert all(line.startswith("  ") and _display_width(line) <= 79 for line in lines)
     assert not any(line.startswith(("+", "|")) for line in lines)
-    assert "中文" in message and "—" in message and "\x1b" not in message
+    assert "中文" in message and "IC:" not in message and "\x1b" not in message
+
+
+def test_progress_preserves_long_paths_reasons_and_reminders(caplog, monkeypatch):
+    from alpha_atlas.reporting import _display_width, terminal_progress
+
+    monkeypatch.setattr("alpha_atlas.reporting._terminal_width", lambda: 40)
+    path = "/synthetic/" + "long-directory/" * 10 + "report.md"
+    reason = "需要重新验证完整历史和边界条件" * 10
+    with caplog.at_level(logging.INFO, logger="alpha_atlas.progress"):
+        terminal_progress("运行失败", 报告=path, 原因=reason, 提醒=None)
+        terminal_progress(
+            "Explorer", transient=True, 计划=397, 对话="21/40", 提醒="优先收敛并提交方向"
+        )
+    messages = [record.getMessage() for record in caplog.records]
+    assert path in "".join(line.strip() for line in messages[0].splitlines())
+    assert reason in "".join(line.strip() for line in messages[0].splitlines())
+    assert "提醒" not in messages[0]
+    assert "优先收敛并提交方向" in "".join(line.strip() for line in messages[1].splitlines())
+    assert all(_display_width(line) <= 40 for message in messages for line in message.splitlines())
 
 
 @pytest.mark.parametrize("defined", [True, False])
@@ -289,22 +315,24 @@ def test_candidate_result_shows_summary_and_full_expression(caplog, defined):
         library_version=int(defined),
     )
     with caplog.at_level(logging.INFO, logger="alpha_atlas.progress"):
-        terminal_candidate(feedback, index=1, limit=100, elapsed=1.35, total=26.27)
+        terminal_candidate(
+            feedback, index=1, limit=100, elapsed=1.35, total=26.27, research_plan_index=397
+        )
     message = caplog.records[-1].getMessage()
     lines = message.strip().splitlines()
     assert len(lines) >= (6 if defined else 7)
     assert all(_display_width(line) <= 80 for line in lines)
     assert f"{'✓ 入库' if defined else '! 拒绝'} · 1/100" in lines[0]
+    assert "[计划 #397 · 评估]" in lines[0]
     assert f"已入库 {int(defined)}" in lines[0]
-    val_ic = "+0.0187" if defined else "—"
-    assert f"IC(train/val) -0.0311/{val_ic}" in lines[0]
-    assert "覆盖 99.7%" in lines[0]
-    assert "公式: 短期价格均值 = TS_MEAN($close,12)" in lines[1]
+    assert "IC(train/val)" not in message
+    assert "覆盖: 99.7%" in message and "因子方向: 反向 (-1)" in message
+    assert "名称: 短期价格均值" in message and "公式:\n      TS_MEAN($close,12)" in message
     assert "训练 IC（原始）" in message and "验证 IC（定向）" in message
     assert "√成交额加权 Pearson *" in message
     assert "-0.031132" in message
     assert ("+0.018719" if defined else "—") in message
-    assert f"* 主指标：{name}" in message
+    assert "* 主指标" in message
     if defined:
         assert "behavior_duplicate" not in message
         with caplog.at_level(logging.INFO, logger="alpha_atlas.progress"):
@@ -316,15 +344,15 @@ def test_candidate_result_shows_summary_and_full_expression(caplog, defined):
                 total=183.07,
             )
         duplicate = caplog.records[-1].getMessage()
-        assert "behavior_duplicate" in duplicate and "+0.0187" in duplicate
+        assert "behavior_duplicate" in duplicate and "+0.018719" in duplicate
         assert "短期价格均值" in duplicate
     else:
-        assert "IC(train/val) -0.0311/—" in message and "undefined_val_metric" in message
+        assert "undefined_val_metric" in message
 
 
-def test_candidate_result_shows_all_futures_metrics_in_primary_order(caplog):
+def test_candidate_result_shows_weighted_futures_metrics_in_primary_order(caplog):
     from alpha_atlas.contracts import Candidate, EvaluationReport, Metric, TrialFeedback
-    from alpha_atlas.reporting import _display_width, terminal_candidate
+    from alpha_atlas.reporting import _display_width, metric_text, terminal_candidate
 
     values = (
         ("time_series_weighted_pearson_ic", -0.004295, 0.002212),
@@ -348,15 +376,18 @@ def test_candidate_result_shows_all_futures_metrics_in_primary_order(caplog):
     message = caplog.records[-1].getMessage()
     lines = message.splitlines()
     assert all(_display_width(line) <= 80 for line in lines)
-    assert "√成交额加权 Pearson *" in lines[5]
-    assert "-0.004295" in lines[5] and "+0.002212" in lines[5]
-    assert "品种等权 Pearson" in lines[6]
-    assert "+0.002650" in lines[6] and "-0.001274" in lines[6]
-    assert "√成交额加权 Spearman" in lines[7]
-    assert "+0.001023" in lines[7] and "+0.004724" in lines[7]
-    assert "品种等权 Spearman" in lines[8]
-    assert "+0.001241" in lines[8] and "+0.004633" in lines[8]
-    assert "* 主指标：time_series_weighted_pearson_ic" in lines[9]
+    pearson = next(line for line in lines if "√成交额加权 Pearson *" in line)
+    spearman = next(line for line in lines if "√成交额加权 Spearman" in line)
+    assert "-0.004295" in pearson and "+0.002212" in pearson
+    assert "+0.001023" in spearman and "+0.004724" in spearman
+    assert lines.index(pearson) < lines.index(spearman)
+    assert "品种等权" not in message
+    assert "* 主指标" in message
+    progress = metric_text(m for m in metrics if m.split == "val")
+    assert "√成交额加权 Pearson +0.002212" in progress
+    assert "√成交额加权 Spearman +0.004724" in progress
+    assert "品种等权" not in progress
+    assert report.metrics == metrics
 
 
 def test_candidate_expression_preserves_source_lines_and_wraps_long_lines(caplog, monkeypatch):
@@ -433,8 +464,8 @@ def test_cli_progress_stays_on_stderr_and_quiet_preserves_results(project):
     assert read_json(Path(result["run_dir"]) / "oos.json") == report
     second, output = cli(*args, "--quiet")
     assert output == ""
-    first_trials = read_json(Path(result["run_dir"]) / "trials/00000001.json")
-    second_trials = read_json(Path(second["run_dir"]) / "trials/00000001.json")
+    first_trials = read_json(Path(result["run_dir"]) / "factor_trials/00000001.json")
+    second_trials = read_json(Path(second["run_dir"]) / "factor_trials/00000001.json")
     assert first_trials["feedback"]["accepted"] == second_trials["feedback"]["accepted"]
     assert (
         first_trials["feedback"]["report"]["metrics"]

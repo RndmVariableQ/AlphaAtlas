@@ -1,0 +1,11 @@
+{"name": "hp1", "status": "excluded", "reason": "缺少与中国期货品种对应且可按发布时间对齐的 CFTC 分类持仓"}
+{"name": "hp12", "status": "excluded", "reason": "缺少与中国期货品种对应且可按发布时间对齐的 CFTC 分类持仓"}
+{"name": "hptot12", "status": "excluded", "reason": "缺少与中国期货品种对应且可按发布时间对齐的 CFTC 分类持仓"}
+{"name": "sp1", "status": "excluded", "reason": "缺少与中国期货品种对应且可按发布时间对齐的 CFTC 分类持仓"}
+{"name": "sp12", "status": "excluded", "reason": "缺少与中国期货品种对应且可按发布时间对齐的 CFTC 分类持仓"}
+{"name": "sptot12", "status": "excluded", "reason": "缺少与中国期货品种对应且可按发布时间对齐的 CFTC 分类持仓"}
+{"name": "hp112", "status": "excluded", "reason": "缺少与中国期货品种对应且可按发布时间对齐的 CFTC 分类持仓"}
+{"name": "b_inf36", "status": "excluded", "reason": "缺少按历史发布时间对齐的美国通胀或汇率序列及确定的暴露定义"}
+{"name": "b_inf60", "status": "excluded", "reason": "缺少按历史发布时间对齐的美国通胀或汇率序列及确定的暴露定义"}
+{"name": "b_fx36", "status": "excluded", "reason": "缺少按历史发布时间对齐的美国通胀或汇率序列及确定的暴露定义"}
+{"name": "b_fx60", "status": "excluded", "reason": "缺少按历史发布时间对齐的美国通胀或汇率序列及确定的暴露定义"}

@@ -225,7 +225,9 @@ def evaluate(root: Path, fold_id: str, bars_per_day: int, *, asset: str = "futur
                 compiled=compiled,
             )
 
-        feedback = library.consider(candidate, report, values, trial_index=index, commit=commit)
+        feedback = library.consider(
+            candidate, report, values, factor_trial_index=index, commit=commit
+        )
         train = evaluator._training_values(compiled.factor_id, candidate)
         archive.append(
             {

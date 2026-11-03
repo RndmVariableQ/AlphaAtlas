@@ -2,6 +2,7 @@ import json
 from dataclasses import replace
 
 import pytest
+from test_checkpoint import legacy_field_names
 from test_evaluation_library import RULES, evaluator
 
 from alpha_atlas.contracts import Candidate
@@ -9,6 +10,7 @@ from alpha_atlas.expressions import compile_factor
 from alpha_atlas.library import FactorLibrary
 from alpha_atlas.methods import make_method
 from alpha_atlas.methods.alphaprobe import AlphaProbeSearch
+from alpha_atlas.methods.alphaschema import AlphaSchemaSearch
 from alpha_atlas.methods.annealing import AnnealingLLMSearch
 from alpha_atlas.methods.mcts_llm import MCTSLLMSearch
 from alpha_atlas.methods.v1 import V1Search
@@ -17,11 +19,76 @@ from alpha_atlas.session import SearchSession
 from alpha_atlas.storage import RunStore
 
 
+@pytest.mark.parametrize("legacy_names", [False, True])
+def test_internal_trial_read_uses_only_committed_facts_without_budget_or_recomputation(
+    tmp_path, monkeypatch, legacy_names
+):
+    service = evaluator()
+    store = RunStore(tmp_path)
+    current = SearchSession(service, FactorLibrary(RULES), store, 3)
+    feedback = current.evaluate(Candidate("$x"))
+    expected = current.evaluation_result(feedback)
+    expected.pop("remaining_attempts")
+    expected = json.loads(json.dumps(expected))
+    current.evaluate(Candidate("$missing"))
+    for path in (tmp_path / "factor_trials").glob("*.json"):
+        if legacy_names:
+            path.write_text(json.dumps(legacy_field_names(json.loads(path.read_text()))))
+    originals = {path: path.read_bytes() for path in (tmp_path / "factor_trials").glob("*.json")}
+    attempts, version = current.attempts_used, current.get_library().version
+    monkeypatch.setattr(store, "trials", lambda: pytest.fail("history read must not scan trials"))
+    monkeypatch.setattr(service, "evaluate", lambda *_: pytest.fail("no reevaluation"))
+    monkeypatch.setattr(current, "remaining_budget", lambda: pytest.fail("no live budget read"))
+    assert current.get_trial(1) == expected
+    assert current.get_trial(2)["status"] == "compile_error"
+    changed = current.get_trial(1)
+    changed["metrics"].clear()
+    assert current.get_trial(1) == expected
+    assert current.attempts_used == attempts and current.get_library().version == version
+    assert all(path.read_bytes() == value for path, value in originals.items())
+    with pytest.raises(ValueError, match="Unknown tool"):
+        current.query("get_trial", {"factor_trial_index": 1})
+
+
+@pytest.mark.parametrize("index", [0, -1, True, "1", 1.5])
+def test_internal_trial_read_requires_a_positive_integer(tmp_path, index):
+    with pytest.raises(ValueError, match="positive integer"):
+        RunStore(tmp_path).trial(index)
+
+
+@pytest.mark.parametrize("damage", ["missing", "json", "version", "index", "feedback", "report"])
+def test_internal_trial_read_fails_explicitly_on_missing_or_damaged_records(tmp_path, damage):
+    current = SearchSession(evaluator(), FactorLibrary(RULES), RunStore(tmp_path), 1)
+    current.evaluate(Candidate("$x"))
+    path = tmp_path / "factor_trials/00000001.json"
+    row = json.loads(path.read_text())
+    error = ValueError
+    if damage == "missing":
+        path.unlink()
+        error = FileNotFoundError
+    elif damage == "json":
+        path.write_text("{")
+    else:
+        if damage == "version":
+            row["format_version"] = -1
+        elif damage == "index":
+            row["factor_trial_index"] = 2
+        elif damage == "feedback":
+            row["feedback"]["factor_trial_index"] = 2
+        else:
+            row["feedback"]["report"] = None
+        path.write_text(json.dumps(row))
+    with pytest.raises(error):
+        current.get_trial(1)
+    assert current.attempts_used == 1
+
+
 @pytest.mark.parametrize("reference", ["", "futures_cta"])
 def test_all_methods_share_context_library_access_and_evaluation(tmp_path, reference):
     results = []
     llm_methods = {
         "alphaprobe": AlphaProbeSearch,
+        "alphaschema": AlphaSchemaSearch,
         "mcts_llm": MCTSLLMSearch,
         "annealing": AnnealingLLMSearch,
         "v1": V1Search,
@@ -102,6 +169,73 @@ def test_shared_queries_cannot_evaluate_or_expose_internal_budget(tmp_path):
     assert current.get_context().remaining_attempts == 0
 
 
+@pytest.mark.parametrize("reference", ["", "futures_cta"])
+def test_reference_source_alias_uses_only_enabled_library_and_no_evaluation(tmp_path, reference):
+    service = evaluator()
+    service.profile["frequency"] = "1d"
+    current = SearchSession(
+        service, FactorLibrary({**RULES, "reference_library": reference}), RunStore(tmp_path), 3
+    )
+    arguments = {"source": "futures_cta", "query": "tsmom_63"}
+    before = dict(arguments)
+    if reference:
+        aliased = current.query("library_search", arguments)
+        assert aliased == current.query("library_search", {**arguments, "source": "reference"})
+        assert aliased["total"] == 1 and aliased["results"][0]["source"] == "reference"
+    else:
+        with pytest.raises(ValueError, match="source must be all, run or reference"):
+            current.query("library_search", arguments)
+        assert current.query("library_search", {"source": "reference"})["total"] == 0
+    assert arguments == before
+    assert current.remaining_budget() == 3 and current.get_library().version == 0
+    assert not current._store.trials()
+
+
+@pytest.mark.parametrize(
+    "tool,arguments,expected",
+    [
+        ("library_get", {}, ("factor_id", "library_list/search")),
+        ("library_get", {"factor_id": None}, ("nonempty text", "library_get")),
+        ("library_get", {"factor_id": []}, ("nonempty text", "library_get")),
+        ("library_get", {"factor_id": "trial:1"}, ("history reference", "admitted factor_id")),
+        ("library_search", {"source": "library"}, ("source must", "run/reference/all")),
+        ("library_search", {"source": []}, ("source must", "run/reference/all")),
+        ("library_search", {"limit": 30}, ("[1,20]", "paging")),
+        ("library_search", {"limit": True}, ("[1,20]", "integer")),
+        ("library_search", {"offset": -1}, ("offset", "paging")),
+        ("library_search", {"limit": "10"}, ("[1,20]", "integer")),
+        ("library_list", {"limit": 101}, ("[1,100]", "library_list")),
+        ("library_search", {"field": "x"}, ("unexpected keyword", "library_search")),
+        ("library_get", {1: "id"}, ("keywords must be strings", "factor_id")),
+        ("get_context", {"target": "test"}, ("unexpected keyword", "get_context()")),
+        ("library_stats", {"limit": 1}, ("unexpected keyword", "no arguments")),
+        ("library_get", None, ("arguments must be an object", "factor_id")),
+        ("library_search", [], ("arguments must be an object", "library_search")),
+        ("library_search", '{"source":"run"}', ("arguments must be an object", "source")),
+    ],
+)
+def test_shared_tool_errors_identify_parameters_and_preserve_budget(
+    tmp_path, tool, arguments, expected
+):
+    current = SearchSession(evaluator(), FactorLibrary(RULES), RunStore(tmp_path), 3)
+    with pytest.raises(ValueError) as captured:
+        current.query(tool, arguments)
+    assert str(captured.value).startswith(tool + ":")
+    assert all(fragment in str(captured.value) for fragment in expected)
+    assert not current._store.trials() and current.remaining_budget() == 3
+    assert current.get_library().version == 0
+    assert current.query("library_get", {"factor_id": "unknown"}) is None
+
+
+@pytest.mark.parametrize("tool", [[], {}, None, "get_trial", "evaluate", "register_operator"])
+def test_invalid_tool_names_return_public_help_without_dispatch(tmp_path, tool):
+    current = SearchSession(evaluator(), FactorLibrary(RULES), RunStore(tmp_path), 3)
+    with pytest.raises(ValueError, match="Unknown tool") as captured:
+        current.query(tool, {})
+    assert "library_search" in str(captured.value) and "library_get" in str(captured.value)
+    assert not current._store.trials() and current.remaining_budget() == 3
+
+
 @pytest.mark.parametrize("frequency", ["5m", "1d"])
 def test_adjusted_context_explains_only_supported_scopes_without_expanding_permissions(
     tmp_path, frequency
@@ -112,6 +246,7 @@ def test_adjusted_context_explains_only_supported_scopes_without_expanding_permi
     context = current.query("get_context", {})
     timeframes = context["expression_rules"]["timeframes"]
     assert timeframes["fields"] == current._fields
+    assert f"$adj_close uses {frequency} bars." in timeframes["semantics"]
     assert "finite positive volume" in timeframes["semantics"]
     assert "Prefer available adj_* prices" in context["expression_rules"]["numeric_rules"]
     assert (
@@ -119,11 +254,13 @@ def test_adjusted_context_explains_only_supported_scopes_without_expanding_permi
         in context["evaluation_rules"]["panel_semantics"]
     )
     if frequency == "5m":
+        assert all(scope in timeframes["semantics"] for scope in timeframes["suffixes"])
         assert "$adj_close@30m" in timeframes["semantics"]
         assert "20 completed 30m bars" in timeframes["semantics"]
         assert current.validate_expression("$adj_close@30m / $adj_vwap@30m - 1")["error"] is None
         assert current.validate_expression("$close@30m")["error"]
     else:
         assert not timeframes["suffixes"]
+        assert "No higher timeframes." in timeframes["semantics"]
         assert "$adj_close@30m" not in timeframes["semantics"]
     assert current.attempts_used == 0

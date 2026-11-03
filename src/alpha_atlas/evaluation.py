@@ -9,7 +9,9 @@ from collections import OrderedDict
 from dataclasses import asdict, replace
 from pathlib import Path
 
+import numpy as np
 import polars as pl
+from numpy.typing import ArrayLike
 
 from alpha_atlas.contracts import (
     Candidate,
@@ -182,41 +184,261 @@ def metric(frame: pl.DataFrame, name: str, split: str, *, correlation=None, weig
     return metrics(frame, name, split, correlation=correlation, weights=weights)[0]
 
 
-def search_diagnostics(
-    panel, period, name, direction, weights=None, *, factor_panel="contract", clipping=None
-):
-    """Train-only stability and explicit holdings turnover; never substitute missing statistics.
+def prediction_error_summary(
+    target: ArrayLike,
+    prediction: ArrayLike,
+    baseline: ArrayLike,
+    *,
+    weights: ArrayLike | None = None,
+) -> dict[str, int | float | None]:
+    """Squared error on an explicitly aligned, nonempty sample, with optional row weights.
 
-    ICIR uses daily primary IC (futures: first pool within product/day), sample std,
-    at least two valid days. Futures turnover uses unit signed holdings per native
-    bar and continuity segment. Stocks use daily demeaned ranks / gross exposure.
-    Both turnovers are half the absolute change, excluding initial positions.
+    Target and prediction must be finite one-dimensional arrays of equal length.
+    Baseline may also be a finite scalar. No observations are silently removed;
+    the caller owns alignment, baseline fitting and the evaluation split.
+    Weights must be finite, nonnegative and aligned, with positive total weight.
+    Product-level aggregation can assign each row its product weight / sample count.
+    Relative reduction is a fraction, not a percentage, and is undefined when
+    baseline error is zero. Weighted SSE uses the supplied weights, not row counts.
     """
-    futures = name in FUTURES_METRICS
-    if factor_panel not in {"contract", "product"}:
-        raise ValueError("panel must be 'contract' or 'product'")
+    arrays = {}
+    inputs = {"target": target, "prediction": prediction, "baseline": baseline}
+    if weights is not None:
+        inputs["weights"] = weights
+    for name, values in inputs.items():
+        try:
+            array = np.asarray(values)
+            if np.iscomplexobj(array):
+                raise ValueError("complex values are not supported")
+            array = array.astype(np.float64, copy=False)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(f"{name} must contain real numeric values") from exc
+        if array.ndim != 1 and not (name == "baseline" and array.ndim == 0):
+            raise ValueError(f"{name} must be one-dimensional; only baseline may be scalar")
+        if not np.isfinite(array).all():
+            raise ValueError(f"{name} must contain only finite values")
+        arrays[name] = array
+    target = arrays["target"]
+    if not target.size:
+        raise ValueError("target must be nonempty")
+    for name in ("prediction", "baseline", *(["weights"] if weights is not None else [])):
+        if arrays[name].ndim and arrays[name].shape != target.shape:
+            raise ValueError(f"{name} must have the same length as target")
+    if weights is not None and (arrays["weights"] < 0).any():
+        raise ValueError("weights must be nonnegative")
+    try:
+        with np.errstate(over="raise", invalid="raise", divide="raise"):
+            error = np.square(target - arrays["prediction"])
+            baseline_error = np.square(target - arrays["baseline"])
+            total = target.size
+            if weights is not None:
+                total = arrays["weights"].sum()
+                if total <= 0:
+                    raise ValueError("weights must have positive sum")
+                error *= arrays["weights"]
+                baseline_error *= arrays["weights"]
+            sse, baseline_sse = error.sum(), baseline_error.sum()
+            reduction = (baseline_sse - sse) / baseline_sse if baseline_sse > 0 else None
+    except FloatingPointError as exc:
+        raise ValueError("prediction error computation overflowed") from exc
+    n = int(target.size)
     result = {
-        "version": "icir_turnover_v1",
-        "split": "train",
-        "icir": None,
-        "icir_days": 0,
-        "turnover": None,
-        "turnover_observations": 0,
-        "turnover_unit": "native_bar_unit_position" if futures else "daily_rank_portfolio",
+        "n": n,
+        "sse": float(sse),
+        "baseline_sse": float(baseline_sse),
+        "mse": float(sse / total),
+        "baseline_mse": float(baseline_sse / total),
+        "relative_mse_reduction": float(reduction) if reduction is not None else None,
     }
-    if direction is None:
-        return result
-    scored = split_panel(panel, period)
-    if clipping is not None:
-        scored = apply_clipping(scored, clipping)
-    scored = scored.filter(pl.col("value").is_finite())
+    if weights is not None:
+        result["weight_sum"] = float(total)
+    return result
+
+
+def paired_prediction_metrics(frame, weights):
+    """Compare finite predictions on explicit common rows and common valid IC products."""
+    required = ["target", "baseline", "prediction"]
+    if (
+        not frame.height
+        or not frame.select(pl.all_horizontal(pl.col(required).is_finite().fill_null(False)))
+        .to_series()
+        .all()
+    ):
+        raise ValueError("paired predictions require nonempty finite common rows")
+    if frame["row_id"].n_unique() != frame.height:
+        raise ValueError("paired predictions require unique row_id")
+    if frame["product"].null_count():
+        raise ValueError("paired predictions require product identities")
+    if weights["product"].n_unique() != weights.height:
+        raise ValueError("duplicate product weights")
+    per_product = (
+        frame.group_by("product")
+        .agg(
+            pl.len().alias("n"),
+            ((pl.col("target") - pl.col("baseline")) ** 2).mean().alias("baseline_mse"),
+            ((pl.col("target") - pl.col("prediction")) ** 2).mean().alias("mse"),
+            pl.col("target").n_unique().alias("ny"),
+            pl.col("baseline").n_unique().alias("nb"),
+            pl.col("prediction").n_unique().alias("np"),
+            *(
+                pl.corr(name, "target", method=kind).clip(-1.0, 1.0).alias(f"{name}_{kind}")
+                for name in ("baseline", "prediction")
+                for kind in ("pearson", "spearman")
+            ),
+        )
+        .join(weights, on="product", how="inner", validate="1:1")
+        .sort("product")
+    )
+    if (
+        not per_product.height
+        or not per_product["weight"].is_finite().fill_null(False).all()
+        or (per_product["weight"] <= 0).any()
+    ):
+        raise ValueError("paired evaluation requires positive finite product weights")
+    w = per_product["weight"].to_numpy()
+    bmse, mse = (
+        float(np.average(per_product[c].to_numpy(), weights=w)) for c in ("baseline_mse", "mse")
+    )
+    if not math.isfinite(bmse) or not math.isfinite(mse):
+        raise ValueError("paired squared errors overflowed")
+    common = per_product.filter(
+        (pl.col("n") >= 5)
+        & (pl.col("ny") > 1)
+        & (pl.col("nb") > 1)
+        & (pl.col("np") > 1)
+        & pl.all_horizontal(
+            pl.col(
+                [f"{n}_{k}" for n in ("baseline", "prediction") for k in ("pearson", "spearman")]
+            ).is_finite()
+        )
+    )
+    result = {
+        "rows": frame.height,
+        "weighted_rows": int(per_product["n"].sum()),
+        "products": per_product.height,
+        "ic_rows": int(common["n"].sum()),
+        "ic_products": common["product"].to_list(),
+        "baseline_mse": bmse,
+        "mse": mse,
+        "relative_mse_reduction": 1 - mse / bmse if bmse else None,
+        "metrics": {},
+    }
+    for kind in ("pearson", "spearman"):
+        for weighting in ("weighted", "equal"):
+            values = []
+            for name in ("baseline", "prediction"):
+                values.append(
+                    float(
+                        np.average(
+                            common[f"{name}_{kind}"].to_numpy(),
+                            weights=common["weight"].to_numpy()
+                            if weighting == "weighted"
+                            else None,
+                        )
+                    )
+                    if common.height
+                    else None
+                )
+            b, p = values
+            result["metrics"][f"{weighting}_{kind}"] = {
+                "baseline": b,
+                "augmented": p,
+                "delta": p - b if b is not None else None,
+            }
+    # JSON cannot represent NaN from constant-product correlations.
+    result["per_product"] = per_product.with_columns(
+        pl.when(pl.col(c).is_finite()).then(pl.col(c)).otherwise(None).alias(c)
+        for c in per_product.columns
+        if per_product.schema[c].is_float()
+    ).to_dicts()
+    return result
+
+
+def paired_block_bootstrap(frame, weights, *, days=20, repeats=2000, seed=20261102):
+    """Year-stratified market-wide moving day blocks; pooled IC, never mean daily IC."""
+    if type(days) is not int or days < 1 or type(repeats) is not int or repeats < 1:
+        raise ValueError("bootstrap days and repeats must be positive integers")
+    paired_prediction_metrics(frame, weights)  # Fail instead of silently dropping bad rows.
+    if frame["trading_day"].null_count():
+        raise ValueError("bootstrap requires trading days")
+    dates = sorted(frame["trading_day"].unique().to_list())
+    products = sorted(set(frame["product"].to_list()) & set(weights["product"].to_list()))
+    date_index = {d: i for i, d in enumerate(dates)}
+    product_index = {p: i for i, p in enumerate(products)}
+    y, b, p = pl.col("target"), pl.col("baseline"), pl.col("prediction")
+    daily = frame.group_by("trading_day", "product").agg(
+        pl.len().alias("n"),
+        y.sum().alias("y"),
+        (y * y).sum().alias("yy"),
+        b.sum().alias("b"),
+        (b * b).sum().alias("bb"),
+        (b * y).sum().alias("by"),
+        p.sum().alias("p"),
+        (p * p).sum().alias("pp"),
+        (p * y).sum().alias("py"),
+        ((y - b) ** 2).sum().alias("be"),
+        ((y - p) ** 2).sum().alias("pe"),
+    )
+    stats = np.zeros((len(dates), len(products), 11))
+    for row in daily.iter_rows(named=True):
+        if row["product"] in product_index:
+            stats[date_index[row["trading_day"]], product_index[row["product"]]] = [
+                row[k] for k in ("n", "y", "yy", "b", "bb", "by", "p", "pp", "py", "be", "pe")
+            ]
+    if not np.isfinite(stats).all():
+        raise ValueError("bootstrap statistics overflowed")
+    rng = np.random.default_rng(seed)
+    multiplicity = np.zeros((repeats, len(dates)))
+    for year in sorted({d.year for d in dates}):
+        indices = np.array([i for i, d in enumerate(dates) if d.year == year])
+        block = min(days, len(indices))
+        for r in range(repeats):
+            starts = rng.integers(0, len(indices) - block + 1, size=math.ceil(len(indices) / block))
+            sampled = indices[(starts[:, None] + np.arange(block)).ravel()[: len(indices)]]
+            np.add.at(multiplicity[r], sampled, 1)
+    aggregate = (multiplicity @ stats.reshape(len(dates), -1)).reshape(repeats, len(products), 11)
+    n, sy, yy, sb, bb, by, sp, pp, py, be, pe = np.moveaxis(aggregate, -1, 0)
+    w = np.array([weights.filter(pl.col("product") == name)["weight"][0] for name in products])
+    with np.errstate(divide="ignore", invalid="ignore"):
+        vy, vb, vp = yy - sy * sy / n, bb - sb * sb / n, pp - sp * sp / n
+        rb = (by - sb * sy / n) / np.sqrt(vb * vy)
+        rp = (py - sp * sy / n) / np.sqrt(vp * vy)
+        # Cancellation in a constant series must not manufacture a tiny positive variance.
+        eps = 8 * np.finfo(float).eps
+        valid = (
+            (n >= 5)
+            & (vy > eps * np.abs(yy))
+            & (vb > eps * np.abs(bb))
+            & (vp > eps * np.abs(pp))
+            & np.isfinite(rb)
+            & np.isfinite(rp)
+        )
+        ic_weights = np.where(valid, w, 0)
+        delta = np.sum(np.where(valid, np.clip(rp, -1, 1) - np.clip(rb, -1, 1), 0) * w, axis=1)
+        delta /= ic_weights.sum(axis=1)
+        # Errors use all observed products, even when a prediction has no defined IC.
+        bmse = np.sum(np.where(n > 0, be / n, 0) * w, axis=1)
+        pmse = np.sum(np.where(n > 0, pe / n, 0) * w, axis=1)
+        reduction = 1 - pmse / bmse
+    output = {"block_days": days, "repeats": repeats, "seed": seed}
+    for name, values in (("delta_weighted_pearson", delta), ("relative_mse_reduction", reduction)):
+        values = values[np.isfinite(values)]
+        output[name] = {
+            "valid_replicates": len(values),
+            "interval_95": np.quantile(values, [0.025, 0.975]).tolist() if len(values) else None,
+        }
+    return output
+
+
+def _daily_ic(scored, name, weights):
+    futures = name in FUTURES_METRICS
     groups = ["trading_day", "product"] if futures else ["trading_day"]
     daily = (
         scored.group_by(groups)
         .agg(
-            pl.corr("value", "target", method="pearson" if "pearson" in name else "spearman")
-            .mul(direction)
-            .alias("ic"),
+            pl.corr("value", "target", method="pearson" if "pearson" in name else "spearman").alias(
+                "ic"
+            ),
             pl.len().alias("n"),
         )
         .filter((pl.col("n") >= 5) & pl.col("ic").is_finite())
@@ -236,6 +458,48 @@ def search_diagnostics(
                 .agg(pl.col("ic").mean())
             )
     daily = daily.sort("trading_day")
+    return daily
+
+
+def search_diagnostics(
+    panel,
+    period,
+    name,
+    direction,
+    weights=None,
+    *,
+    factor_panel="contract",
+    clipping=None,
+    version="icir_turnover_v1",
+):
+    """Train-only stability and explicit holdings turnover; never substitute missing statistics.
+
+    ICIR uses daily primary IC (futures: first pool within product/day), sample std,
+    at least two valid days. Futures turnover uses unit signed holdings per native
+    bar and continuity segment. Stocks use daily demeaned ranks / gross exposure.
+    Both turnovers are half the absolute change, excluding initial positions.
+    """
+    futures = name in FUTURES_METRICS
+    if factor_panel not in {"contract", "product"}:
+        raise ValueError("panel must be 'contract' or 'product'")
+    result = {
+        "version": version,
+        "split": "train",
+        "icir": None,
+        "icir_days": 0,
+        "turnover": None,
+        "turnover_observations": 0,
+        "turnover_unit": "native_bar_unit_position" if futures else "daily_rank_portfolio",
+    }
+    if version == "icir_turnover_lag1_v2":
+        result.update(rank_lag_diagnostics(panel, period, name, weights, factor_panel, clipping))
+    if direction is None:
+        return result
+    scored = split_panel(panel, period)
+    if clipping is not None:
+        scored = apply_clipping(scored, clipping)
+    scored = scored.filter(pl.col("value").is_finite())
+    daily = _daily_ic(scored, name, weights).with_columns(pl.col("ic") * direction)
     result["icir_days"] = daily.height
     std = daily["ic"].std(ddof=1)
     if daily.height >= 2 and std is not None and std > 1e-12:
@@ -314,6 +578,54 @@ def search_diagnostics(
     return result
 
 
+def rank_lag_diagnostics(panel, period, name, weights=None, factor_panel="contract", clipping=None):
+    """Raw signed train RankIC/IR and one-bar delay; no fitted direction or future rows.
+
+    Delay on the full train clock before dropping invalid scoring rows. Reset at the
+    configured factor-panel boundaries; never bridge missing/noneligible observations.
+    Stocks additionally require adjacent observed market days, as in a wide panel shift.
+    Apply the original factor's train bounds to both realizations without refitting.
+    """
+    train = panel.filter(pl.col("trading_day").is_between(period.start, period.end))
+    identity = GROUP if factor_panel == "contract" else ["exchange", "product"]
+    segment = "segment_id" if factor_panel == "contract" else "product_segment_id"
+    group = identity + ([segment] if segment in train.columns else [])
+    clock = "timestamp" if "timestamp" in train.columns else "trading_day"
+    train = train.sort(identity + [clock])
+    previous = pl.when(pl.col("eligible").fill_null(False) & pl.col("value").is_finite())
+    delayed = train.with_columns(previous.then(pl.col("value")).shift().over(group).alias("value"))
+    if name == "cross_sectional_spearman":
+        days = train.select("trading_day").unique().sort("trading_day").with_row_index("day_index")
+        delayed = delayed.join(days, on="trading_day").sort(identity + [clock])
+        delayed = delayed.with_columns(
+            pl.when(pl.col("day_index") - pl.col("day_index").shift().over(group) == 1)
+            .then(pl.col("value"))
+            .alias("value")
+        )
+    scored = apply_clipping(split_panel(train, period), clipping or {})
+    lagged = apply_clipping(split_panel(delayed, period), clipping or {})
+    rank_ic = metric(scored, name, "train", correlation="spearman", weights=weights)
+    lag_ic = metric(lagged, name, "train", correlation="spearman", weights=weights)
+    # Reuse exactly the shared daily ICIR aggregation, with raw sign and Spearman.
+    rank_name = name.replace("pearson", "spearman")
+    daily = _daily_ic(scored.filter(pl.col("value").is_finite()), rank_name, weights)
+    std = daily["ic"].std(ddof=1)
+    rank_icir = (
+        daily["ic"].mean() / std if daily.height >= 2 and std is not None and std > 1e-12 else None
+    )
+    return {
+        "rank_ic": rank_ic.value,
+        "rank_icir": rank_icir,
+        "rank_icir_days": daily.height,
+        "lag1_rank_ic": lag_ic.value,
+        "lag1_n_obs": lag_ic.n_obs,
+        "lag1_gap": max(0.0, rank_ic.value - lag_ic.value)
+        if rank_ic.value is not None and lag_ic.value is not None
+        else None,
+        "lag1_unit": "native_bar",
+    }
+
+
 class EvaluationService:
     def __init__(
         self,
@@ -358,7 +670,7 @@ class EvaluationService:
         ):
             raise ValueError("targets must not enter the feature panel")
         self.features = features.clone()
-        if diagnostics not in {"", "icir_turnover_v1"}:
+        if diagnostics not in {"", "icir_turnover_v1", "icir_turnover_lag1_v2"}:
             raise ValueError("unsupported search diagnostics")
         self.diagnostics = diagnostics
         self.fold = fold
@@ -593,6 +905,7 @@ class EvaluationService:
                     self.weights.get("train"),
                     factor_panel=self.panel,
                     clipping=clipping,
+                    version=self.diagnostics,
                 )
                 if self.diagnostics
                 else {},

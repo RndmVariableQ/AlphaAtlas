@@ -10,6 +10,7 @@
 | `mcts` | UCT 符号搜索 | 表达式结构基线，不是 LLM-MCTS |
 | `atlas` | 区域 UCB 预算分配 | 区域导航原型，不是完整开放式地图 |
 | [alphaprobe](alphaprobe.md) | 演化图、贝叶斯检索、三阶段 LLM 生成 | 本地算法适配，需 Chat 与 embedding 服务 |
+| [alphaschema](alphaschema.md) | 五类语义计划、覆盖探索、LightGBM 奖励代理与局部变异 | 作者代码适配；需 Chat 服务和共享滞后 RankIC 诊断 |
 | [mcts_llm](mcts_llm.md) | 公式树、五维奖励、定向改进与 FSA | 本地算法适配，需 Chat 服务和共享训练诊断 |
 | [annealing](annealing.md) | Explorer、Analyst、Miner 三 Agent；Metropolis 退火选择研究 Region | 共享平台预算、评估与准入 |
 | [V1](v1.md) (`v1`) | 同步 ChaoticTrader_Future 的 Explorer 选题、查证与三方向评分 | 保留原三 Agent 退火执行；仅更新 Explorer |

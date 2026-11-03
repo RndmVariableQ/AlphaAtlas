@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import time
 import uuid
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import date
 from pathlib import Path
 
@@ -37,6 +38,7 @@ from alpha_atlas.history import one_year_before, warmup_period
 from alpha_atlas.library import FactorLibrary
 from alpha_atlas.methods import make_method
 from alpha_atlas.methods.baselines import default_regions
+from alpha_atlas.methods.v1 import ExplorerUnresolved
 from alpha_atlas.operators import OperatorRegistry
 from alpha_atlas.operators.runtime import NumbaRuntime, RuntimeLimits
 from alpha_atlas.reporting import metric_text, terminal_progress
@@ -91,6 +93,24 @@ def _data_fields(fields, profile):
     )
 
 
+def _market(root, spec):
+    if "experiment_version" in spec:
+        from alpha_atlas.assets.versioned import open_market
+
+        return open_market(root, spec["experiment_version"])
+    return ParqMarketData(
+        root / spec["profile"]["data_dir"],
+        spec["universe"],
+        allow_incomplete=spec["allow_incomplete"],
+    )
+
+
+def _registry(spec, runtime):
+    return OperatorRegistry(
+        runtime=runtime, versions=spec.get("experiment_version", {}).get("operator_versions")
+    )
+
+
 def run(
     root: Path,
     asset: str,
@@ -104,28 +124,60 @@ def run(
     *,
     method_impl=None,
     runtime=None,
+    version: str | None = None,
 ) -> Path:
-    profile = asset_config(root, asset)
-    fold = load_fold(root, fold_id)
-    rules = load_toml(root / "configs/benchmark.toml")
+    experiment_version = None
+    if version is not None:
+        from alpha_atlas.versions import fold_from_version, load_version
+
+        experiment_version = load_version(root, version)
+        if asset != experiment_version["asset"] or fold_id != experiment_version["fold"]["id"]:
+            raise ValueError("asset/fold overrides conflict with experiment version")
+        if universe is not None and universe != experiment_version["universe"]:
+            raise ValueError("universe override conflicts with experiment version")
+        if field_names is not None and field_names != experiment_version["fields"]:
+            raise ValueError("field override conflicts with experiment version")
+        if allow_incomplete:
+            raise ValueError("version data completeness is fixed per source")
+        profile, fold, rules = (
+            experiment_version["profile"],
+            fold_from_version(experiment_version),
+            experiment_version["rules"],
+        )
+        universe, field_names = experiment_version["universe"], experiment_version["fields"]
+    else:
+        profile = asset_config(root, asset)
+        fold = load_fold(root, fold_id)
+        rules = load_toml(root / "configs/benchmark.toml")
     limit = attempts if attempts is not None else rules["max_attempts"]
     if limit <= 0:
         raise ValueError("attempt budget must be positive")
     universe = universe or profile["default_universe"]
     if universe not in profile["universes"]:
         raise ValueError(f"unsupported universe {universe}")
-    fields = list(dict.fromkeys([profile["price_field"], *(field_names or [])]))
+    fields = (
+        list(field_names)
+        if experiment_version is not None
+        else list(dict.fromkeys([profile["price_field"], *(field_names or [])]))
+    )
     options = (
         load_toml(root / f"configs/{method_name}.toml")
-        if method_name in {"alphaprobe", "react", "mcts_llm", "annealing", "v1", "v1_async"}
+        if experiment_version is None
+        and method_name
+        in {"alphaprobe", "alphaschema", "react", "mcts_llm", "annealing", "v1", "v1_async"}
         else None
     )
+    if experiment_version is not None:
+        if method_name not in experiment_version["method_configs"]:
+            raise ValueError(f"method is not configured in this version: {method_name}")
+        options = experiment_version["method_configs"][method_name]
     method = method_impl if method_impl is not None else make_method(method_name, seed, options)
-    if (
-        method_name in {"mcts_llm", "annealing", "v1", "v1_async"}
-        and rules.get("search_diagnostics") != "icir_turnover_v1"
-    ):
+    if method_name in {"mcts_llm", "annealing", "v1", "v1_async"} and rules.get(
+        "search_diagnostics"
+    ) not in {"icir_turnover_v1", "icir_turnover_lag1_v2"}:
         raise ValueError(f"{method_name} requires shared icir_turnover_v1 diagnostics")
+    if method_name == "alphaschema" and rules.get("search_diagnostics") != "icir_turnover_lag1_v2":
+        raise ValueError("alphaschema requires shared icir_turnover_lag1_v2 diagnostics")
     resumable = not hasattr(method, "run") and all(
         callable(getattr(method, name, None)) for name in ("dump_state", "load_state")
     )
@@ -153,6 +205,8 @@ def run(
             if method_name == "react"
             else "alphaprobe_atlas_v1"
             if method_name == "alphaprobe"
+            else "alphaschema_atlas_v1"
+            if method_name == "alphaschema"
             else "mcts_llm_atlas_v1"
             if method_name == "mcts_llm"
             else "atlas_explorer_v1_async"
@@ -171,6 +225,8 @@ def run(
     }
     if hasattr(method, "configuration"):
         spec["method_config"] = method.configuration
+    if experiment_version is not None:
+        spec["experiment_version"] = experiment_version
     with run_lock(directory), tracked_run(directory, spec) as progress:
         progress.status("running")
         progress.stage = "load_data"
@@ -181,9 +237,7 @@ def run(
             方法=f"{method_name} / seed={seed} / 预算={limit}",
             数据=f"{one_year_before(fold.train.start)} → {fold.val.end}",
         )
-        with ParqMarketData(
-            root / profile["data_dir"], universe, allow_incomplete=allow_incomplete
-        ) as market:
+        with _market(root, spec) as market:
             if field_names is None:
                 fields.extend(field for field in market.get_fields() if field not in fields)
             snapshot_id = market.snapshot_id()
@@ -194,7 +248,13 @@ def run(
             )
         warmup = warmup_period(fold.train.start)
         terminal_progress("行情就绪", 行数=f"{features.height:,}")
-        runtime = NumbaRuntime(runtime.limits) if runtime else _runtime(root)
+        if experiment_version is not None:
+            limits = RuntimeLimits(**experiment_version["runtime_limits"])
+            if runtime is not None and runtime.limits != limits:
+                raise ValueError("runtime limits conflict with experiment version")
+            runtime = NumbaRuntime(limits)
+        else:
+            runtime = NumbaRuntime(runtime.limits) if runtime else _runtime(root)
         spec.update(
             snapshot_id=snapshot_id,
             warmup=warmup,
@@ -211,7 +271,7 @@ def _search(directory, spec, method, progress, features, fold, runtime, checkpoi
     snapshot_id = spec["snapshot_id"]
     progress.stage = "setup"
     store = RunStore(directory)
-    registry = OperatorRegistry(runtime=runtime)
+    registry = _registry(spec, runtime)
     # Revalidate successful definitions without adding a second registration record.
     for path in sorted((directory / "operators").glob("*.json")):
         row = read_json(path)
@@ -250,7 +310,34 @@ def _search(directory, spec, method, progress, features, fold, runtime, checkpoi
         rebuild=lambda entry: _rebuild_member(evaluator, entry),
     )
     trials = store.trials()
-    if checkpoint is not None:
+    initial = spec.get("experiment_version", {}).get("initial_library")
+    if initial and "initial_library" not in spec:
+        if trials or checkpoint is not None:
+            raise ValueError("initial library missing from an existing search")
+        started = time.perf_counter()
+        entries, observations = [], {}
+        for index, item in enumerate(initial["factors"], 1):
+            terminal_progress("初始化因子库 / Train+Val", 进度=f"{index}/{len(initial['factors'])}")
+            candidate = candidate_from_dict(item["candidate"])
+            report = evaluator.evaluate(candidate)
+            if (
+                report.status != "success"
+                or report.direction not in {-1, 1}
+                or report.expression_id != item["factor_id"]
+            ):
+                raise ValueError(f"initial factor cannot be measured: {candidate.name}")
+            entries.append({"candidate": asdict(candidate), "report": asdict(report)})
+            observations[report.expression_id] = evaluator.observation(report.observation_ref)
+        # The configured baseline is pre-existing membership, not new search admissions.
+        # Persist once in the existing run record, before the first method checkpoint/trial.
+        spec["initial_library"] = {
+            "members": entries,
+            "elapsed_seconds": time.perf_counter() - started,
+        }
+        spec["config_fingerprint"] = config_fingerprint(spec)
+        progress.status("running")
+        library.restore(store.library_view(), lambda entry: observations[entry.factor_id])
+    elif checkpoint is not None or "initial_library" in spec:
         library.restore(store.library_view())
     session = SearchSession(
         evaluator, library, store, spec["attempts"], elapsed=progress.elapsed, run_spec=spec
@@ -270,17 +357,22 @@ def _search(directory, spec, method, progress, features, fold, runtime, checkpoi
         for trial in trials[: checkpoint["completed"]]:
             atlas.observe(feedback_from_dict(trial["feedback"]))
     elif spec["resumable"]:
-        progress.save(method, 0, 0, 0)
+        progress.save(method, 0, 0, library.view().version)
 
     def save(pending=None):
         if spec["resumable"]:
             progress.save(
-                method, session.trial_count, session.attempts_used, library.view().version, pending
+                method,
+                session.factor_trial_count,
+                session.attempts_used,
+                library.view().version,
+                pending,
             )
 
     if hasattr(method, "set_checkpoint"):
         method.set_checkpoint(save)
 
+    search_stop_reason = None
     try:
         if hasattr(method, "run"):
             progress.stage = "method_run"
@@ -290,21 +382,35 @@ def _search(directory, spec, method, progress, features, fold, runtime, checkpoi
                 if pending is None:
                     progress.stage = "ask"
                     terminal_progress(
-                        "生成候选", 进度=f"{session.trial_count + 1}/{spec['attempts']}"
+                        "生成候选",
+                        transient=True,
+                        进度=f"{session.factor_trial_count + 1}/{spec['attempts']}",
                     )
                     step = time.perf_counter()
                     context = session.get_context()
-                    candidate = method.ask(context, count=1)[0]
+                    try:
+                        candidate = method.ask(context, count=1)[0]
+                    except ExplorerUnresolved as exc:
+                        search_stop_reason = str(exc)
+                        _sync_method_regions(method, atlas)
+                        save()
+                        terminal_progress(
+                            "研究提前结束，保存已有结果",
+                            已评估=session.attempts_used,
+                            预算=spec["attempts"],
+                            原因=search_stop_reason,
+                        )
+                        break
                     _sync_method_regions(method, atlas)
                     pending = {
-                        "trial_index": session.trial_count + 1,
+                        "factor_trial_index": session.factor_trial_count + 1,
                         "candidate": asdict(candidate),
                         "generation_seconds": time.perf_counter() - step,
                     }
                     progress.stage = "checkpoint"
                     save(pending)
                 progress.stage = "evaluate"
-                index = pending["trial_index"]
+                index = pending["factor_trial_index"]
                 if index <= len(trials):
                     feedback = feedback_from_dict(trials[index - 1]["feedback"])
                     terminal_progress("恢复已提交反馈", 候选=index, 结果=feedback.reason)
@@ -312,6 +418,7 @@ def _search(directory, spec, method, progress, features, fold, runtime, checkpoi
                     feedback = session.evaluate(
                         candidate_from_dict(pending["candidate"]),
                         generation_seconds=pending["generation_seconds"],
+                        research_plan_index=getattr(method, "pending_research_plan_index", None),
                     )
                 progress.stage = "tell"
                 method.tell([feedback])
@@ -328,6 +435,7 @@ def _search(directory, spec, method, progress, features, fold, runtime, checkpoi
     if view != library.view():
         raise ValueError("committed library differs from memory")
     archive = []
+    initial_count = len(spec.get("initial_library", {}).get("members", []))
     for entry in view.members:
         compiled = compile_factor(
             entry.candidate.expression, set(fields), registry, **evaluator.compile_options
@@ -337,6 +445,7 @@ def _search(directory, spec, method, progress, features, fold, runtime, checkpoi
                 "candidate": asdict(entry.candidate),
                 "report": asdict(entry.report),
                 "compiled": asdict(compiled),
+                **({"initial": entry.version <= initial_count} if initial_count else {}),
             }
         )
     frozen = {
@@ -350,14 +459,30 @@ def _search(directory, spec, method, progress, features, fold, runtime, checkpoi
         "frozen",
         library_size=len(archive),
         library_sha256=hashlib.sha256((directory / "frozen/library.json").read_bytes()).hexdigest(),
+        **({"search_stop_reason": search_stop_reason} if search_stop_reason else {}),
     )
 
 
 def _rebuild_member(evaluator, entry):
     report = evaluator.evaluate(entry.candidate)
+    # Parallel floating-point reductions can differ in their final bits on recomputation.
+    # Only metric values allow roundoff; metric identities and sample counts stay exact.
+    metrics_match = len(report.metrics) == len(entry.report.metrics) and all(
+        replace(actual, value=expected.value) == expected
+        and (
+            actual.value is None
+            and expected.value is None
+            or actual.value is not None
+            and expected.value is not None
+            and math.isfinite(actual.value)
+            and math.isfinite(expected.value)
+            and math.isclose(actual.value, expected.value, rel_tol=1e-12, abs_tol=1e-15)
+        )
+        for actual, expected in zip(report.metrics, entry.report.metrics, strict=True)
+    )
     if (
         report.expression_id != entry.factor_id
-        or report.metrics != entry.report.metrics
+        or not metrics_match
         or report.direction != entry.report.direction
         or report.coverage != entry.report.coverage
         or report.status != entry.report.status
@@ -414,7 +539,11 @@ def run_model(root: Path, directory: Path, *, test: bool = False) -> dict:
             ),
         )
         profile = spec["profile"]
-        config = load_toml(root / "configs/model.toml")
+        if "experiment_version" in spec:
+            _check_config(root, spec)
+            config = spec["experiment_version"]["model"]
+        else:
+            config = load_toml(root / "configs/model.toml")
         validate_config(config)
         output = directory / "model"
         fit_path, test_path = output / "fit.json", output / "test.json"
@@ -441,13 +570,25 @@ def run_model(root: Path, directory: Path, *, test: bool = False) -> dict:
             raise ValueError("run atlas model <run_dir> before atlas model <run_dir> --test")
         if fitted is None and test_path.exists():
             raise ValueError("saved model test has no fitted model")
-        registry = OperatorRegistry(runtime=_runtime(root, frozen["runtime"]))
-        registry.restore(frozen["operators"])
-        with ParqMarketData(
-            root / profile["data_dir"],
-            spec["universe"],
-            allow_incomplete=spec["allow_incomplete"],
-        ) as market:
+        if spec.get("implementation") == "zookeeper_fixed_audit_v1":
+            from alpha_atlas.assets.zookeeper import ZookeeperMarketData
+            from alpha_atlas.factor_libraries.zookeeper import definitions
+
+            if frozen.get("definitions") != list(definitions()):
+                raise ValueError("Zookeeper factor definitions changed after freeze")
+            if spec["warmup"].get("policy") != "all_available_history_for_fixed_calendar_factors":
+                raise ValueError("recorded Zookeeper warmup differs from model evaluation policy")
+            registry = OperatorRegistry()
+            market = ZookeeperMarketData(root)
+            start = fold.test.start if test else fold.train.start
+        else:
+            registry = _registry(spec, _runtime(root, frozen["runtime"]))
+            registry.restore(frozen["operators"])
+            if warmup_period(fold.train.start) != spec["warmup"]:
+                raise ValueError("recorded warmup differs from model evaluation policy")
+            market = _market(root, spec)
+            start = date.fromisoformat(spec["warmup"]["start"])
+        with market:
             if market.snapshot_id() != spec["snapshot_id"]:
                 raise ValueError("dataset changed after search")
             cached_path = test_path if test else fit_path
@@ -460,11 +601,9 @@ def run_model(root: Path, directory: Path, *, test: bool = False) -> dict:
             terminal_progress("模型 / 加载行情", 阶段="test" if test else "train/val")
             features = market.load_features(
                 fields=_data_fields(spec["fields"], profile),
-                start=date.fromisoformat(spec["warmup"]["start"]),
+                start=start,
                 end=fold.test.end if test else fold.val.end,
             )
-        if warmup_period(fold.train.start) != spec["warmup"]:
-            raise ValueError("recorded warmup differs from model evaluation policy")
         panel, identities = factor_panel(features, frozen, spec, registry)
         if test:
             if identities != fitted["factor_ids"]:
@@ -502,7 +641,9 @@ def resume(root: Path, directory: Path, *, method_impl=None) -> Path:
         spec = read_json(directory / "run.json")
         if spec.get("status") == "frozen":
             raise ValueError("run is already frozen")
-        if not spec.get("resumable") or not (directory / "checkpoint.json").exists():
+        has_checkpoint = (directory / "checkpoint.json").exists()
+        initial_setup = bool(spec.get("experiment_version", {}).get("initial_library"))
+        if not spec.get("resumable") or not has_checkpoint and not initial_setup:
             raise ValueError("run has no resumable method checkpoint")
         with tracked_run(directory, spec) as progress:
             progress.stage = "resume_checks"
@@ -517,10 +658,19 @@ def resume(root: Path, directory: Path, *, method_impl=None) -> Path:
                 raise ValueError("method type changed")
             if spec.get("method_config") != getattr(method, "configuration", None):
                 raise ValueError("method configuration changed")
-            checkpoint = progress.load()
+            checkpoint = progress.load() if has_checkpoint else None
             store = RunStore(directory)
             trials = store.trials()
-            _check_checkpoint(checkpoint, trials, spec["attempts"])
+            if checkpoint is None:
+                if trials:
+                    raise ValueError("committed search trials require a method checkpoint")
+            else:
+                _check_checkpoint(
+                    checkpoint,
+                    trials,
+                    spec["attempts"],
+                    initial_count=len(spec.get("initial_library", {}).get("members", [])),
+                )
             progress.previous_seconds = max(
                 progress.previous_seconds, max((t["cumulative_seconds"] for t in trials), default=0)
             )
@@ -532,11 +682,7 @@ def resume(root: Path, directory: Path, *, method_impl=None) -> Path:
                     )
                 )
             runtime = _runtime(root, spec["runtime"])
-            with ParqMarketData(
-                root / profile["data_dir"],
-                spec["universe"],
-                allow_incomplete=spec["allow_incomplete"],
-            ) as market:
+            with _market(root, spec) as market:
                 if market.snapshot_id() != spec["snapshot_id"]:
                     raise ValueError("dataset changed after search")
                 features = market.load_features(
@@ -552,20 +698,20 @@ def resume(root: Path, directory: Path, *, method_impl=None) -> Path:
     return directory
 
 
-def _check_checkpoint(checkpoint, trials, limit):
+def _check_checkpoint(checkpoint, trials, limit, *, initial_count=0):
     completed, pending = checkpoint["completed"], checkpoint["pending"]
     if type(completed) is not int or not 0 <= completed <= len(trials):
         raise ValueError("checkpoint trial cursor mismatch")
     if len(trials) > completed + int(pending is not None):
         raise ValueError("unexpected trials beyond checkpoint")
     attempts = sum(t["feedback"]["reason"] != "budget_rejected" for t in trials[:completed])
-    version = trials[completed - 1]["feedback"]["library_version"] if completed else 0
+    version = trials[completed - 1]["feedback"]["library_version"] if completed else initial_count
     if checkpoint["attempts"] != attempts or checkpoint["library_version"] != version:
         raise ValueError("checkpoint budget or library version mismatch")
     if len(trials) > limit or pending is not None and completed >= limit:
         raise ValueError("checkpoint exceeds attempt budget")
     if pending is not None:
-        if pending["trial_index"] != completed + 1:
+        if pending["factor_trial_index"] != completed + 1:
             raise ValueError("pending trial index mismatch")
         if len(trials) > completed and candidate_from_dict(
             pending["candidate"]
@@ -578,6 +724,16 @@ def _check_config(root, spec):
         raise ValueError("unsupported run format; old artifacts are not migrated")
     if config_fingerprint(spec) != spec["config_fingerprint"]:
         raise ValueError("run configuration was modified")
+    if "experiment_version" in spec:
+        from alpha_atlas.versions import fold_from_version, load_version
+
+        version = load_version(root, spec["experiment_version"]["id"])
+        if version != spec["experiment_version"]:
+            raise ValueError("experiment version changed after search")
+        for key in ("asset", "universe", "fields", "profile", "rules", "fold"):
+            if spec[key] != version[key]:
+                raise ValueError(f"run differs from experiment version: {key}")
+        return fold_from_version(version), version["profile"]
     fold = load_fold(root, spec["fold"]["id"])
     if json.loads(json.dumps(asdict(fold), default=str)) != spec["fold"]:
         raise ValueError("fold configuration changed after search")
@@ -592,6 +748,12 @@ def _check_config(root, spec):
         current = AlphaProbeConfig.from_mapping(load_toml(root / "configs/alphaprobe.toml"))
         if json.loads(json.dumps(asdict(current))) != spec["method_config"]:
             raise ValueError("AlphaPROBE configuration changed")
+    if spec["implementation"] == "alphaschema_atlas_v1":
+        from alpha_atlas.methods.alphaschema import AlphaSchemaConfig
+
+        current = AlphaSchemaConfig.from_mapping(load_toml(root / "configs/alphaschema.toml"))
+        if json.loads(json.dumps(asdict(current))) != spec["method_config"]:
+            raise ValueError("AlphaSchema configuration changed")
     if spec["implementation"] in {"single_agent_react_v1", "agentscope_react_v1"}:
         from alpha_atlas.methods.react import ReactConfig
 
@@ -608,7 +770,7 @@ def _check_config(root, spec):
         from alpha_atlas.methods.v1_async import V1AsyncConfig
 
         current = V1AsyncConfig.from_mapping(load_toml(root / "configs/v1_async.toml"))
-        if asdict(current) != spec["method_config"]:
+        if asdict(current) != {"selection_policy": None, **spec["method_config"]}:
             raise ValueError("v1_async configuration changed")
     if spec["implementation"] in {"annealing_llm_atlas_v1", "atlas_explorer_v1"}:
         from alpha_atlas.methods.annealing import AnnealingLLMConfig
@@ -617,7 +779,10 @@ def _check_config(root, spec):
         name = "v1" if spec["implementation"] == "atlas_explorer_v1" else "annealing"
         config_type = V1Config if name == "v1" else AnnealingLLMConfig
         current = config_type.from_mapping(load_toml(root / f"configs/{name}.toml"))
-        if asdict(current) != spec["method_config"]:
+        expected = dict(spec["method_config"])
+        if name == "v1":
+            expected.setdefault("selection_policy", None)
+        if asdict(current) != expected:
             raise ValueError(f"{name} configuration changed")
     return fold, profile
 
@@ -669,10 +834,8 @@ def _test_frozen(root: Path, directory: Path) -> dict:
     if hashlib.sha256(freeze_path.read_bytes()).hexdigest() != spec["library_sha256"]:
         raise ValueError("frozen library was modified")
     frozen = json.loads(freeze_path.read_text(encoding="utf-8"))
-    registry = OperatorRegistry(runtime=_runtime(root, frozen["runtime"]))
-    with ParqMarketData(
-        root / profile["data_dir"], spec["universe"], allow_incomplete=spec["allow_incomplete"]
-    ) as market:
+    registry = _registry(spec, _runtime(root, frozen["runtime"]))
+    with _market(root, spec) as market:
         if market.snapshot_id() != spec["snapshot_id"]:
             raise ValueError("dataset changed after search")
         # Only the independent post-freeze entrypoint requests OOS features.
@@ -700,7 +863,7 @@ def _test_frozen(root: Path, directory: Path) -> dict:
     results = []
     for index, item in enumerate(frozen["factors"], 1):
         started = time.perf_counter()
-        terminal_progress("OOS 计算", 进度=f"{index}/{len(frozen['factors'])}")
+        terminal_progress("OOS 计算", transient=True, 进度=f"{index}/{len(frozen['factors'])}")
         try:
             expr = Expression.from_dict(item["compiled"]["expression"])
             compiled = compile_factor(

@@ -1,0 +1,159 @@
+{
+  "version": "zookeeper_monthly_dsl_v2",
+  "calendar_version": "observed_calendar_months_v1",
+  "daily": [
+    {
+      "name": "r",
+      "expression": "RETURN($price, 1)"
+    },
+    {
+      "name": "daily_std",
+      "expression": "TS_STD($r, 250)"
+    },
+    {
+      "name": "daily_skew",
+      "expression": "TS_SKEW_POP($r, 250)"
+    },
+    {
+      "name": "daily_kurt",
+      "expression": "TS_KURT_POP($r, 250)"
+    },
+    {
+      "name": "daily_vov",
+      "expression": "TS_STD($daily_std, 250)"
+    },
+    {
+      "name": "liquidity",
+      "expression": "IF_THEN_ELSE(GT($amount, 0), $amount / ABS($r), 0 / 0)"
+    }
+  ],
+  "curve_daily": [
+    {
+      "name": "curve_r0",
+      "expression": "RETURN($F0, 1)"
+    },
+    {
+      "name": "curve_r1",
+      "expression": "RETURN($F1, 1)"
+    }
+  ],
+  "base_reductions": [
+    {
+      "name": "P",
+      "source": "price",
+      "op": "last"
+    },
+    {
+      "name": "V",
+      "source": "volume",
+      "op": "sum"
+    },
+    {
+      "name": "OI",
+      "source": "oi",
+      "op": "last"
+    },
+    {
+      "name": "R",
+      "source": "r",
+      "op": "compound"
+    },
+    {
+      "name": "return_max",
+      "source": "r",
+      "op": "max"
+    },
+    {
+      "name": "return_sum",
+      "source": "r",
+      "op": "sum"
+    },
+    {
+      "name": "return_squares",
+      "source": "r",
+      "op": "sum_squares"
+    },
+    {
+      "name": "return_count",
+      "source": "r",
+      "op": "count"
+    },
+    {
+      "name": "liquidity_mean",
+      "source": "liquidity",
+      "op": "mean",
+      "coverage": 0.8,
+      "min_count": 2
+    },
+    {
+      "name": "daily_std_last",
+      "source": "daily_std",
+      "op": "last"
+    },
+    {
+      "name": "daily_skew_last",
+      "source": "daily_skew",
+      "op": "last"
+    },
+    {
+      "name": "daily_kurt_last",
+      "source": "daily_kurt",
+      "op": "last"
+    },
+    {
+      "name": "daily_vov_last",
+      "source": "daily_vov",
+      "op": "last"
+    }
+  ],
+  "curve_reductions": [
+    {
+      "name": "F0",
+      "source": "F0",
+      "op": "last"
+    },
+    {
+      "name": "F1",
+      "source": "F1",
+      "op": "last"
+    },
+    {
+      "name": "F2",
+      "source": "F2",
+      "op": "last"
+    },
+    {
+      "name": "C0",
+      "source": "curve_r0",
+      "op": "compound",
+      "coverage": 0.8,
+      "min_count": 2
+    },
+    {
+      "name": "C1",
+      "source": "curve_r1",
+      "op": "compound",
+      "coverage": 0.8,
+      "min_count": 2
+    }
+  ],
+  "risk_returns": [
+    {
+      "name": "risk_avg",
+      "expression": "CS_LAGGED_MEAN($R, AND(IS_FINITE($P), IS_FINITE($R)), 4, 0.8)"
+    },
+    {
+      "name": "risk_basis",
+      "expression": "CS_LAGGED_SPREAD($R, $basis, AND(IS_FINITE($P), IS_FINITE($R)), 0.25, 0.8)"
+    },
+    {
+      "name": "risk_mom",
+      "expression": "CS_LAGGED_SPREAD($R, $mom12, AND(IS_FINITE($P), IS_FINITE($R)), 0.25, 0.8)"
+    }
+  ],
+  "notes": [
+    "Daily windows reset on gaps in the observed union trading calendar. Curve returns also reset on actual leg changes.",
+    "Missing calendar months are explicit null rows; monthly rolling windows do not compress time.",
+    "Daily/monthly intermediate panels are not supervised targets and never enter method context as labels."
+  ]
+}

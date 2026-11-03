@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "id": "zk26_seeded_fold2_overview_luna_300_v3",
+  "parent_plan": "configs/experiments/zk26_seeded_fold2_overview_300_v3/plan.json",
+  "experiment_version": "rq8_zk26_seeded_fold2_overview_luna_v5",
+  "methods": [
+    "v1_async",
+    "alphaschema"
+  ],
+  "seeds": [
+    42
+  ],
+  "attempts_per_method": 300,
+  "total_attempt_ceiling": 600,
+  "evaluation_nodes": [
+    200,
+    300
+  ],
+  "purpose": "User correction: use AlphaAtlas and AlphaSchema configurations from experiment_overview.md for the B26 incremental study.",
+  "oos_release": "both searches frozen and all paired models saved before Test",
+  "union_label": "v1_async_plus_alphaschema; not the full earlier method union",
+  "optional_replication": false,
+  "runs": [
+    "artifacts/runs/futures_kernel_5m_full-all-fold2-v1_async-42-5f77947f20",
+    "artifacts/runs/futures_kernel_5m_full-all-fold2-alphaschema-42-3a4f640d02"
+  ]
+}

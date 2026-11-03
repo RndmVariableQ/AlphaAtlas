@@ -7,8 +7,95 @@ from urllib.error import HTTPError, URLError
 
 import pytest
 
-from alpha_atlas.methods.models import ContextLimitError, HTTPModels, _RetryableError
+from alpha_atlas.methods.models import (
+    ContextLimitError,
+    HTTPModels,
+    _RetryableError,
+    parse_json_object,
+)
 from alpha_atlas.reporting import TerminalStream
+
+
+@pytest.mark.parametrize("fence", [None, "```json", "```JSON", "```"])
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_model_json_allows_a_complete_fence_without_changing_contents(fence, newline):
+    expected = {"expression": "$adj_close", "note": "文字 ```json {not another response}"}
+    text = json.dumps(expected, ensure_ascii=False, indent=2).replace("\n", newline)
+    if fence:
+        text = newline.join([fence, text, "```"])
+    assert parse_json_object(" \t" + text + "\n ") == expected
+
+
+@pytest.mark.parametrize("fenced", [False, True])
+@pytest.mark.parametrize("padding", ["", " \n "])
+def test_model_json_removes_only_repeated_object_closings_inside_arrays(fenced, padding):
+    text = (
+        '{"proposals":[{"objective":"keep } , ] and \\"quotes\\"",'
+        '"review":{"score":3}}}' + padding + ',{"objective":"second","review":{"score":4}}}]}'
+    )
+    if fenced:
+        text = "```json\n" + text + "\n```"
+    assert parse_json_object(text) == {
+        "proposals": [
+            {"objective": 'keep } , ] and "quotes"', "review": {"score": 3}},
+            {"objective": "second", "review": {"score": 4}},
+        ]
+    }
+
+
+@pytest.mark.parametrize("whitespace", ["\n", "\r", "\t", "\r\n"])
+@pytest.mark.parametrize("fenced", [False, True])
+@pytest.mark.parametrize("extra_closing", [False, True])
+def test_model_json_preserves_literal_string_whitespace_and_escaped_content(
+    whitespace, fenced, extra_closing
+):
+    note = 'Keep literal \\n, \\t and "quotes" unchanged'
+    text = '{"expression":"a' + whitespace + 'b","note":' + json.dumps(note)
+    text += ',"items":[{"score":3}' + ("}" if extra_closing else "") + "]}"
+    if fenced:
+        text = "```json\n" + text + "\n```"
+    assert parse_json_object(text) == {
+        "expression": "a" + whitespace + "b",
+        "note": note,
+        "items": [{"score": 3}],
+    }
+
+
+@pytest.mark.parametrize("control", ["\x00", "\x01", "\x08", "\x0b", "\x0c", "\x1f"])
+@pytest.mark.parametrize("prefix", ["", "line\n"])
+def test_model_json_rejects_other_raw_controls_even_after_a_literal_newline(control, prefix):
+    with pytest.raises(ValueError, match="Invalid JSON"):
+        parse_json_object('{"expression":"' + prefix + control + '"}')
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        'Here is the result: {"expression":"$x"}',
+        '{"expression":"$x"} extra prose',
+        '```json\n{"expression":"$x"}',
+        '```python\n{"expression":"$x"}\n```',
+        '```json\n{"expression":"$x"}\n```\nextra prose',
+        "```json\n{}\n```\n```json\n{}\n```",
+        '{"expression":"$x"} {"expression":"$y"}',
+        '{"expression":"$x",}',
+        '{"expression":"$x"}}',
+        '{"items":[{"value":1} {"value":2}]}',
+        '{"items":[{"value":1},]}',
+        '{"items":[{"value":1}}],"expression":"unfinished',
+        '{"expression":"first\nunfinished',
+        '{"expression":"first\nsecond","note":"bad\\q"}',
+        '{"expression":"first\nsecond" "missing_comma":1}',
+        "{'expression':'$x'}",
+        "[]",
+        "```json\n[{}]\n```",
+        "null",
+        None,
+    ],
+)
+def test_model_json_rejects_ambiguous_or_incomplete_replies(text):
+    with pytest.raises(ValueError):
+        parse_json_object(text)
 
 
 @pytest.fixture
@@ -47,8 +134,40 @@ def test_transient_http_retries_same_request_then_succeeds(client, monkeypatch, 
     client.on_retry = retries.append
     assert client._post(kind, "/synthetic", {"model": "synthetic"}) == success
     assert len(bodies) == 4 and len(set(bodies)) == 1
-    assert waits == [1, 2, 4] and retries == [kind] * 3
+    assert waits == ([30, 60, 120] if status == 429 else [1, 2, 4])
+    assert retries == [kind] * 3
     assert all(e.fp.closed for e in errors)
+
+
+@pytest.mark.parametrize(
+    "status,header,expected",
+    [
+        (429, "75", 75),
+        (429, "Thu, 01 Jan 1970 00:01:30 GMT", 90),
+        (429, "Thu, 01 Jan 1970 00:00:00 GMT", 30),
+        (429, "invalid private value", 30),
+        (429, "-1", 30),
+        (429, "nan", 30),
+        (429, "inf", 30),
+        (503, "120", 120),
+    ],
+)
+def test_http_retry_after_is_respected_without_logging_provider_data(
+    client, monkeypatch, status, header, expected
+):
+    error = HTTPError(
+        "private-url", status, "private-body", {"Retry-After": header}, io.BytesIO(b"private")
+    )
+
+    def request(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr("alpha_atlas.methods.models.urlopen", request)
+    monkeypatch.setattr("alpha_atlas.methods.models.time.time", lambda: 0)
+    with pytest.raises(_RetryableError) as caught:
+        client.chat_once([{"role": "user", "content": "synthetic"}])
+    assert caught.value.retry_delay(0) == expected
+    assert "private" not in str(caught.value) and error.fp.closed
 
 
 @pytest.mark.parametrize("content", [None, "", "  "])
@@ -257,8 +376,41 @@ def test_terminal_stream_refreshes_one_redacted_tty_line(monkeypatch, caplog):
             time.sleep(0.35)
     output = terminal.getvalue()
     assert output.count("\r") >= 2
-    assert "Miner · round 2" in output and "生成中" in output
+    assert "Miner · round 2" in output and "思考中" in output
     assert "private reasoning" not in output
+
+
+def test_terminal_stream_reports_observed_activity_and_silence_without_reasoning(
+    monkeypatch, caplog
+):
+    from alpha_atlas.reporting import _stream_display_width
+
+    now = [0.0]
+    monkeypatch.setattr("alpha_atlas.reporting.time.monotonic", lambda: now[0])
+    monkeypatch.setattr("alpha_atlas.reporting._PROGRESS_TEXT", "MCTS-LLM │ 阶段=formula_0")
+    with caplog.at_level(logging.INFO, logger="alpha_atlas.progress"), TerminalStream() as stream:
+        assert "等待首字" in stream._render_line()
+        now[0] = 1.0
+        stream.delta("reasoning", "private reasoning")
+        assert "思考中" in stream._render_line()
+        now[0] = 36.0
+        line = stream._render_line()
+        assert "无新内容 35s" in line and "private reasoning" not in line
+        with monkeypatch.context() as narrow:
+            narrow.setattr("alpha_atlas.reporting._terminal_width", lambda: 24)
+            assert _stream_display_width(stream._render_line()) <= 24
+        now[0] = 37.0
+        stream.delta("content", '{"expression":"$close"}')
+        line = stream._render_line()
+        assert "接收回复" in line and "无新内容" not in line
+        stream.delta("restart", "")
+        line = stream._render_line()
+        assert "等待首字" in line and "无新内容" not in line and stream.response == ""
+        stream.delta("content", "<think>hidden reasoning")
+        assert "思考中" in stream._render_line()
+        stream.delta("content", '</think>{"expression":"$volume"}')
+        line = stream._render_line()
+        assert "接收回复" in line and "hidden reasoning" not in line
 
 
 def test_terminal_stream_renders_only_reply_as_one_rewritten_line(client, monkeypatch, caplog):
@@ -297,29 +449,31 @@ def test_terminal_stream_renders_only_reply_as_one_rewritten_line(client, monkey
         "<analysis>another private thought</analysis>"
         '<think>private thought</think>{"direction":"study volatility"}'
     )
-    assert output.count("\n") == 1 and output.count("\r") > 1
+    assert output.count("\n") == 0 and output.count("\r") > 1
     assert "study volatility" in output
     assert "private thought" not in output and "separate" not in output
 
 
-def test_noninteractive_stream_logs_only_the_completed_reply_tail(monkeypatch, caplog):
+def test_noninteractive_stream_keeps_one_request_without_response_noise(monkeypatch, caplog):
+    from alpha_atlas.reporting import terminal_progress
+
     class Terminal(io.StringIO):
         def isatty(self):
             return False
 
     terminal = Terminal()
     monkeypatch.setattr("alpha_atlas.reporting.sys.stderr", terminal)
-    monkeypatch.setattr(
-        "alpha_atlas.reporting._PROGRESS_TEXT", "退火 │ 进度=12/500 │ Agent=Explorer"
-    )
-    with caplog.at_level(logging.INFO, logger="alpha_atlas.progress"), TerminalStream() as stream:
-        stream.delta("content", "<think>hidden thought</think>")
-        stream.delta("content", "x" * 120 + "VISIBLE_TAIL")
+    with caplog.at_level(logging.INFO, logger="alpha_atlas.progress"):
+        terminal_progress("Explorer", transient=True, 计划=12, 对话="1/40")
+        with TerminalStream() as stream:
+            stream.delta("content", "<think>hidden thought</think>")
+            stream.delta("content", "x" * 120 + "VISIBLE_TAIL")
 
     messages = [record.getMessage() for record in caplog.records]
     assert "hidden thought" not in "\n".join(messages)
-    assert "VISIBLE_TAIL" in messages[-1]
-    assert "Agent=Explorer" in messages[-1]
+    assert len(messages) == 1
+    assert "VISIBLE_TAIL" not in messages[0]
+    assert "Explorer" in messages[0] and "对话=1/40" in messages[0]
     assert "\r" not in messages[-1]
 
 
@@ -334,7 +488,7 @@ def test_terminal_stream_keeps_progress_and_latest_reply_visible(monkeypatch, ca
     monkeypatch.setattr("alpha_atlas.reporting.sys.stderr", terminal)
     monkeypatch.setattr(
         "alpha_atlas.reporting._PROGRESS_TEXT",
-        "区域退火 │ 进度=12/500 │ Agent=Miner",
+        "Miner │ 进度=12/500 · 计划=2",
     )
     monkeypatch.setattr(
         "alpha_atlas.reporting.shutil.get_terminal_size",
@@ -348,7 +502,20 @@ def test_terminal_stream_keeps_progress_and_latest_reply_visible(monkeypatch, ca
     line = terminal.getvalue().split("\r")[-1].split("\x1b", maxsplit=1)[0]
     assert _display_width(line) <= 72
     assert _stream_display_width(line) <= 72
-    assert "进度=12/500" in line and "tail" in line
+    assert "Miner" in line and "进度=12/500" in line and "计划=2" in line and "tail" in line
+
+
+def test_narrow_stream_prioritizes_plan_and_dialogue_over_reply_preview(monkeypatch, caplog):
+    monkeypatch.setattr("alpha_atlas.reporting._terminal_width", lambda: 78)
+    monkeypatch.setattr(
+        "alpha_atlas.reporting._PROGRESS_TEXT",
+        "Explorer │ 计划=397 · 对话=22/40 · 模式=breadth",
+    )
+    with caplog.at_level(logging.INFO, logger="alpha_atlas.progress"), TerminalStream() as stream:
+        stream.delta("content", "x" * 512)
+        line = stream._render_line()
+    assert "计划=397" in line and "对话=22/40" in line
+    assert " → " not in line
 
 
 def test_terminal_stream_reply_ticker_stays_bounded_on_wide_terminals(monkeypatch, caplog):
@@ -362,7 +529,7 @@ def test_terminal_stream_reply_ticker_stays_bounded_on_wide_terminals(monkeypatc
     monkeypatch.setattr("alpha_atlas.reporting.sys.stderr", terminal)
     monkeypatch.setattr(
         "alpha_atlas.reporting._PROGRESS_TEXT",
-        "退火 │ 进度=117/500 │ Agent=Miner │ 轮次=24 │ 模式=breadth │ 计划候选=2/5 │ 修复=1/4",
+        "Miner │ 计划=24 · 进度=117/500 · 模式=breadth · 计划候选=2/5 · 修复=1/4",
     )
     monkeypatch.setattr(
         "alpha_atlas.reporting.shutil.get_terminal_size",
@@ -387,7 +554,7 @@ def test_progress_notices_refresh_the_active_response_row(monkeypatch, caplog):
 
     terminal = Terminal()
     monkeypatch.setattr("alpha_atlas.reporting.sys.stderr", terminal)
-    monkeypatch.setattr("alpha_atlas.reporting._PROGRESS_TEXT", "退火 │ 进度=8/500 │ Agent=Miner")
+    monkeypatch.setattr("alpha_atlas.reporting._PROGRESS_TEXT", "Miner │ 计划=2 · 进度=8/500")
     monkeypatch.setattr(
         "alpha_atlas.reporting.shutil.get_terminal_size",
         lambda **_: SimpleNamespace(columns=80, lines=24),
@@ -401,8 +568,31 @@ def test_progress_notices_refresh_the_active_response_row(monkeypatch, caplog):
 
     output = terminal.getvalue()
     final_line = output.split("\r")[-1].split("\x1b", maxsplit=1)[0]
-    assert output.count("\n") == 1 and "模型请求重试" in output
+    assert output.count("\n") == 0 and "模型请求重试" in output
+    assert sum("模型请求重试" in record.getMessage() for record in caplog.records) == 1
     assert "模型请求重试" not in final_line and "回复完成" in final_line
+
+
+def test_tty_progress_is_replaced_and_cleared_before_a_permanent_event(monkeypatch):
+    from alpha_atlas.reporting import terminal_progress
+
+    class Terminal(io.StringIO):
+        def isatty(self):
+            return True
+
+    terminal = Terminal()
+    monkeypatch.setattr("alpha_atlas.reporting.sys.stderr", terminal)
+    monkeypatch.setattr("alpha_atlas.reporting._STATUS_VISIBLE", False)
+    logger = logging.getLogger("alpha_atlas.progress")
+    monkeypatch.setattr(logger, "handlers", [logging.StreamHandler(terminal)])
+    monkeypatch.setattr(logger, "level", logging.INFO)
+    terminal_progress("Explorer", transient=True, 计划=397, 对话="7/40")
+    terminal_progress("Explorer", transient=True, 计划=397, 对话="8/40")
+    assert "\n" not in terminal.getvalue()
+    terminal_progress("研究方向", 计划=397, 方向="检验量价背离")
+    output = terminal.getvalue()
+    assert "\r\x1b[K  研究方向\n" in output
+    assert output.endswith("    方向: 检验量价背离\n\n")
 
 
 def test_interrupt_during_retry_wait_stops_immediately(client, monkeypatch):

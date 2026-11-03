@@ -1,11 +1,13 @@
 # Concurrent V1 research plans; platform evaluation and commits remain serial.
 # Store the actual key in the environment, never in this file.
-chat_model = "deepseek-flash"
-chat_base_url = "https://api.deepseek.com/v1"
-chat_key_env = "OPENAI_API_KEY"
+# Optional subscription backend: integrations/claude_cli/README.md.
+# This bridge uses CLI sampling settings; temperature values below are not mapped.
+chat_model = "claude-haiku-5-5"
+chat_base_url = "http://127.0.0.1:8765/v1"
+chat_key_env = "ALPHA_ATLAS_LOCAL_BRIDGE_UNUSED"
 temperature = 1.0
 repair_temperature = 0.8
-timeout_seconds = 120.0
+timeout_seconds = 1800.0
 max_formula_repairs = 3
 max_dialogue_rounds = 40
 candidates_per_plan = 5

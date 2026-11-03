@@ -16,8 +16,9 @@ def render_factor_examples(fields: Sequence[str], frequency: str | None) -> str:
                 (
                     f"{price}_zscore_15m_64",
                     [
-                        "# 机制: 收盘价在 64 根 15m bar 内的标准化偏离，日内到多日的均值回归",
-                        f"# 字段: ${price}@15m",
+                        "# Mechanism: standardized close deviation over 64 15m bars, intraday-to-multiday "
+                        "mean reversion",
+                        f"# Fields: ${price}@15m",
                         f"TS_ZSCORE(${price}@15m, 64)",
                     ],
                 )
@@ -26,8 +27,8 @@ def render_factor_examples(fields: Sequence[str], frequency: str | None) -> str:
                 (
                     "price_rank_divergence_60m_1d",
                     [
-                        "# 机制: 价格在 24 根 60m 与 10 个交易日窗口内的相对分位差异",
-                        f"# 字段: ${price}@60m, ${price}@1d",
+                        "# Mechanism: relative percentile gap of price between 24 60m bars and 10 trading days",
+                        f"# Fields: ${price}@60m, ${price}@1d",
                         f"rank_60m = TS_RANK(${price}@60m, 24)",
                         f"rank_1d = TS_RANK(${price}@1d, 10)",
                         "SUBTRACT(rank_60m, rank_1d)",
@@ -39,8 +40,8 @@ def render_factor_examples(fields: Sequence[str], frequency: str | None) -> str:
                 (
                     f"{price}_zscore_native_64",
                     [
-                        "# 机制: 收盘价在 64 根原生 bar 内的标准化偏离，捕捉均值回归",
-                        f"# 字段: ${price}",
+                        "# Mechanism: standardized close deviation over 64 native bars, capturing mean reversion",
+                        f"# Fields: ${price}",
                         f"TS_ZSCORE(${price}, 64)",
                     ],
                 )
@@ -48,7 +49,7 @@ def render_factor_examples(fields: Sequence[str], frequency: str | None) -> str:
 
     if price in allowed and ("open_interest" in allowed or "amount" in allowed):
         flow = "open_interest" if "open_interest" in allowed else "amount"
-        flow_label = "持仓" if flow == "open_interest" else "成交额"
+        flow_label = "open interest" if flow == "open_interest" else "turnover"
         if is_five_minute:
             close = f"${price}@30m"
             flow_field = f"${flow}@30m"
@@ -61,8 +62,9 @@ def render_factor_examples(fields: Sequence[str], frequency: str | None) -> str:
                 (
                     name,
                     [
-                        f"# 机制: {flow_label}增速相对多日背景放大时的 30 分钟收益延续",
-                        f"# 字段: {close}, {flow_field}",
+                        f"# Mechanism: 30-minute return continuation when {flow_label} growth expands versus "
+                        "its multi-day background",
+                        f"# Fields: {close}, {flow_field}",
                         f"ret_30m = RETURN({close}, 1)",
                         f"flow_speed = TS_ZSCORE(RETURN({flow_field}, 1), 240)",
                         "MULTIPLY(ret_30m, MAX(flow_speed, 0))",
@@ -74,8 +76,9 @@ def render_factor_examples(fields: Sequence[str], frequency: str | None) -> str:
                 (
                     f"{flow}_velocity_gated_return",
                     [
-                        f"# 机制: {flow_label}增速相对背景放大时的收益延续",
-                        f"# 字段: ${price}, ${flow}",
+                        f"# Mechanism: return continuation when {flow_label} growth expands versus its "
+                        "background",
+                        f"# Fields: ${price}, ${flow}",
                         f"ret = RETURN(${price}, 1)",
                         f"flow_speed = TS_ZSCORE(RETURN(${flow}, 1), 60)",
                         "MULTIPLY(ret, MAX(flow_speed, 0))",
@@ -88,8 +91,8 @@ def render_factor_examples(fields: Sequence[str], frequency: str | None) -> str:
             (
                 "price_volume_corr_5m_96" if is_five_minute else "price_volume_corr_native_96",
                 [
-                    "# 机制: 原生 bar 内量价共动强度，背离时反转",
-                    f"# 字段: ${price}, $volume",
+                    "# Mechanism: price-volume co-movement strength within native bars, reversal on divergence",
+                    f"# Fields: ${price}, $volume",
                     f"TS_CORR(${price}, $volume, 96)",
                 ],
             )
@@ -103,8 +106,8 @@ def render_factor_examples(fields: Sequence[str], frequency: str | None) -> str:
                 if is_five_minute
                 else "adjusted_vwap_deviation_native",
                 [
-                    "# 机制: 同周期复权收盘价相对成交量加权均价的偏离",
-                    f"# 字段: $adj_close{scope}, $adj_vwap{scope}",
+                    "# Mechanism: deviation of adjusted close from same-period volume-weighted average price",
+                    f"# Fields: $adj_close{scope}, $adj_vwap{scope}",
                     f"$adj_close{scope} / $adj_vwap{scope} - 1",
                 ],
             )
@@ -112,8 +115,7 @@ def render_factor_examples(fields: Sequence[str], frequency: str | None) -> str:
 
     lines = [
         "### Canonical factor examples",
-        "These are examples adapted from the shared ChaoticTrader prompt library, not measured results or fixed templates.",
-        "Preserve the mechanism when adapting them, but use only fields, operators and timeframes allowed in the current context.",
+        "DSL examples; no evaluation results.",
     ]
     for name, expression in rows:
         lines.append(f"\n- `{name}`\n```text\n" + "\n".join(expression) + "\n```")

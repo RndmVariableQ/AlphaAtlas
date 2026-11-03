@@ -3,6 +3,26 @@
 入口 `--method annealing`，实现标识 `annealing_llm_atlas_v1`。方法由 Atlas Explorer、
 Research Analyst 和 Factor Miner 三个角色组成，退火搜索的状态是当前研究 Region。
 
+研究状态使用 `research_plan_state`，其中 `research_plan_index` 标识本次计划执行；
+`factor_trial_records` 保存原计划、方向、区域、引用、计划编号及评估尝试编号，
+以 `factor_trial_index` 关联一次原子 trial，不再保存候选公式、评估结果和准入状态副本。
+`completed_research_plan_count`
+只统计已结束计划数量，异步完成顺序不保证与计划编号一致，不能用该数量代替计划身份。
+旧检查点的 `steps`、`round_state`、`round_index`、计划内 `index` 在既有加载入口读取；
+旧记录中的候选、评估和准入副本在内存加载时丢弃，不据此覆盖 trial，也不重写历史文件。
+原始模型输入、对话和证据正文保持保存时的内容。V1 和 V1 Async 共用这一约定。
+
+Analyst 选择测量路线、字段、特征周期、窗口、对照和阈值；Miner 按计划实现候选并使用
+已有反馈提出不同候选。角色提示不再重复说明平台准入职责。基础字段示例、基础频率和
+可用高周期由公共 context 动态说明；共享 DSL 示例只说明语法，不作为测量证据。
+
+区域统计、完整计划证据和 Analyst 历史反馈通过 `SearchSession.get_trial` 按编号读取
+原子 trial；这只是方法内部能力，不新增 Agent 工具或数据权限。创建一份 Explorer 输入时，
+同一条 trial 的读取结果在该次组装中复用，之后不保留额外缓存。完整地图和历史结果索引
+仍需汇总相关全部记录；单独展开计划只读取该计划的 trial，不扫描 trial 目录。
+缺失、损坏或编号不匹配的记录明确失败，不回退到旧副本、不重新评估。
+恢复已有输入、对话和 `sources` 则沿用保存内容，不重新读取并替换模型已见证据。
+
 ## 一轮研究
 
 1. Explorer 收到当前 run 的完整 Region 地图和公共研究 context。每个 Region 附有本 run 的
@@ -26,7 +46,7 @@ Analyst 的候选反馈仅包含服务端已正式入库且覆盖率等门槛合
 方向化验证 IC 绝对值降序选择，最多 5 个。期货主指标为成交额加权 Pearson IC；其他资产
 使用各自配置的主指标。该筛选只决定 Analyst 可见的反馈，不改变平台准入。
 
-Explorer 地图中的 Train/Valid 分布来自本方法已有的 run 内 trial 记录；分布包含所有评估
+Explorer 地图中的 Train/Valid 分布来自本方法引用的 run 内原子 trial 记录；分布包含所有评估
 成功且 Valid 覆盖达标的候选，入库数另列，不以入库结果筛选样本。Train 分布按 Train 主
 指标符号统一方向，Valid 使用评估报告中已按同一 Train 方向调整的值。证据标签只描述本轮
 样本；样本不足时保留不确定性，不把相关性解释为因果。Explorer 引用只能来自地图展示的
@@ -48,6 +68,34 @@ Analyst 和 Miner 均可调用 `get_context`、`library_search`、`library_get`�
 `query_results` 返回。Analyst 查询计入既有对话上限，Miner 成功查询不占用公式修复次数。
 查询不生成候选、不扣评估预算、不扩大计划字段或算子权限；实际模型请求仍计成本。
 原始回复、查询结果和 Miner 对话复用已有方法状态，恢复不重发已保存回复或重复已保存查询。
+
+回复外包装按[公共解析规则](../method_reproduction.md#公共信息与初始化)处理。
+Analyst 提示词明确计划字段类型：`hypothesis` 为非空字符串，`allowed_fields` 为当前可用基础
+字段名的非空数组，`measurement_plan` 为字符串，`miner_instruction` 优先使用非空指令文本。
+`miner_instruction` 也接受非空 JSON 对象，以 JSON 文本保留全部键值后交给 Miner；不挑选
+其中某个键、不增补研究指令。空对象、数组、布尔值及缺失指令仍报错并返回具体字段要求。
+这项兼容不改研究区域、方向、字段权限、表达式校验、准入门槛或查询／修复／候选预算，
+也不改写已保存的原始回复和既有 trial。V1 和 V1 Async 共用相同处理。
+修复耗尽会保留最后一条具体校验错误；Miner 的生成失败原因随原有候选 trial 保存，
+可区分 JSON、字段和 DSL 失败，无需另建日志或状态账本。
+
+### 计划阻塞与交接
+
+Analyst 的测量路线必须能通过当前 DSL 和平台反馈执行；Miner 保持原检验，不以其他因子
+替代缺失的测量。任一角色遇到缺失数据或评估能力时，只返回
+`{"blocked":"具体缺失能力"}`，与正常计划／表达式回复互斥。
+
+平台在现有方法检查点的 `blocked_plans` 中保存原计划编号、原方向和阻塞原因，结束该计划，
+让 Explorer 选择其他可执行问题，或提出解决阻塞的新检验。没有表达式提交时不生成 trial，
+不扣候选预算；已经提交的 trial 保留，并按真实结果更新区域累计统计，阻塞本身不触发
+Metropolis 区域切换。结束数量包含阻塞计划，候选完成数量只统计实际提交。
+
+Explorer 的 `atlas.blocked_plans` 来自这些原计划；没有 trial 的阻塞不会被误写成失败测量。
+若计划已提交部分候选，完整计划正文同时给出实际 trial 与阻塞原因。连续没有新候选的
+阻塞计划数受现有 `max_dialogue_rounds` 限制，达到上限明确停止；该限制恢复后仍有效。
+已保存的阻塞回复复用原有阶段恢复路径，不重发、不重复结束计划。旧检查点无此字段时
+视为空列表，不改历史产物。自由文本中的“BLOCKED”不代替结构化回复；自然语言检验是否
+等价仍依靠角色判断与审阅，平台不声称能自动验证所有测量语义。
 
 ## 公平对照与运行
 

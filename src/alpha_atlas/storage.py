@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections import OrderedDict
 from dataclasses import asdict
 from pathlib import Path
@@ -83,6 +84,11 @@ def report_from_dict(value: dict) -> EvaluationReport:
 
 
 def feedback_from_dict(value: dict) -> TrialFeedback:
+    value = dict(value)
+    if "trial_index" in value:
+        value["factor_trial_index"] = value.pop("trial_index")
+    if "nearest_factor" in value:
+        value["nearest_factor_id"] = value.pop("nearest_factor")
     return TrialFeedback(
         **{
             **value,
@@ -95,6 +101,12 @@ def feedback_from_dict(value: dict) -> TrialFeedback:
 class RunStore:
     def __init__(self, directory: Path):
         self.directory = directory
+        self.factor_trials_directory = directory / "factor_trials"
+        legacy = directory / "trials"
+        if legacy.is_dir():
+            if self.factor_trials_directory.is_dir():
+                raise ValueError("run contains both factor_trials and legacy trials directories")
+            self.factor_trials_directory = legacy
         self._operator_index = len(list((directory / "operators").glob("*.json")))
 
     def record(
@@ -109,14 +121,14 @@ class RunStore:
         compiled=None,
         runtime_cost=None,
     ):
-        path = self.directory / "trials" / f"{attempt:08d}.json"
+        path = self.factor_trials_directory / f"{attempt:08d}.json"
         if path.exists():
             raise ValueError(f"trial already committed: {attempt}")
         atomic_json(
             path,
             {
                 "format_version": FORMAT_VERSION,
-                "trial_index": attempt,
+                "factor_trial_index": attempt,
                 "feedback": asdict(feedback),
                 "compiled": asdict(compiled) if compiled else None,
                 "elapsed_seconds": elapsed,
@@ -138,17 +150,30 @@ class RunStore:
         )
         self._operator_index = index
 
-    def trials(self) -> list[dict]:
-        import json
+    def trial(self, factor_trial_index: int) -> dict:
+        if type(factor_trial_index) is not int or factor_trial_index < 1:
+            raise ValueError("factor_trial_index must be a positive integer")
+        path = self.factor_trials_directory / f"{factor_trial_index:08d}.json"
+        row = json.loads(path.read_text(encoding="utf-8"))
+        if row.get("format_version") != FORMAT_VERSION:
+            raise ValueError("unsupported run format; old artifacts are not migrated")
+        if "trial_index" in row:
+            row["factor_trial_index"] = row.pop("trial_index")
+        feedback = row["feedback"]
+        if "trial_index" in feedback:
+            feedback["factor_trial_index"] = feedback.pop("trial_index")
+        if "nearest_factor" in feedback:
+            feedback["nearest_factor_id"] = feedback.pop("nearest_factor")
+        if row["factor_trial_index"] != factor_trial_index:
+            raise ValueError("committed trial index mismatch")
+        return row
 
+    def trials(self) -> list[dict]:
         records = []
-        for expected, path in enumerate(sorted((self.directory / "trials").glob("*.json")), 1):
-            row = json.loads(path.read_text(encoding="utf-8"))
-            if row.get("format_version") != FORMAT_VERSION:
-                raise ValueError("unsupported run format; old artifacts are not migrated")
-            if row["trial_index"] != expected or path.stem != f"{expected:08d}":
+        for expected, path in enumerate(sorted(self.factor_trials_directory.glob("*.json")), 1):
+            if path.stem != f"{expected:08d}":
                 raise ValueError("trial sequence is not contiguous")
-            records.append(row)
+            records.append(self.trial(expected))
         return records
 
     def library_view(self) -> LibraryView:
@@ -156,6 +181,21 @@ class RunStore:
 
         members = []
         identities = set()
+        spec_path = self.directory / "run.json"
+        spec = json.loads(spec_path.read_text()) if spec_path.exists() else {}
+        for item in spec.get("initial_library", {}).get("members", []):
+            report = report_from_dict(item["report"])
+            if report.expression_id in identities:
+                raise ValueError("duplicate initial library member")
+            identities.add(report.expression_id)
+            members.append(
+                LibraryEntry(
+                    report.expression_id,
+                    candidate_from_dict(item["candidate"]),
+                    report,
+                    len(members) + 1,
+                )
+            )
         for trial in self.trials():
             feedback = trial["feedback"]
             if feedback["accepted"]:

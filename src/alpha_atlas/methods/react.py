@@ -8,12 +8,14 @@ from dataclasses import asdict, dataclass
 from urllib.parse import urlsplit
 
 from alpha_atlas.contracts import Candidate
-from alpha_atlas.methods.models import ContextLimitError, HTTPModels
+from alpha_atlas.methods.models import ContextLimitError, HTTPModels, parse_json_object
 from alpha_atlas.methods.prompt_examples import render_factor_examples
 from alpha_atlas.reporting import TerminalStream, terminal_progress
+from alpha_atlas.session import READ_ONLY_QUERY_HELP
 from alpha_atlas.storage import candidate_from_dict
 
-SYSTEM = """# Factor Research Agent
+SYSTEM = (
+    """# Factor Research Agent
 
 ## 1. Objective and workflow
 
@@ -51,14 +53,12 @@ and your own proposals. For documentation, the equivalent tool arguments are:
 
 ### 2.2 Available tools
 
-| Tool call | Purpose and result |
-| --- | --- |
-| `evaluate(expression, hypothesis="", name=null)` | Evaluate one DSL expression and return metrics, coverage, admission feedback and remaining budget. Supply a short name and rationale. |
-| `get_context()` | Read all stable research metadata in one call: asset, frequency, panel, target, metric, permitted fields, full operator definitions, expression and evaluation rules, and reference-library settings. |
-| `library_search(query="", source="all", offset=0, limit=10)` | Search admitted factors and/or optional reference definitions. Empty query browses; limit is 1–20. |
-| `library_list(offset=0, limit=20)` | Page through admitted factors in this run and their primary validation scores. Limit is 1–100. |
-| `library_get(factor_id)` | Read an admitted factor's expression, train/validation report and direction; null if absent. |
-| `library_stats()` | Read statistics of the admitted library in this run. |
+`evaluate(expression, hypothesis="", name=null)` evaluates one DSL expression and returns
+metrics, coverage, admission feedback and remaining budget. Supply a short name and rationale.
+
+"""
+    + READ_ONLY_QUERY_HELP
+    + """
 
 Only these tools are available. Operator registration and manual library writes are unavailable.
 Research metadata is already included below; use `get_context()` whenever you need to retrieve
@@ -85,11 +85,12 @@ whitespace-separated term must match a name, formula or description, ignoring ca
 | `accepted` | Whether this candidate was admitted to the current run's library. |
 | `reason` | The platform's admission or rejection reason; use it to decide what to change. |
 | `max_abs_corr` | Highest absolute validation correlation found in the comparisons performed; null when unavailable. |
-| `nearest_factor` | Identifier of the most similar compared library member; null when unavailable. |
+| `nearest_factor_id` | Identifier of the most similar compared library member; null when unavailable. |
 | `comparison_complete` | Whether the comparison covered the entire current library; partial checks do not establish diversity. |
 | `library_version` | Library version after the evaluation, identifying the admitted membership state. |
 | `remaining_attempts` | Current attempts remaining after this evaluation, inside its tool result. |
 """
+)
 
 DSL_GUIDE = """### 5.1 Syntax and numerical conventions
 
@@ -167,6 +168,7 @@ RULE_TITLES = {
     "search_diagnostics.icir": "6.5 Training stability diagnostic",
     "search_diagnostics.turnover": "6.6 Training holdings turnover diagnostic",
     "clipping.semantics": "6.7 Training-fitted factor and label clipping",
+    "search_diagnostics.rank_lag": "6.8 Raw training RankIC and one-bar delay diagnostics",
     "semantics": "7.1 How to use reference definitions",
 }
 
@@ -647,7 +649,9 @@ class ReactSearch:
             if self.reply["kind"] != kind:
                 raise ValueError("pending model response kind mismatch")
             return self.reply["text"]
-        terminal_progress("模型请求", 类型=kind, 剩余预算=self._session.remaining_budget())
+        terminal_progress(
+            "模型请求", transient=True, 类型=kind, 剩余预算=self._session.remaining_budget()
+        )
 
         def start_request(_):
             self.usage["chat_requests"] += 1
@@ -843,8 +847,8 @@ class ReactSearch:
             try:
                 # Qwen can include a thinking prefix even when the requested answer is JSON.
                 answer = text.rsplit("</think>", 1)[-1].strip()
-                request = json.loads(answer)
-                if not isinstance(request, dict) or set(request) != {"tool", "arguments"}:
+                request = parse_json_object(answer)
+                if set(request) != {"tool", "arguments"}:
                     raise ValueError("Return exactly one JSON object with tool and arguments")
                 tool, arguments = request["tool"], request["arguments"]
                 if not isinstance(tool, str) or not isinstance(arguments, dict):

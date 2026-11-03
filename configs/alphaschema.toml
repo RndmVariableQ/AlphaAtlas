@@ -1,0 +1,62 @@
+# AlphaSchema author-code search adapted to the shared Atlas DSL and evaluation.
+# Same Luna service settings as the current annealing/V1 methods.
+chat_model = "gpt-6-luna"
+chat_base_url = "http://127.0.0.1:27483/codex/v1"
+chat_key_env = "ATLAS_EXPLORER_OPENAI_API_KEY"
+temperature = 1.0
+max_output_tokens = 65536
+timeout_seconds = 1800.0
+
+# Each plan yields two charged candidates; 100 attempts remains in coverage cold start.
+batch_size = 16
+candidate_pool_size = 10000
+periods = [20, 80] # Native input bars; not a window cap or the label horizon.
+max_repairs = 1
+max_dialogue_rounds = 8
+ensemble_size = 8
+bootstrap_fraction = 0.7
+reward_alpha = 10.0
+reward_beta = 1.0
+lag1_penalty = 2.0
+
+[quality_count_weights]
+"0" = 0.15
+"1" = 0.35
+"2" = 0.35
+"3" = 0.15
+
+[mutation_weights]
+replace_quality = 0.22
+replace_context = 0.16
+replace_output = 0.16
+add_quality = 0.14
+drop_quality = 0.12
+replace_direction = 0.12
+replace_event = 0.08
+
+[[schedule]]
+min_observations = 0
+max_observations = 150
+explore = 16
+exploit = 0
+mutate = 0
+
+[[schedule]]
+min_observations = 150
+max_observations = 300
+explore = 8
+exploit = 6
+mutate = 2
+
+[[schedule]]
+min_observations = 300
+max_observations = 700
+explore = 5
+exploit = 8
+mutate = 3
+
+[[schedule]]
+min_observations = 700
+explore = 3
+exploit = 8
+mutate = 5

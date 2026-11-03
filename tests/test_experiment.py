@@ -41,7 +41,7 @@ def test_completion_matches_canonical_metrics_and_reuses_saved_outputs(
             frozen_run / "run.json",
             frozen_run / "frozen/library.json",
             frozen_run / "checkpoint.json",
-            *sorted((frozen_run / "trials").glob("*.json")),
+            *sorted((frozen_run / "factor_trials").glob("*.json")),
         ]
     }
     loads = []
@@ -92,6 +92,44 @@ def test_completion_matches_canonical_metrics_and_reuses_saved_outputs(
     assert (frozen_run / "model/fit.json").read_bytes() == saved_fit
     assert all(path.read_bytes() == content for path, content in original.items())
     assert overview.decode().count(f"(artifacts/runs/{frozen_run.name}/report.md)") == 2
+
+
+def test_completion_publishes_external_run_and_reuses_outputs_through_symlink(
+    project, frozen_run, monkeypatch
+):
+    workspace = project / "comparison/workspace"
+    workspace.mkdir(parents=True)
+    for name in ("configs", "data", "artifacts"):
+        (workspace / name).symlink_to(project / name, target_is_directory=True)
+    alias = workspace / "artifacts/runs" / frozen_run.name
+    result = experiment.finish_experiment(workspace, frozen_run)
+    overview = workspace / "experiment_overview.md"
+    original = overview.read_bytes()
+    link = frozen_run.resolve().relative_to(workspace.resolve(), walk_up=True) / "report.md"
+    assert original.decode().count(f"({link.as_posix()})") == 2
+    assert (workspace / link).resolve() == (frozen_run / "report.md").resolve()
+    saved = {
+        path: path.read_bytes()
+        for path in (
+            frozen_run / "run.json",
+            frozen_run / "checkpoint.json",
+            frozen_run / "frozen/library.json",
+            frozen_run / "model/fit.json",
+            frozen_run / "model/test.json",
+            frozen_run / "oos.json",
+            frozen_run / "library_similarity.json",
+        )
+    }
+
+    def forbid(*args, **kwargs):
+        raise AssertionError("completed stages must not reload features or refit")
+
+    monkeypatch.setattr(ParqMarketData, "load_features", forbid)
+    monkeypatch.setattr("alpha_atlas.model.fit_models", forbid)
+    repeated = experiment.finish_experiment(workspace, alias)
+    assert repeated["overview"] == result["overview"] == str(overview)
+    assert overview.read_bytes() == original
+    assert all(path.read_bytes() == content for path, content in saved.items())
 
 
 @pytest.mark.parametrize("clipped", [False, True])
@@ -300,6 +338,55 @@ def test_overview_rejects_partial_table_edits_and_keeps_the_document(project, fr
     with pytest.raises(ValueError, match="table headers changed"):
         experiment.finish_experiment(project, frozen_run)
     assert path.read_text() == text
+
+
+@pytest.mark.parametrize("mismatch", [None, "data", "fold_seed"])
+def test_completion_preserves_common_settings_without_restoring_columns(
+    project, frozen_run, monkeypatch, mismatch
+):
+    experiment.finish_experiment(project, frozen_run)
+    path = project / "experiment_overview.md"
+    lines = path.read_text().splitlines()
+    settings_count = sum(line.startswith("**数据设置**：") for line in lines)
+    for table in reversed(
+        [
+            i
+            for i, line in enumerate(lines)
+            if line.startswith("| ")
+            and "数据" in line.split(" | ")
+            and "A 股"
+            in next((title for title in reversed(lines[:i]) if title.startswith("### ")), "")
+        ]
+    ):
+        headers = lines[table].strip("| ").split(" | ")
+        data = lines[table + 2].strip("| ").split(" | ")[headers.index("数据")]
+        if mismatch == "data":
+            data += " / different snapshot"
+        fold_seed = "fold1 / 43" if mismatch == "fold_seed" else "fold1 / 42"
+        keep = [i for i, name in enumerate(headers) if name not in {"数据", "Fold / seed"}]
+        stop = table
+        while stop < len(lines) and lines[stop].startswith("| "):
+            cells = lines[stop].strip("| ").split(" | ")
+            if stop >= table + 2 and headers[0] == "方法 / 模型":
+                cells[0] = cells[0].removesuffix(" / fold1 / 42")
+            lines[stop] = "| " + " | ".join(cells[i] for i in keep) + " |"
+            stop += 1
+        lines[table:table] = [f"**数据设置**：{data}。", "", f"**Fold / seed**：{fold_seed}。", ""]
+    path.write_text("\n".join(lines) + "\n")
+    before = path.read_bytes()
+
+    def forbid(*args, **kwargs):
+        raise AssertionError("Changing the overview layout must reuse saved evaluations")
+
+    monkeypatch.setattr(ParqMarketData, "load_features", forbid)
+    monkeypatch.setattr("alpha_atlas.model.fit_models", forbid)
+    if mismatch:
+        with pytest.raises(ValueError, match="common .* setting changed"):
+            experiment.finish_experiment(project, frozen_run)
+    else:
+        experiment.finish_experiment(project, frozen_run)
+        assert before.decode().count("**数据设置**：") == settings_count + 2
+    assert path.read_bytes() == before
 
 
 def test_incomplete_cached_model_test_is_not_published(project, frozen_run):

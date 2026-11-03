@@ -117,7 +117,7 @@ class FactorLibrary:
         if self._members:
             raise ValueError("restore requires an empty library")
         for entry in view.members:
-            if self._disk_cache is not None:
+            if self._disk_cache is not None and observation is None:
                 # Committed metadata is sufficient until a comparison needs this member's values.
                 self._values[entry.factor_id] = self._directory / f"{entry.factor_id}.arrow"
                 self._members[entry.factor_id] = entry
@@ -141,7 +141,7 @@ class FactorLibrary:
         values: FactorValues | None,
         *,
         commit=None,
-        trial_index: int = 0,
+        factor_trial_index: int = 0,
     ) -> TrialFeedback:
         identity = report.expression_id
         reason, highest, nearest = "accepted", None, None
@@ -238,7 +238,7 @@ class FactorLibrary:
             nearest,
             complete,
             version,
-            trial_index=trial_index,
+            factor_trial_index=factor_trial_index,
         )
         if accepted:
             if (

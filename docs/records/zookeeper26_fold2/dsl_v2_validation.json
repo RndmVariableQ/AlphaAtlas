@@ -1,0 +1,278 @@
+{
+  "date": "2026-11-02",
+  "kind": "read_only_feature_parity_no_oos",
+  "through": "2023-12-31",
+  "base_daily_rows": 159432,
+  "curve_daily_rows": 133287,
+  "monthly_rows": 7905,
+  "products": 85,
+  "relative_tolerance": 1e-08,
+  "absolute_tolerance": 1e-10,
+  "passed": true,
+  "sources": {
+    "version": "zookeeper_rq_monthly_v1",
+    "base_snapshot": "73db06c2d7223ce5829b8d3d9846a27b35e59e0d621a11a4a94d99dcc6ec0e87",
+    "curve_snapshot": "3cb13b7e7e0015f96f93e0f36e6da2bb39448d5a26a13e165d74b940e13a152b",
+    "base_status": "complete",
+    "curve_status": "incomplete",
+    "curve_missing_auxiliary_bars": 2,
+    "missing_auxiliary_policy": "use observed values; preserve nulls; no filling",
+    "base_frequency": "existing kernel 1m aggregated to 5m; not native 5m",
+    "curve_frequency": "RiceQuant native 5m; raw dominant and two later maturities",
+    "history_start": "2012-01-04",
+    "curve_history_start": "2015-01-05"
+  },
+  "factors": [
+    {
+      "name": "mom1",
+      "field": "zk_mom1",
+      "finite_rows": 6804,
+      "null_mask_equal": true,
+      "within_tolerance": true,
+      "max_absolute_error": 0.0
+    },
+    {
+      "name": "mom12",
+      "field": "zk_mom12",
+      "finite_rows": 5702,
+      "null_mask_equal": true,
+      "within_tolerance": true,
+      "max_absolute_error": 0.0
+    },
+    {
+      "name": "val36",
+      "field": "zk_val36",
+      "finite_rows": 4103,
+      "null_mask_equal": true,
+      "within_tolerance": true,
+      "max_absolute_error": 0.0
+    },
+    {
+      "name": "val60",
+      "field": "zk_val60",
+      "finite_rows": 2784,
+      "null_mask_equal": true,
+      "within_tolerance": true,
+      "max_absolute_error": 0.0
+    },
+    {
+      "name": "seasonality",
+      "field": "zk_seasonality",
+      "finite_rows": 6010,
+      "null_mask_equal": true,
+      "within_tolerance": true,
+      "max_absolute_error": 0.0
+    },
+    {
+      "name": "dOI",
+      "field": "zk_dOI",
+      "finite_rows": 7818,
+      "null_mask_equal": true,
+      "within_tolerance": true,
+      "max_absolute_error": 0.0
+    },
+    {
+      "name": "atv",
+      "field": "zk_atv",
+      "finite_rows": 6883,
+      "null_mask_equal": true,
+      "within_tolerance": true,
+      "max_absolute_error": 0.0
+    },
+    {
+      "name": "dmaOI",
+      "field": "zk_dmaOI",
+      "finite_rows": 6849,
+      "null_mask_equal": true,
+      "within_tolerance": true,
+      "max_absolute_error": 0.0
+    },
+    {
+      "name": "val",
+      "field": "zk_val",
+      "finite_rows": 3203,
+      "null_mask_equal": true,
+      "within_tolerance": true,
+      "max_absolute_error": 1.7763568394002505e-15
+    },
+    {
+      "name": "cv",
+      "field": "zk_cv",
+      "finite_rows": 5702,
+      "null_mask_equal": true,
+      "within_tolerance": true,
+      "max_absolute_error": 2.842170943040401e-14
+    },
+    {
+      "name": "iliq",
+      "field": "zk_iliq",
+      "finite_rows": 6569,
+      "null_mask_equal": true,
+      "within_tolerance": true,
+      "max_absolute_error": 3.308722450212111e-24
+    },
+    {
+      "name": "max",
+      "field": "zk_max",
+      "finite_rows": 6804,
+      "null_mask_equal": true,
+      "within_tolerance": true,
+      "max_absolute_error": 0.0
+    },
+    {
+      "name": "skew",
+      "field": "zk_skew",
+      "finite_rows": 5683,
+      "null_mask_equal": true,
+      "within_tolerance": true,
+      "max_absolute_error": 0.0
+    },
+    {
+      "name": "kurt",
+      "field": "zk_kurt",
+      "finite_rows": 5683,
+      "null_mask_equal": true,
+      "within_tolerance": true,
+      "max_absolute_error": 0.0
+    },
+    {
+      "name": "var",
+      "field": "zk_var",
+      "finite_rows": 5683,
+      "null_mask_equal": true,
+      "within_tolerance": true,
+      "max_absolute_error": 0.0
+    },
+    {
+      "name": "vov",
+      "field": "zk_vov",
+      "finite_rows": 4834,
+      "null_mask_equal": true,
+      "within_tolerance": true,
+      "max_absolute_error": 0.0
+    },
+    {
+      "name": "basis",
+      "field": "zk_basis",
+      "finite_rows": 6571,
+      "null_mask_equal": true,
+      "within_tolerance": true,
+      "max_absolute_error": 0.0
+    },
+    {
+      "name": "rbasis",
+      "field": "zk_rbasis",
+      "finite_rows": 6433,
+      "null_mask_equal": true,
+      "within_tolerance": true,
+      "max_absolute_error": 0.0
+    },
+    {
+      "name": "bmom",
+      "field": "zk_bmom",
+      "finite_rows": 5608,
+      "null_mask_equal": true,
+      "within_tolerance": true,
+      "max_absolute_error": 1.1102230246251565e-16
+    },
+    {
+      "name": "basis12",
+      "field": "zk_basis12",
+      "finite_rows": 5655,
+      "null_mask_equal": true,
+      "within_tolerance": true,
+      "max_absolute_error": 4.440892098500626e-16
+    },
+    {
+      "name": "rbasis12",
+      "field": "zk_rbasis12",
+      "finite_rows": 5194,
+      "null_mask_equal": true,
+      "within_tolerance": true,
+      "max_absolute_error": 4.440892098500626e-16
+    },
+    {
+      "name": "bmom12",
+      "field": "zk_bmom12",
+      "finite_rows": 4737,
+      "null_mask_equal": true,
+      "within_tolerance": true,
+      "max_absolute_error": 3.552713678800501e-15
+    },
+    {
+      "name": "l2basis12",
+      "field": "zk_l2basis12",
+      "finite_rows": 5513,
+      "null_mask_equal": true,
+      "within_tolerance": true,
+      "max_absolute_error": 4.440892098500626e-16
+    },
+    {
+      "name": "l2rbasis",
+      "field": "zk_l2rbasis",
+      "finite_rows": 6279,
+      "null_mask_equal": true,
+      "within_tolerance": true,
+      "max_absolute_error": 0.0
+    },
+    {
+      "name": "l2bmom12",
+      "field": "zk_l2bmom12",
+      "finite_rows": 4601,
+      "null_mask_equal": true,
+      "within_tolerance": true,
+      "max_absolute_error": 3.552713678800501e-15
+    },
+    {
+      "name": "ivolaBGR",
+      "field": "zk_ivolaBGR",
+      "finite_rows": 4404,
+      "null_mask_equal": true,
+      "within_tolerance": true,
+      "max_absolute_error": 0.0
+    }
+  ],
+  "elapsed_seconds": 39.48304867465049,
+  "experiment_version": "rq8_zk26_fold2_v2",
+  "smoke_run": {
+    "run_id": "futures_kernel_5m_full-all-fold2-random-42-15e8e5a508",
+    "run_path": "artifacts/runs/futures_kernel_5m_full-all-fold2-random-42-15e8e5a508",
+    "method": "random",
+    "seed": 42,
+    "attempts": 3,
+    "status": "frozen",
+    "library_size": 0,
+    "feature_rows": 6189366,
+    "snapshot_id": "23b2d89c314645925e14e99f9fbbe58763d042170763011e8a2507ce60cc044b",
+    "end": "2023-12-31",
+    "oos_evaluated": false,
+    "factor_computations": [
+      {
+        "status": "success",
+        "admission": "quality_threshold"
+      },
+      {
+        "status": "success",
+        "admission": "quality_threshold"
+      },
+      {
+        "status": "success",
+        "admission": "quality_threshold"
+      }
+    ]
+  },
+  "verification": {
+    "command": "pwsh -File scripts/check.ps1",
+    "ruff": "passed",
+    "format": "passed",
+    "operator_catalog": "passed",
+    "pytest_passed": 1280,
+    "pytest_seconds": 123.68,
+    "test_data": "synthetic and mocked services only"
+  },
+  "legacy_baseline_artifacts_unchanged": [
+    "run.json",
+    "model/fit.json",
+    "model/test.json"
+  ]
+}

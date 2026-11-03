@@ -1,0 +1,340 @@
+{
+  "schema_version": 1,
+  "id": "rq8_fold2_v1",
+  "description": "RiceQuant Kernel 八字段 / fold2 / 原有算子目录；历史快照口径。",
+  "asset": "futures_kernel_5m_full",
+  "universe": "all",
+  "profile": {
+    "asset_id": "futures_kernel_5m_full",
+    "frequency": "5m",
+    "provider": "ricequant",
+    "data_dir": "data/futures_kernel_5m_full",
+    "default_universe": "all",
+    "universes": [
+      "all"
+    ],
+    "timezone": "Asia/Shanghai",
+    "bar_time_label": "end",
+    "price_field": "adj_close",
+    "target_horizon_bars": 12,
+    "metric": "time_series_weighted_pearson_ic",
+    "panel": "product",
+    "min_train_val_ic": 0.005,
+    "fundamentals": false,
+    "start": "2012-01-04",
+    "end": "2026-09-28"
+  },
+  "fold": {
+    "id": "fold2",
+    "train": {
+      "start": "2019-01-01",
+      "end": "2021-12-31"
+    },
+    "val": {
+      "start": "2022-01-01",
+      "end": "2023-12-31"
+    },
+    "test": {
+      "start": "2024-01-01",
+      "end": "2025-12-31"
+    }
+  },
+  "fields": [
+    "adj_close",
+    "adj_open",
+    "adj_high",
+    "adj_low",
+    "adj_vwap",
+    "volume",
+    "amount",
+    "open_interest"
+  ],
+  "data": {
+    "adapter": "parquet",
+    "sources": {
+      "base": {
+        "path": "data/futures_kernel_5m_full",
+        "snapshot_id": "73db06c2d7223ce5829b8d3d9846a27b35e59e0d621a11a4a94d99dcc6ec0e87",
+        "allow_incomplete": false
+      }
+    }
+  },
+  "rules": {
+    "max_attempts": 100,
+    "reference_library": "futures_cta",
+    "search_diagnostics": "icir_turnover_lag1_v2",
+    "clip_quantiles": [
+      0.01,
+      0.99
+    ],
+    "min_abs_val_ic": 0.01,
+    "min_coverage": 0.8,
+    "max_abs_corr": 0.7,
+    "min_corr_overlap": 100,
+    "max_expression_nodes": 100,
+    "max_expression_depth": 20,
+    "seed": 42,
+    "warmup_policy": "one_calendar_year_before_train",
+    "target_boundary_policy": "target_end_must_be_within_split",
+    "admission": "train_sign_then_positive_val_ic; first_accepted_wins",
+    "oos_policy": "freeze_first; no_test_feedback"
+  },
+  "model": {
+    "seed": 42,
+    "preprocessing": {
+      "clip_quantiles": [
+        0.01,
+        0.99
+      ],
+      "product_demean": true
+    },
+    "linear": {
+      "rcond": 1e-12
+    },
+    "lightgbm": {
+      "num_boost_round": 50,
+      "learning_rate": 0.05,
+      "num_leaves": 15,
+      "min_data_in_leaf": 100,
+      "lambda_l2": 1.0,
+      "num_threads": 4
+    }
+  },
+  "method_configs": {
+    "alphaprobe": {
+      "chat_model": "claude-haiku-5-5",
+      "embedding_model": "Qwen3-Embedding-0.6B",
+      "chat_base_url": "http://127.0.0.1:8765/v1",
+      "embedding_base_url": "http://127.0.0.1:8003/v1",
+      "chat_key_env": "ALPHA_ATLAS_LOCAL_BRIDGE_UNUSED",
+      "embedding_key_env": "ALPHA_ATLAS_EMBEDDING_API_KEY",
+      "temperature": 1.0,
+      "max_output_tokens": 65536,
+      "timeout_seconds": 1800.0,
+      "pool_capacity": 50,
+      "top_k": 15,
+      "offspring": 5,
+      "depth_penalty": 0.05,
+      "retrieval_penalty": 0.1,
+      "min_train_quality": 0.006,
+      "initial_expressions": []
+    },
+    "alphaschema": {
+      "chat_model": "gpt-6-luna",
+      "chat_base_url": "http://127.0.0.1:27483/codex/v1",
+      "chat_key_env": "ATLAS_EXPLORER_OPENAI_API_KEY",
+      "temperature": 1.0,
+      "max_output_tokens": 65536,
+      "timeout_seconds": 1800.0,
+      "batch_size": 16,
+      "candidate_pool_size": 10000,
+      "periods": [
+        20,
+        80
+      ],
+      "max_repairs": 1,
+      "max_dialogue_rounds": 8,
+      "ensemble_size": 8,
+      "bootstrap_fraction": 0.7,
+      "reward_alpha": 10.0,
+      "reward_beta": 1.0,
+      "lag1_penalty": 2.0,
+      "quality_count_weights": {
+        "0": 0.15,
+        "1": 0.35,
+        "2": 0.35,
+        "3": 0.15
+      },
+      "mutation_weights": {
+        "replace_quality": 0.22,
+        "replace_context": 0.16,
+        "replace_output": 0.16,
+        "add_quality": 0.14,
+        "drop_quality": 0.12,
+        "replace_direction": 0.12,
+        "replace_event": 0.08
+      },
+      "schedule": [
+        {
+          "min_observations": 0,
+          "max_observations": 150,
+          "explore": 16,
+          "exploit": 0,
+          "mutate": 0
+        },
+        {
+          "min_observations": 150,
+          "max_observations": 300,
+          "explore": 8,
+          "exploit": 6,
+          "mutate": 2
+        },
+        {
+          "min_observations": 300,
+          "max_observations": 700,
+          "explore": 5,
+          "exploit": 8,
+          "mutate": 3
+        },
+        {
+          "min_observations": 700,
+          "explore": 3,
+          "exploit": 8,
+          "mutate": 5
+        }
+      ]
+    },
+    "react": {
+      "framework": "agentscope",
+      "chat_model": "deepseek-flash",
+      "chat_base_url": "https://api.deepseek.com/v1",
+      "chat_key_env": "OPENAI_API_KEY",
+      "temperature": 1.0,
+      "max_output_tokens": 65536,
+      "summary_output_tokens": 768,
+      "timeout_seconds": 120.0,
+      "context_size": 131072
+    },
+    "mcts_llm": {
+      "chat_model": "deepseek-flash",
+      "chat_base_url": "https://api.deepseek.com/v1",
+      "chat_key_env": "OPENAI_API_KEY",
+      "temperature": 1.0,
+      "repair_temperature": 0.8,
+      "risk_temperature": 0.1,
+      "timeout_seconds": 1800.0,
+      "exploration": 1.0,
+      "dimension_temperature": 1.0,
+      "tree_budget": 3,
+      "budget_increment": 1,
+      "fsa_top_k": 3,
+      "max_formula_repairs": 3,
+      "max_dialogue_rounds": 8,
+      "tree_selection": true
+    },
+    "annealing": {
+      "chat_model": "gpt-6-luna",
+      "chat_base_url": "http://127.0.0.1:27483/codex/v1",
+      "chat_key_env": "ATLAS_EXPLORER_OPENAI_API_KEY",
+      "temperature": 1.0,
+      "repair_temperature": 0.8,
+      "timeout_seconds": 120.0,
+      "max_formula_repairs": 3,
+      "max_dialogue_rounds": 8,
+      "candidates_per_plan": 5,
+      "analyst_feedback_top_k": 5,
+      "initial_temperature": 0.25,
+      "final_temperature": 0.02
+    },
+    "v1": {
+      "chat_model": "gpt-6-luna",
+      "chat_base_url": "http://127.0.0.1:27483/codex/v1",
+      "chat_key_env": "ATLAS_EXPLORER_OPENAI_API_KEY",
+      "temperature": 1.0,
+      "repair_temperature": 0.8,
+      "timeout_seconds": 120.0,
+      "max_formula_repairs": 3,
+      "max_dialogue_rounds": 40,
+      "candidates_per_plan": 5,
+      "analyst_feedback_top_k": 5,
+      "initial_temperature": 0.25,
+      "final_temperature": 0.02
+    },
+    "v1_async": {
+      "chat_model": "claude-haiku-5-5",
+      "chat_base_url": "http://127.0.0.1:8765/v1",
+      "chat_key_env": "ALPHA_ATLAS_LOCAL_BRIDGE_UNUSED",
+      "temperature": 1.0,
+      "repair_temperature": 0.8,
+      "timeout_seconds": 1800.0,
+      "max_formula_repairs": 3,
+      "max_dialogue_rounds": 40,
+      "candidates_per_plan": 5,
+      "analyst_feedback_top_k": 5,
+      "initial_temperature": 0.25,
+      "final_temperature": 0.02,
+      "parallel_plans": 3
+    },
+    "random": null,
+    "gp": null,
+    "mcts": null,
+    "atlas": null
+  },
+  "runtime_limits": {
+    "validation_seconds": 120.0,
+    "evaluation_seconds": 120.0,
+    "benchmark_small_size": 64,
+    "benchmark_large_size": 256,
+    "benchmark_repeats": 5,
+    "benchmark_floor_seconds": 0.001,
+    "benchmark_max_growth": 3.0
+  },
+  "operator_versions": {
+    "ABS": "1",
+    "ADD": "1",
+    "AND": "1",
+    "CLIP": "1",
+    "CS_DEMEAN": "1",
+    "CS_RANK": "1",
+    "CS_SCALE": "1",
+    "CS_WINSORIZE": "1",
+    "CS_ZSCORE": "1",
+    "DELAY": "1",
+    "DELTA": "1",
+    "DIVIDE": "1",
+    "EQ": "1",
+    "EXP": "1",
+    "FILLNA": "1",
+    "GE": "1",
+    "GT": "1",
+    "IF_THEN_ELSE": "1",
+    "IS_FINITE": "1",
+    "LE": "1",
+    "LOG": "1",
+    "LOG1P": "1",
+    "LT": "1",
+    "MAX": "1",
+    "MIN": "1",
+    "MULTIPLY": "1",
+    "NE": "1",
+    "NEG": "1",
+    "NOT": "1",
+    "OR": "1",
+    "POWER": "1",
+    "RETURN": "1",
+    "SIGN": "1",
+    "SIGNED_POWER": "1",
+    "SQRT": "1",
+    "SUBTRACT": "1",
+    "TS_ALL": "1",
+    "TS_ANY": "1",
+    "TS_ARGMAX": "1",
+    "TS_ARGMIN": "1",
+    "TS_CORR": "1",
+    "TS_COUNT": "1",
+    "TS_COV": "1",
+    "TS_KURT": "1",
+    "TS_LINEAR_DECAY": "1",
+    "TS_MAX": "1",
+    "TS_MEAN": "1",
+    "TS_MEDIAN": "1",
+    "TS_MIN": "1",
+    "TS_PROD": "1",
+    "TS_QUANTILE": "1",
+    "TS_RANK": "1",
+    "TS_RANKCORR": "1",
+    "TS_RATE": "1",
+    "TS_SKEW": "1",
+    "TS_STD": "1",
+    "TS_SUM": "1",
+    "TS_VAR": "1",
+    "TS_WINSORIZE": "1",
+    "TS_ZSCORE": "1"
+  },
+  "limitations": [
+    "Base is the previously authorized Kernel 1m-to-5m export, not native 5m.",
+    "Computational causality on a fixed final snapshot; full vendor vintage PIT not certified.",
+    "Test 2024-2025 has already been observed and is a historical diagnostic holdout."
+  ],
+  "warmup_notes": "5m search windows use one calendar year before train; target horizon remains 12 native rows."
+}

@@ -1,0 +1,136 @@
+{
+  "spec": {
+    "implementation": "factor_models_v1",
+    "search_run_id": "zookeeper26-fold2-435d201527",
+    "search_config_fingerprint": "a59682ac21cd619478010859a0c26d0dc37331107e021092030637223f93fd5e",
+    "library_sha256": "8204b56cc9e203adae068dd42ad083d0578940732634fc141eade0553e05a234",
+    "snapshot_id": "acb8d22544fd1f7b5560576e0d072ca405f5c315b83dffb2c28d8b59e71c0604",
+    "search_source_fingerprint": "a2f534958c31e6942d1997afc9f2bb61f1cd61395c17442a9c65aa7d5ed9ce5e",
+    "source_fingerprint": "a57147eb477e6bcc463db52589a6121c98adf92a446c69e34a5ba00288672956",
+    "source_matches_search": false,
+    "config": {
+      "seed": 42,
+      "preprocessing": {
+        "clip_quantiles": [
+          0.01,
+          0.99
+        ],
+        "product_demean": true
+      },
+      "linear": {
+        "rcond": 1e-12
+      },
+      "lightgbm": {
+        "num_boost_round": 50,
+        "learning_rate": 0.05,
+        "num_leaves": 15,
+        "min_data_in_leaf": 100,
+        "lambda_l2": 1.0,
+        "num_threads": 4
+      }
+    },
+    "fold": {
+      "id": "fold2",
+      "train": {
+        "start": "2019-01-01",
+        "end": "2021-12-31"
+      },
+      "val": {
+        "start": "2022-01-01",
+        "end": "2023-12-31"
+      },
+      "test": {
+        "start": "2024-01-01",
+        "end": "2025-12-31"
+      }
+    },
+    "primary_metric": "time_series_weighted_pearson_ic",
+    "versions": {
+      "numpy": "2.4.6",
+      "polars": "1.44.1",
+      "lightgbm": "4.7.0"
+    }
+  },
+  "reports": {
+    "test": {
+      "linear": {
+        "metrics": [
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "test",
+            "value": 0.012707017828535085,
+            "n_obs": 2401248,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 80
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "test",
+            "value": 0.011747219123793427,
+            "n_obs": 2401248,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 80
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "test",
+            "value": 0.007585818370784858,
+            "n_obs": 2401248,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 80
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "test",
+            "value": 0.00922278944772888,
+            "n_obs": 2401248,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 80
+          }
+        ],
+        "eligible_rows": 2558829,
+        "predicted_rows": 2549205,
+        "coverage": 0.9962389045926867
+      },
+      "lightgbm": {
+        "metrics": [
+          {
+            "name": "time_series_weighted_pearson_ic",
+            "split": "test",
+            "value": 0.01133857481179048,
+            "n_obs": 2401248,
+            "aggregation": "time_series_weighted_pearson_ic",
+            "n_groups": 80
+          },
+          {
+            "name": "time_series_equal_pearson_ic",
+            "split": "test",
+            "value": 0.010518004749064966,
+            "n_obs": 2401248,
+            "aggregation": "time_series_equal_pearson_ic",
+            "n_groups": 80
+          },
+          {
+            "name": "time_series_weighted_spearman_ic",
+            "split": "test",
+            "value": 0.004786323849400812,
+            "n_obs": 2401248,
+            "aggregation": "time_series_weighted_spearman_ic",
+            "n_groups": 80
+          },
+          {
+            "name": "time_series_equal_spearman_ic",
+            "split": "test",
+            "value": 0.007943209414212293,
+            "n_obs": 2401248,
+            "aggregation": "time_series_equal_spearman_ic",
+            "n_groups": 80
+          }
+        ],
+        "eligible_rows": 2558829,
+        "predicted_rows": 2549205,
+        "coverage": 0.9962389045926867
+      }
+    }
+  }
+}

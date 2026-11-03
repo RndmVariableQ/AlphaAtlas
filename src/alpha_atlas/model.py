@@ -32,12 +32,32 @@ def validate_config(config):
             "num_threads",
         },
     }
-    if set(config) != set(expected) or any(
-        not isinstance(config[k], dict) or set(config[k]) != keys
+    if set(config) - {"preprocessing"} != set(expected) or any(
+        not isinstance(config[k], dict)
+        or set(config[k]) - ({"max_depth"} if k == "lightgbm" else set()) != keys
         for k, keys in expected.items()
         if keys is not None
     ):
         raise ValueError("model configuration must contain seed, linear and lightgbm settings")
+    depth = config["lightgbm"].get("max_depth", -1)
+    if type(depth) is not int or (depth != -1 and depth < 1):
+        raise ValueError("max_depth must be -1 or a positive integer")
+    if "preprocessing" in config:
+        preprocessing = config["preprocessing"]
+        if not isinstance(preprocessing, dict) or set(preprocessing) != {
+            "clip_quantiles",
+            "product_demean",
+        }:
+            raise ValueError("preprocessing requires clip_quantiles and product_demean")
+        quantiles = preprocessing["clip_quantiles"]
+        if (
+            not isinstance(quantiles, list)
+            or len(quantiles) != 2
+            or any(type(q) not in {int, float} or not math.isfinite(q) for q in quantiles)
+            or not 0 <= quantiles[0] < quantiles[1] <= 1
+            or type(preprocessing["product_demean"]) is not bool
+        ):
+            raise ValueError("invalid model preprocessing settings")
     for name, value, minimum in [
         ("seed", config["seed"], 0),
         *[
@@ -72,7 +92,9 @@ def factor_panel(features, frozen, spec, registry):
     panel = features.select(metadata).join(targets, on="row_id", validate="1:1")
     identities = []
     for index, item in enumerate(frozen["factors"]):
-        terminal_progress("模型 / 计算因子", 进度=f"{index + 1}/{len(frozen['factors'])}")
+        terminal_progress(
+            "模型 / 计算因子", transient=True, 进度=f"{index + 1}/{len(frozen['factors'])}"
+        )
         compiled = compile_factor(
             Expression.from_dict(item["compiled"]["expression"]),
             fields,
@@ -92,12 +114,16 @@ def factor_panel(features, frozen, spec, registry):
     return panel, identities
 
 
-def fit_preprocessing(train, columns):
+def fit_preprocessing(train, columns, *, clip_quantiles=None):
     """Fit each column using finite train observations only; remove unusable columns."""
     names, means, scales, dropped = [], [], [], []
+    lower, upper = [], []
     for name in columns:
         values = train[name].to_numpy()
         finite = values[np.isfinite(values)]
+        if finite.size and clip_quantiles is not None:
+            lo, hi = np.quantile(finite, clip_quantiles)
+            finite = np.clip(finite, lo, hi)
         mean = float(finite.mean()) if finite.size else None
         scale = float(finite.std()) if finite.size else None
         if mean is None or not math.isfinite(mean) or not math.isfinite(scale) or scale <= 1e-12:
@@ -106,15 +132,23 @@ def fit_preprocessing(train, columns):
         names.append(name)
         means.append(mean)
         scales.append(scale)
+        if clip_quantiles is not None:
+            lower.append(float(lo))
+            upper.append(float(hi))
     if not names:
         raise ValueError("no nonconstant factor with finite training observations")
-    return {"columns": names, "mean": means, "scale": scales, "dropped": dropped}
+    result = {"columns": names, "mean": means, "scale": scales, "dropped": dropped}
+    if clip_quantiles is not None:
+        result.update(clip_quantiles=clip_quantiles, lower=lower, upper=upper)
+    return result
 
 
 def transform(panel, preprocessing):
     values = panel.select(preprocessing["columns"]).to_numpy().astype(np.float64, copy=True)
     finite = np.isfinite(values)
     valid = finite.any(axis=1)
+    if "lower" in preprocessing:
+        np.clip(values, preprocessing["lower"], preprocessing["upper"], out=values)
     np.subtract(values, preprocessing["mean"], out=values)
     np.divide(values, preprocessing["scale"], out=values)
     values[~finite] = 0.0  # Training-mean imputation, after standardization.
@@ -123,9 +157,14 @@ def transform(panel, preprocessing):
     return values, valid
 
 
-def predict(state, values, *, threads):
+def predict(state, values, *, threads, products=None):
     if state["kind"] == "linear":
-        return values @ np.asarray(state["coefficients"]) + state["intercept"]
+        prediction = values @ np.asarray(state["coefficients"]) + state["intercept"]
+        if "product_offsets" in state:
+            if products is None or len(products) != len(values):
+                raise ValueError("product-centered linear prediction requires row products")
+            prediction -= np.array([state["product_offsets"].get(p, 0.0) for p in products])
+        return prediction
     if state["kind"] == "lightgbm":
         return lgb.Booster(model_str=state["model_text"]).predict(values, num_threads=threads)
     raise ValueError("unknown prediction model")
@@ -135,24 +174,55 @@ def fit_models(train, columns, config):
     validate_config(config)
     if train.height < 2:
         raise ValueError("model training requires at least two eligible labeled rows")
-    preprocessing = fit_preprocessing(train, columns)
+    options = config.get("preprocessing", {})
+    quantiles = options.get("clip_quantiles")
+    preprocessing = fit_preprocessing(train, columns, clip_quantiles=quantiles)
     values, valid = transform(train, preprocessing)
     x = values[valid]
     y = train["target"].to_numpy()[valid]
     if len(y) < 2 or not np.isfinite(y).all() or np.ptp(y) == 0:
         raise ValueError("model training requires finite, nonconstant targets")
+    if quantiles is not None:
+        labels = train["target"].to_numpy()
+        bounds = np.quantile(labels[np.isfinite(labels)], quantiles)
+        preprocessing["label_bounds"] = bounds.tolist()
+        y = np.clip(y, *bounds)
+        if np.ptp(y) == 0:
+            raise ValueError("clipped model training targets are constant")
+    product_demean = options.get("product_demean", False) and "product" in train.columns
+    if options:
+        preprocessing["product_demean"] = product_demean
     terminal_progress("模型 / 训练", 类型="linear", 行数=len(y), 因子数=x.shape[1])
     # Center again on usable rows so the intercept is exact even with missing factors.
-    center, intercept = x.mean(axis=0), float(y.mean())
-    coefficients, _, rank, _ = np.linalg.lstsq(
-        x - center, y - intercept, rcond=config["linear"]["rcond"]
-    )
+    product_means = {}
+    target = y
+    if product_demean:
+        products = train["product"].to_numpy()[valid]
+        target = y.copy()
+        for product in np.unique(products):
+            rows = products == product
+            product_means[str(product)] = x[rows].mean(axis=0)
+            x[rows] -= product_means[str(product)]
+            target[rows] -= y[rows].mean()
+        coefficients, _, rank, _ = np.linalg.lstsq(x, target, rcond=config["linear"]["rcond"])
+        center, intercept = np.zeros(x.shape[1]), 0.0
+        # LightGBM mode 2 uses globally preprocessed features and centered labels.
+        x = values[valid]
+    else:
+        center, intercept = x.mean(axis=0), float(y.mean())
+        coefficients, _, rank, _ = np.linalg.lstsq(
+            x - center, y - intercept, rcond=config["linear"]["rcond"]
+        )
     linear = {
         "kind": "linear",
         "coefficients": coefficients.tolist(),
         "intercept": float(intercept - center @ coefficients),
         "rank": int(rank),
     }
+    if product_demean:
+        linear["product_offsets"] = {
+            product: float(mean @ coefficients) for product, mean in product_means.items()
+        }
     options = dict(config["lightgbm"])
     rounds = options.pop("num_boost_round")
     terminal_progress("模型 / 训练", 类型="lightgbm", 行数=len(y), 因子数=x.shape[1])
@@ -166,7 +236,7 @@ def fit_models(train, columns, config):
             "deterministic": True,
             "force_col_wise": True,
         },
-        lgb.Dataset(x, label=y, feature_name=preprocessing["columns"]),
+        lgb.Dataset(x, label=target, feature_name=preprocessing["columns"]),
         num_boost_round=rounds,
     )
     return {
@@ -188,7 +258,12 @@ def evaluate_models(panel, fitted, profile, features, period, split, config):
         predictions = np.full(scored.height, np.nan)
         if valid.any():
             predictions[valid] = predict(
-                state, values[valid], threads=config["lightgbm"]["num_threads"]
+                state,
+                values[valid],
+                threads=config["lightgbm"]["num_threads"],
+                products=scored["product"].to_numpy()[valid]
+                if "product" in scored.columns
+                else None,
             )
             if not np.isfinite(predictions[valid]).all():
                 raise ValueError(f"{name} returned nonfinite predictions")

@@ -11,13 +11,16 @@ def main() -> None:
     parser.add_argument("--root", type=Path, default=Path.cwd())
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("config")
+    versions = commands.add_parser("versions", help="List or inspect frozen data/operator versions")
+    versions.add_argument("name", nargs="?")
     status = commands.add_parser("data-status")
     status.add_argument("--asset")
     audit = commands.add_parser("audit-data")
     audit.add_argument("--asset", required=True)
     run = commands.add_parser("run")
-    run.add_argument("--asset", required=True)
-    run.add_argument("--fold", choices=["fold1", "fold2"], required=True)
+    run.add_argument("--version", help="Named experiment version under configs/versions")
+    run.add_argument("--asset")
+    run.add_argument("--fold", choices=["fold1", "fold2"])
     run.add_argument(
         "--method",
         choices=[
@@ -26,6 +29,7 @@ def main() -> None:
             "mcts",
             "atlas",
             "alphaprobe",
+            "alphaschema",
             "react",
             "mcts_llm",
             "annealing",
@@ -77,7 +81,18 @@ def main() -> None:
         logger.propagate = False
         logger.handlers = [logging.StreamHandler()]
     root = args.root.resolve()
-    if args.command == "config":
+    if args.command == "versions":
+        from alpha_atlas.versions import load_version
+
+        result = (
+            load_version(root, args.name)
+            if args.name
+            else {
+                p.stem: json.loads(p.read_text())["description"]
+                for p in sorted((root / "configs/versions").glob("*.json"))
+            }
+        )
+    elif args.command == "config":
         from dataclasses import asdict
 
         from alpha_atlas.config import load_fold
@@ -110,6 +125,14 @@ def main() -> None:
     elif args.command == "run":
         from alpha_atlas.runner import run
 
+        if args.version:
+            from alpha_atlas.versions import load_version
+
+            version = load_version(root, args.version)
+            args.asset = args.asset or version["asset"]
+            args.fold = args.fold or version["fold"]["id"]
+        elif not args.asset or not args.fold:
+            parser.error("run requires --version, or both --asset and --fold")
         path = run(
             root,
             args.asset,
@@ -120,6 +143,7 @@ def main() -> None:
             args.universe,
             args.allow_incomplete,
             args.fields.split(",") if args.fields else None,
+            version=args.version,
         )
         result = {"run_dir": str(path)}
         if not args.search_only:

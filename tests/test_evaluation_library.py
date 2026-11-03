@@ -1,3 +1,4 @@
+import json
 from dataclasses import FrozenInstanceError, replace
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -5,6 +6,7 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 import pytest
+from test_checkpoint import legacy_field_names
 
 from alpha_atlas.config import load_toml
 from alpha_atlas.contracts import (
@@ -27,7 +29,7 @@ from alpha_atlas.evaluation import (
 from alpha_atlas.library import FactorLibrary, LibraryEntry, LibraryView
 from alpha_atlas.operators import OperatorRegistry
 from alpha_atlas.session import SearchSession
-from alpha_atlas.storage import ArrowCache, RunStore
+from alpha_atlas.storage import ArrowCache, RunStore, feedback_from_dict
 
 
 def market_frame():
@@ -405,7 +407,7 @@ def test_library_context_readonly_full_nearest_and_atomicity(tmp_path):
     assert library.consider(*evaluated("b", b)).accepted
     rejected = library.consider(*evaluated("c", -b))
     assert rejected.reason == "behavior_duplicate"
-    assert rejected.nearest_factor == evaluated("b", b)[1].expression_id
+    assert rejected.nearest_factor_id == evaluated("b", b)[1].expression_id
     assert rejected.max_abs_corr == pytest.approx(1) and rejected.comparison_complete
     assert library.consider(*evaluated("d", a, "other")).reason == "observation_context_mismatch"
     view = library.view()
@@ -512,7 +514,7 @@ def test_library_prealignment_preserves_common_row_spearman(
         x, y = np.asarray(common).T
         expected = abs(np.corrcoef(average_rank(x), average_rank(y))[0, 1])
         assert result.max_abs_corr == pytest.approx(expected, abs=1e-14)
-        assert result.nearest_factor == left[1].expression_id
+        assert result.nearest_factor_id == left[1].expression_id
         assert result.comparison_complete
         assert result.accepted == (expected < RULES["max_abs_corr"])
 
@@ -599,7 +601,9 @@ def test_configurable_correlation_cutoff(cutoff, accepted, sign):
     assert feedback.reason == ("accepted" if accepted else "behavior_duplicate")
 
 
-def test_batch_record_order_and_readback(tmp_path):
+@pytest.mark.parametrize("legacy_names", [False, True])
+@pytest.mark.parametrize("legacy_directory", [False, True])
+def test_batch_record_order_and_readback(tmp_path, legacy_names, legacy_directory):
     store = RunStore(tmp_path)
     service = evaluator(registry=OperatorRegistry(record=store.record_operator))
     library = FactorLibrary(
@@ -618,14 +622,41 @@ def test_batch_record_order_and_readback(tmp_path):
         "compile_error",
         "budget_rejected",
     ]
-    assert [f.trial_index for f in feedback] == [1, 2, 3, 4]
+    assert [f.factor_trial_index for f in feedback] == [1, 2, 3, 4]
     assert feedback[1].report.cache_hit
     assert session.remaining_budget() == 0
+    expected = store.trials()
+    if legacy_directory:
+        store.factor_trials_directory.rename(tmp_path / "trials")
+        store = RunStore(tmp_path)
+    first = store.factor_trials_directory / "00000001.json"
+    written = json.loads(first.read_text())
+    assert written["factor_trial_index"] == written["feedback"]["factor_trial_index"] == 1
+    assert "trial_index" not in written and "nearest_factor" not in written["feedback"]
+    if legacy_names:
+        for path in store.factor_trials_directory.glob("*.json"):
+            path.write_text(json.dumps(legacy_field_names(json.loads(path.read_text()))))
+    originals = {path: path.read_bytes() for path in store.factor_trials_directory.glob("*.json")}
+    raw_feedback = json.loads(first.read_text())["feedback"]
+    saved_feedback = json.dumps(raw_feedback, sort_keys=True)
+    restored = feedback_from_dict(raw_feedback)
+    assert restored == feedback[0]
+    assert json.dumps(raw_feedback, sort_keys=True) == saved_feedback
+    assert store.trials() == expected
     assert store.library_view() == library.view()
     assert len(store.trials()) == 4
+    assert all(path.read_bytes() == value for path, value in originals.items())
+    assert store.factor_trials_directory.name == ("trials" if legacy_directory else "factor_trials")
     assert not list(tmp_path.rglob("*.duckdb"))
     with pytest.raises(ValueError, match="restore committed library"):
         SearchSession(service, FactorLibrary(RULES), store, 3)
+
+
+def test_run_store_rejects_ambiguous_trial_directories(tmp_path):
+    (tmp_path / "trials").mkdir()
+    (tmp_path / "factor_trials").mkdir()
+    with pytest.raises(ValueError, match="both factor_trials and legacy trials"):
+        RunStore(tmp_path)
 
 
 def test_evaluation_disk_budget_counts_files_after_restart(tmp_path):
@@ -685,7 +716,7 @@ def test_shared_member_budget_rebuilds_only_when_needed(tmp_path, restore):
     duplicate = evaluated("inverse", -saved[0][2].frame["value"].to_numpy())
     feedback = library.consider(*duplicate)
     assert feedback.reason == "behavior_duplicate" and feedback.comparison_complete
-    assert feedback.nearest_factor == saved[0][1].expression_id
+    assert feedback.nearest_factor_id == saved[0][1].expression_id
     assert feedback.max_abs_corr == pytest.approx(1)
     assert set(rebuilt) == (set(observations) if restore else set())
     rebuilt.clear()

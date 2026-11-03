@@ -361,7 +361,8 @@ def test_oos_reuses_frozen_bounds_without_fitting_and_checks_configuration(proje
     item = read_json(frozen_path)["factors"][0]
     clipping = item["report"]["clipping"]
     assert (
-        clipping == read_json(directory / "trials/00000001.json")["feedback"]["report"]["clipping"]
+        clipping
+        == read_json(directory / "factor_trials/00000001.json")["feedback"]["report"]["clipping"]
     )
     assert spec["rules"]["clip_quantiles"] == [0.01, 0.99]
     with ParqMarketData(project / "data/ashare", "union1800") as market:
@@ -414,7 +415,7 @@ def test_unclipped_configuration_resumes_and_tests_without_fitting_bounds(projec
     monkeypatch.setattr("alpha_atlas.evaluation.clip_bounds", forbid_fit)
     with monkeypatch.context() as patch:
         directory = interrupted_run(project, patch, attempts=6)
-    committed = {path: path.read_bytes() for path in (directory / "trials").glob("*.json")}
+    committed = {path: path.read_bytes() for path in (directory / "factor_trials").glob("*.json")}
     resume(project, directory)
     assert all(path.read_bytes() == content for path, content in committed.items())
     assert read_json(directory / "checkpoint.json")["completed"] == 6

@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "baseline_id": "zookeeper26_fold2_rq_monthly_v1",
+  "designated_on": "2026-11-02",
+  "status": "historical_diagnostic_baseline",
+  "purpose": "fixed reference for subsequent incremental factor experiments",
+  "factor_selection": "all 26 frozen factors, in saved model column order",
+  "models": ["linear", "lightgbm"],
+  "paths_relative_to": "this file's directory",
+  "artifacts": {
+    "definitions": "../../../src/alpha_atlas/factor_libraries/zookeeper/factors.jsonl",
+    "source_run": "run.json",
+    "model_fit": "model/fit.json",
+    "model_test": "model/test.json",
+    "audit": "audit.json",
+    "report": "model/report.md"
+  },
+  "data_integration": "monthly features aligned onto original Kernel 5m rows; no merged raw eight-plus-curve asset",
+  "pit_status": "causal computation on frozen final-data snapshot; historical data vintages and Kernel effective-time semantics not certified",
+  "comparison_rules": {
+    "factor_sets": ["all 26 baseline factors", "all 26 baseline factors plus separately frozen new factors"],
+    "model_parameters": "use model_fit.spec.config for both arms; do not substitute current defaults",
+    "sample_alignment": "join on row_id and score identical eligible rows with identical targets and product weights",
+    "preprocessing": "fit each arm using the same train+val-only preprocessing and missing-value rules",
+    "test_interpretation": "2024-2025 is already observed historical OOS, not a new blind holdout",
+    "model_selection": "retain both models; no choice based on known Test scores"
+  }
+}
