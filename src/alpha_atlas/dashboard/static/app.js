@@ -109,6 +109,12 @@ async function refresh(force = false) {
     const last = map?.available ? map.last_trial : summary.completed;
     $("#time").max = last;
     if (state.live || force) state.time = last;
+    const linkedTime = force && state.linkedDetail?.get("t");
+    if (linkedTime) {
+      state.time = clamp(Number(linkedTime), 0, last);
+      state.live = false;
+      $("#live").checked = false;
+    }
     $("#time").value = state.time;
     renderPlans();
     renderMonitor();
@@ -209,6 +215,7 @@ const LAND = [
 ];
 const WATER = [[0, [118, 196, 200]], [0.18, [70, 158, 182]], [0.45, [34, 104, 148]], [0.75, [17, 62, 108]], [1, [8, 32, 62]]];
 const DRY = [181, 156, 108];
+const PEAK = 1.6;
 
 function visiblePoints() {
   if (!state.map?.available) return [];
@@ -261,6 +268,7 @@ function renderTerrain(points) {
   const gh = Math.min(400, Math.ceil(canvas.height / 2.5));
   terrain.width = gw; terrain.height = gh;
   const density = new Float32Array(gw * gh), heightSum = new Float32Array(gw * gh), dry = new Float32Array(gw * gh);
+  const peak = new Float32Array(gw * gh).fill(-1e9);
   const S = Math.min(canvas.width, canvas.height) * state.view.k;
   const sigmaPx = Math.max(6, 0.032 * S) * (gw / canvas.width);
   const reach = Math.ceil(sigmaPx * 3);
@@ -280,6 +288,10 @@ function renderTerrain(points) {
         const w = Math.exp(-d2 / (2 * sigmaPx * sigmaPx));
         const i = y * gw + x;
         density[i] += w; heightSum[i] += w * e; dry[i] += w * saturated;
+        // Each factor also raises its own hill, so one strong factor is not averaged away
+        // by many ordinary neighbours; the hill falls below the mean within about one sigma.
+        const hill = e - PEAK * d2 / (sigmaPx * sigmaPx);
+        if (hill > peak[i]) peak[i] = hill;
       }
     }
   }
@@ -294,7 +306,9 @@ function renderTerrain(points) {
       const raw = 1 - Math.exp(-density[i] / 0.55);
       const m = clamp(raw + 1.1 * n * raw * (1 - raw), 0, 1);
       explored[i] = m;
-      const base = density[i] > 1e-4 ? heightSum[i] / density[i] : -3;
+      const mean = density[i] > 1e-4 ? heightSum[i] / density[i] : -3;
+      const top = Math.max(mean, peak[i]);
+      const base = top + Math.log(Math.exp(4 * (mean - top)) + Math.exp(4 * (peak[i] - top))) / 4;
       // Measured elevation inside explored areas; abyssal plain elsewhere. Noise is scaled by
       // exploration so it never lifts unexplored sea above water.
       H[i] = m * (base + (0.5 + 0.6 * (1 - m)) * n * m + 0.25 * fbm(wx * 34, wy * 34, 3) * m)
