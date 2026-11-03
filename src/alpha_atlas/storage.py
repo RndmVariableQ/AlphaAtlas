@@ -83,6 +83,15 @@ def report_from_dict(value: dict) -> EvaluationReport:
     return EvaluationReport(**data)
 
 
+def _feedback_record(feedback: TrialFeedback) -> dict:
+    """Omit unused residual fields so runs without library_residual keep their trial format."""
+    value = asdict(feedback)
+    for key in ("residual_ic", "library_r2"):
+        if value[key] is None:
+            del value[key]
+    return value
+
+
 def feedback_from_dict(value: dict) -> TrialFeedback:
     value = dict(value)
     if "trial_index" in value:
@@ -129,7 +138,7 @@ class RunStore:
             {
                 "format_version": FORMAT_VERSION,
                 "factor_trial_index": attempt,
-                "feedback": asdict(feedback),
+                "feedback": _feedback_record(feedback),
                 "compiled": asdict(compiled) if compiled else None,
                 "elapsed_seconds": elapsed,
                 "generation_seconds": generation,

@@ -188,6 +188,9 @@ class TrialFeedback:
     library_version: int = 0
     correlation_scope: str = "validation_pooled_spearman"
     factor_trial_index: int = 0
+    # Present only when the version enables library_residual; absent in older trials.
+    residual_ic: float | None = None
+    library_r2: float | None = None
 
 
 @dataclass(frozen=True)

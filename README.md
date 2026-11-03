@@ -78,7 +78,7 @@ LLM 方法还需要配置模型服务。使用前参阅各方法说明：
 [AlphaPROBE](docs/methods/alphaprobe.md)、[AlphaSchema](docs/methods/alphaschema.md)、
 [MCTS-LLM](docs/methods/mcts_llm.md)、
 [三 Agent 区域退火搜索](docs/methods/annealing.md)、
-[V1 Explorer 更新版](docs/methods/v1.md)、[V1 异步版](docs/methods/v1_async.md)、[ReAct](docs/methods/react.md)。
+[V1 Explorer 更新版](docs/methods/v1.md)、[V1 异步版](docs/methods/v1_async.md)、[V2 Sync](docs/methods/v2_sync.md)、[ReAct](docs/methods/react.md)。
 下方最小运行示例使用无需模型服务的 Random 基线。
 
 ## 数据准备与校验

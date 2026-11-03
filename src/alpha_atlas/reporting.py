@@ -132,7 +132,7 @@ def write_report(directory: Path) -> Path:
         "",
     ]
     method_state = checkpoint.get("method_state", {})
-    if spec.get("method") in {"annealing", "v1", "v1_async"}:
+    if spec.get("method") in {"annealing", "v1", "v1_async", "v2_sync"}:
         records = method_state.get("factor_trial_records", method_state.get("steps", []))
         lines += _table(["研究记录", "数量"], [("计划内因子尝试记录", len(records))])
     if "method_config" in spec:
@@ -578,6 +578,7 @@ def update_experiment_overview(root, directory, spec, oos, tested, similarity):
         "react": "ReAct",
         "mcts_llm": "MCTS-LLM",
         "v1_async": "AlphaAtlas+Annealing V1 Async",
+        "v2_sync": "AlphaAtlas V2 Sync",
         "random": "Random",
         "gp": "GP",
         "mcts": "UCT MCTS",

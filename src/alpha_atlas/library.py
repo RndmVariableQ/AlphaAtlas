@@ -55,6 +55,7 @@ class FactorLibrary:
         disk_cache: ArrowCache | None = None,
         rebuild=None,
         cache_factors: int = 200,
+        residual=None,
     ):
         if type(cache_factors) is not int or cache_factors < 0:
             raise ValueError("cache_factors must be a nonnegative integer")
@@ -66,6 +67,8 @@ class FactorLibrary:
         if disk_cache is not None and (directory is None or rebuild is None):
             raise ValueError("bounded member cache requires a directory and rebuild callback")
         self._disk_cache, self._rebuild = disk_cache, rebuild
+        # Optional library_residual measurement; it never changes the admission decision.
+        self._residual = residual
         if directory:
             directory.mkdir(parents=True, exist_ok=True)
         self._members: dict[str, LibraryEntry] = {}
@@ -227,6 +230,21 @@ class FactorLibrary:
                     complete = not (
                         failures & {"insufficient_corr_overlap", "undefined_correlation"}
                     )
+        residual_ic = library_r2 = None
+        if (
+            self._residual is not None
+            and report.status == "success"
+            and report.direction in {-1, 1}
+            and identity not in self._members
+            and values is not None
+            and values.expression_id == identity
+            and values.frame["row_id"].n_unique() == values.frame.height
+        ):
+            residual_ic, library_r2 = self._residual(
+                values.frame,
+                [(factor_id, self._load(factor_id)) for factor_id in self._members],
+                report.direction,
+            )
         accepted = reason == "accepted"
         version = len(self._members) + int(accepted)
         feedback = TrialFeedback(
@@ -239,6 +257,8 @@ class FactorLibrary:
             complete,
             version,
             factor_trial_index=factor_trial_index,
+            residual_ic=residual_ic,
+            library_r2=library_r2,
         )
         if accepted:
             if (

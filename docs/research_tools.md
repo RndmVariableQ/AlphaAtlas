@@ -90,6 +90,10 @@ diagnostics，以及 accepted、reason、max_abs_corr、nearest_factor_id、comp
 library_version、factor_trial_index、remaining_attempts。无法计算的值保留 null。
 `factor_trial_index` 是本运行的评估尝试序号，`factor_id` 是因子定义身份，
 `nearest_factor_id` 是查重得到的最相似库成员身份。尝试序号不按入库或计算成功重新编号。
+版本规则 `library_residual = "residual_ic_v1"` 开启时，反馈另含 `residual_ic` 与
+`library_r2`：候选 Val 值对当前全库 Val 值做岭投影（只用因子值、不用目标），`library_r2` 是库
+解释的方差比例，`residual_ic` 是残差的主指标 Val IC 乘以 √(1−library_r2)，完全重复时连续降为 0。
+它只是诊断，不改变准入；未开启的版本不计算，原子记录与反馈也不出现这两个字段。
 旧原子记录的 `trial_index`、`nearest_factor` 在既有读取入口解析，不改写历史文件；
 新反馈和新记录只写新名称。引用文字 `trial:N` 保持不变。
 新运行将原子评估记录保存为 `factor_trials/00000001.json` 等文件；编号字段为

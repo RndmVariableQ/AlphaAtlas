@@ -626,6 +626,40 @@ def rank_lag_diagnostics(panel, period, name, weights=None, factor_panel="contra
     }
 
 
+RESIDUAL_RIDGE = 1e-3
+
+
+def _standardize(values: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
+    """Standardize finite values and impute zero; None when the column carries no variation."""
+    finite = np.isfinite(values)
+    if finite.sum() < 2:
+        return None
+    observed = values[finite]
+    scale = observed.std()
+    if not math.isfinite(scale) or scale <= 1e-12:
+        return None
+    standardized = np.zeros(values.shape, dtype=np.float64)
+    standardized[finite] = (observed - observed.mean()) / scale
+    return standardized, finite
+
+
+def library_projection(candidate: np.ndarray, members: np.ndarray, gram=None):
+    """Ridge-project a candidate on library columns; return its residual and explained share.
+
+    Uses factor values only, never targets. Columns must already be standardized with zero
+    imputation; the ridge is relative to the row count so it does not depend on sample size.
+    """
+    if members.shape[1] == 0:
+        return candidate.copy(), 0.0
+    gram = members.T @ members if gram is None else gram
+    ridge = RESIDUAL_RIDGE * members.shape[0] * np.eye(members.shape[1])
+    coefficients = np.linalg.solve(gram + ridge, members.T @ candidate)
+    residual = candidate - members @ coefficients
+    total = float(candidate @ candidate)
+    explained = 0.0 if total <= 0 else max(0.0, 1.0 - float(residual @ residual) / total)
+    return residual, explained
+
+
 class EvaluationService:
     def __init__(
         self,
@@ -721,6 +755,8 @@ class EvaluationService:
         self._disk: dict[str, str] = {}
         self.retain_training = retain_training
         self._training: OrderedDict[str, pl.DataFrame] = OrderedDict()
+        self._residual_targets = None
+        self._residual_library = None
 
     def _fit_clipping(self, train):
         if self.clip_quantiles is None:
@@ -812,6 +848,55 @@ class EvaluationService:
             and len(self._cache) > 1
         ):
             self._cache.popitem(last=False)
+
+    def _validation_targets(self) -> pl.DataFrame:
+        if self._residual_targets is None:
+            keys = ["row_id", "trading_day", "eligible"]
+            if "product" in self.features.columns:
+                keys.append("product")
+            panel = self.features.select(keys).join(self.targets, on="row_id", validate="1:1")
+            valid = split_panel(panel, self.fold.val).sort("row_id")
+            if self._target_clip_bounds is not None:
+                valid = valid.with_columns(pl.col("target").clip(*self._target_clip_bounds))
+            self._residual_targets = valid.drop("eligible", "target_end", strict=False)
+        return self._residual_targets
+
+    def _aligned(self, frame: pl.DataFrame, rows: pl.Series) -> np.ndarray:
+        frame = frame.sort("row_id")
+        if not frame["row_id"].equals(rows, check_dtypes=True, null_equal=False):
+            frame = pl.DataFrame({"row_id": rows}).join(frame, on="row_id", how="left")
+        return frame["value"].to_numpy().astype(np.float64)
+
+    def residual_ic(self, values: pl.DataFrame, members, direction: int):
+        """Residual Valid IC scaled by sqrt(1 - library_r2); library_residual residual_ic_v1.
+
+        values and members are committed Valid observations (row_id, value). The projection is
+        unsupervised, so fitting it on Valid factor values uses no target information.
+        """
+        targets = self._validation_targets()
+        rows = targets["row_id"]
+        prepared = _standardize(self._aligned(values, rows))
+        if prepared is None or direction not in {-1, 1}:
+            return None, None
+        candidate, finite = prepared
+        identities = tuple(identity for identity, _ in members)
+        if self._residual_library is None or self._residual_library[0] != identities:
+            columns = [_standardize(self._aligned(frame, rows)) for _, frame in members]
+            matrix = np.column_stack(
+                [column for column, _ in filter(None, columns)] or [np.zeros((len(rows), 0))]
+            )
+            self._residual_library = (identities, matrix, matrix.T @ matrix)
+        _, matrix, gram = self._residual_library
+        residual, explained = library_projection(candidate, matrix, gram)
+        frame = targets.with_columns(
+            value=pl.Series(np.where(finite, residual * direction, np.nan)).fill_nan(None)
+        )
+        result = metric(frame, self.profile["metric"], "val", weights=self.weights.get("val")).value
+        if result is None:
+            return None, explained
+        # Correlation ignores scale, so a shrunken copy of a member would keep its full IC.
+        # Weighting by the unexplained share falls continuously to zero for duplicates.
+        return result * math.sqrt(max(0.0, 1.0 - explained)), explained
 
     def evaluate(self, candidate: Candidate) -> EvaluationReport:
         started = time.perf_counter()

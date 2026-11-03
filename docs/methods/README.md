@@ -15,6 +15,7 @@
 | [annealing](annealing.md) | Explorer、Analyst、Miner 三 Agent；Metropolis 退火选择研究 Region | 共享平台预算、评估与准入 |
 | [V1](v1.md) (`v1`) | 同步 ChaoticTrader_Future 的 Explorer 选题、查证与三方向评分 | 保留原三 Agent 退火执行；仅更新 Explorer |
 | [V1 异步](v1_async.md) (`v1_async`) | 多组 Analyst/Miner 并发，完成即补位 | V1 本地异步适配；平台评估、原子提交和退火裁决串行 |
+| [V2 Sync](v2_sync.md) (`v2_sync`) | 串行 V1 流程；Region 视为机制，按每次尝试的库残差信息退火 | 需开启 `library_residual` 的版本；与已删除的旧 `v2` 无关 |
 | [react](react.md) | 单 Agent 工具循环与上下文压缩 | 自建 LLM 基线，需支持 tools 的 Chat 服务 |
 
 前四项共享有限文法；LLM 方法可使用更广 DSL，比较时必须披露搜索空间、初始化、

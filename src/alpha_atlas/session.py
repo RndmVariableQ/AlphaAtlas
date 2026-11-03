@@ -62,6 +62,11 @@ def _feedback(feedback):
                 "factor_trial_index",
             )
         },
+        **{
+            name: getattr(feedback, name)
+            for name in ("residual_ic", "library_r2")
+            if getattr(feedback, name) is not None
+        },
     }
 
 

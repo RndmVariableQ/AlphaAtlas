@@ -8,6 +8,10 @@ def make_method(name: str, seed: int, options=None):
         from alpha_atlas.methods.alphaschema import AlphaSchemaConfig, AlphaSchemaSearch
 
         return AlphaSchemaSearch(seed, AlphaSchemaConfig.from_mapping(options or {}))
+    if name == "v2_sync":
+        from alpha_atlas.methods.v2_sync import V2SyncConfig, V2SyncSearch
+
+        return V2SyncSearch(seed, V2SyncConfig.from_mapping(options or {}))
     if name == "v1_async":
         from alpha_atlas.methods.v1_async import V1AsyncConfig, V1AsyncSearch
 

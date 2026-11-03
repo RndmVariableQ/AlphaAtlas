@@ -179,6 +179,8 @@ def _review(raw):
 class V1Search(AnnealingLLMSearch):
     """Explorer proposals share one selector; absent policy retains legacy Region annealing."""
 
+    explorer_prompt = EXPLORER_PROMPT
+
     def __init__(self, seed, config=None, *, models=None):
         super().__init__(seed, config or V1Config(), models=models)
 
@@ -617,7 +619,7 @@ class V1Search(AnnealingLLMSearch):
                     for item in payload["previous_directions"]
                 }.values()
             )
-            system = EXPLORER_PROMPT
+            system = self.explorer_prompt
             if getattr(self.config, "selection_policy", None) is None:
                 system += (
                     "\nbreadth compares unresolved questions across the map; "

@@ -35,6 +35,7 @@ def main() -> None:
             "annealing",
             "v1",
             "v1_async",
+            "v2_sync",
         ],
         default="random",
     )

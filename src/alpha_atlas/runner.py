@@ -172,7 +172,9 @@ def run(
             raise ValueError(f"method is not configured in this version: {method_name}")
         options = experiment_version["method_configs"][method_name]
     method = method_impl if method_impl is not None else make_method(method_name, seed, options)
-    if method_name in {"mcts_llm", "annealing", "v1", "v1_async"} and rules.get(
+    if method_name == "v2_sync" and not _library_residual(rules):
+        raise ValueError("v2_sync requires a version with library_residual = residual_ic_v1")
+    if method_name in {"mcts_llm", "annealing", "v1", "v1_async", "v2_sync"} and rules.get(
         "search_diagnostics"
     ) not in {"icir_turnover_v1", "icir_turnover_lag1_v2"}:
         raise ValueError(f"{method_name} requires shared icir_turnover_v1 diagnostics")
@@ -211,6 +213,8 @@ def run(
             if method_name == "alphaschema"
             else "mcts_llm_atlas_v1"
             if method_name == "mcts_llm"
+            else "atlas_mechanism_v2_sync"
+            if method_name == "v2_sync"
             else "atlas_explorer_v1_async"
             if method_name == "v1_async"
             else "atlas_explorer_v1"
@@ -298,7 +302,7 @@ def _search(directory, spec, method, progress, features, fold, runtime, checkpoi
             "max_depth": rules["max_expression_depth"],
         },
         retain_training=hasattr(method, "correlation_pairs")
-        or spec["method"] in {"mcts_llm", "annealing", "v1", "v1_async"},
+        or spec["method"] in {"mcts_llm", "annealing", "v1", "v1_async", "v2_sync"},
         diagnostics=rules.get("search_diagnostics", ""),
         clip_quantiles=rules.get("clip_quantiles"),
     )
@@ -310,6 +314,7 @@ def _search(directory, spec, method, progress, features, fold, runtime, checkpoi
         directory=directory / "cache/members",
         disk_cache=disk_cache,
         rebuild=lambda entry: _rebuild_member(evaluator, entry),
+        residual=evaluator.residual_ic if _library_residual(rules) else None,
     )
     trials = store.trials()
     initial = spec.get("experiment_version", {}).get("initial_library")
@@ -492,6 +497,13 @@ def _rebuild_member(evaluator, entry):
     ):
         raise ValueError("rebuilt member differs from committed evaluation")
     return evaluator.observation(report.observation_ref)
+
+
+def _library_residual(rules) -> bool:
+    value = rules.get("library_residual")
+    if value not in {None, "residual_ic_v1"}:
+        raise ValueError(f"unsupported library_residual: {value}")
+    return value is not None
 
 
 def _sync_method_regions(method, atlas):
