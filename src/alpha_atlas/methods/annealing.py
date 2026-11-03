@@ -9,15 +9,33 @@ import math
 import random
 from dataclasses import asdict, dataclass
 
-from alpha_atlas.annealing import acceptance_probability, finite, temperature
 from alpha_atlas.contracts import Candidate, Region, SearchContext
-from alpha_atlas.methods.mcts_llm import LLMSearchConfig
-from alpha_atlas.methods.models import HTTPModels, parse_json_object
+from alpha_atlas.methods.models import HTTPModels, LLMSearchConfig, parse_json_object
 from alpha_atlas.methods.prompt_examples import render_factor_examples
-from alpha_atlas.reporting import TerminalStream, terminal_progress
 from alpha_atlas.session import READ_ONLY_QUERY_HELP
 from alpha_atlas.storage import candidate_from_dict
+from alpha_atlas.terminal import TerminalStream, terminal_progress
 from alpha_atlas.timeframes import field_reference
+
+
+def finite(value):
+    return isinstance(value, int | float) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def temperature(progress: float, initial: float, final: float) -> float:
+    if not finite(progress) or not 0 <= progress <= 1:
+        raise ValueError("budget progress must be between zero and one")
+    if not all(finite(value) for value in (initial, final)) or not 0 < final <= initial:
+        raise ValueError("temperatures must be finite and 0 < final <= initial")
+    value = math.exp((1 - progress) * math.log(initial) + progress * math.log(final))
+    return min(initial, max(final, value))
+
+
+def acceptance_probability(current: float, candidate: float, heat: float) -> float:
+    if not all(finite(value) for value in (current, candidate, heat)) or heat <= 0:
+        raise ValueError("scores and temperature must be finite; temperature must be positive")
+    return math.exp(min(0.0, (candidate - current) / heat))
+
 
 READ_ONLY_QUERY_PROMPT = (
     """For shared read-only tools, return only a JSON object:

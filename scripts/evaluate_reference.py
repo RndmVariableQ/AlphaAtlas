@@ -15,7 +15,7 @@ import polars as pl
 from alpha_atlas.assets.common import atomic_json
 from alpha_atlas.assets.market import ParqMarketData
 from alpha_atlas.checkpoint import config_fingerprint, read_json
-from alpha_atlas.config import asset_config, load_fold, load_toml
+from alpha_atlas.config import asset_config, load_fold, load_toml, one_year_before, warmup_period
 from alpha_atlas.contracts import Expression
 from alpha_atlas.evaluation import (
     EvaluationService,
@@ -26,9 +26,8 @@ from alpha_atlas.evaluation import (
 )
 from alpha_atlas.expressions import compile_factor, execute
 from alpha_atlas.factor_libraries import load_library
-from alpha_atlas.history import one_year_before, warmup_period
 from alpha_atlas.library import FactorLibrary
-from alpha_atlas.runner import _check_config, source_fingerprint
+from alpha_atlas.runner import check_config, source_fingerprint
 from alpha_atlas.storage import FORMAT_VERSION, RunStore
 
 
@@ -261,7 +260,7 @@ def evaluate(root: Path, fold_id: str, bars_per_day: int, *, asset: str = "futur
     gc.collect()
     # Reuse the platform's existing config/source/snapshot and frozen-file checks before test.
     spec = read_json(directory / "run.json")
-    fold, profile = _check_config(root, spec)
+    fold, profile = check_config(root, spec)
     if hashlib.sha256(frozen_path.read_bytes()).hexdigest() != spec["library_sha256"]:
         raise ValueError("frozen library was modified")
     frozen = read_json(frozen_path)

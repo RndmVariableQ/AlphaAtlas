@@ -9,12 +9,16 @@ import pytest
 from test_mcts_llm import session as make_session
 from test_pipeline import project as project
 
-from alpha_atlas.annealing import acceptance_probability, temperature
 from alpha_atlas.atlas import FactorAtlas
 from alpha_atlas.checkpoint import read_json
 from alpha_atlas.config import load_toml
 from alpha_atlas.contracts import EvaluationReport, Metric, TrialFeedback
-from alpha_atlas.methods.annealing import AnnealingLLMConfig, AnnealingLLMSearch
+from alpha_atlas.methods.annealing import (
+    AnnealingLLMConfig,
+    AnnealingLLMSearch,
+    acceptance_probability,
+    temperature,
+)
 from alpha_atlas.methods.baselines import default_regions
 from alpha_atlas.runner import resume, run
 from alpha_atlas.runner import test_frozen as evaluate_frozen

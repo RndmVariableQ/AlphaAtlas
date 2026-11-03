@@ -13,7 +13,7 @@ from alpha_atlas.methods.models import (
     _RetryableError,
     parse_json_object,
 )
-from alpha_atlas.reporting import TerminalStream
+from alpha_atlas.terminal import TerminalStream
 
 
 @pytest.mark.parametrize("fence", [None, "```json", "```JSON", "```"])
@@ -368,8 +368,8 @@ def test_terminal_stream_refreshes_one_redacted_tty_line(monkeypatch, caplog):
             return True
 
     terminal = Terminal()
-    monkeypatch.setattr("alpha_atlas.reporting.sys.stderr", terminal)
-    monkeypatch.setattr("alpha_atlas.reporting._PROGRESS_TEXT", "[Miner · round 2]")
+    monkeypatch.setattr("alpha_atlas.terminal.sys.stderr", terminal)
+    monkeypatch.setattr("alpha_atlas.terminal._PROGRESS_TEXT", "[Miner · round 2]")
     with caplog.at_level(logging.INFO, logger="alpha_atlas.progress"):
         with TerminalStream() as stream:
             stream.delta("reasoning", "private reasoning")
@@ -383,11 +383,11 @@ def test_terminal_stream_refreshes_one_redacted_tty_line(monkeypatch, caplog):
 def test_terminal_stream_reports_observed_activity_and_silence_without_reasoning(
     monkeypatch, caplog
 ):
-    from alpha_atlas.reporting import _stream_display_width
+    from alpha_atlas.terminal import _stream_display_width
 
     now = [0.0]
-    monkeypatch.setattr("alpha_atlas.reporting.time.monotonic", lambda: now[0])
-    monkeypatch.setattr("alpha_atlas.reporting._PROGRESS_TEXT", "MCTS-LLM │ 阶段=formula_0")
+    monkeypatch.setattr("alpha_atlas.terminal.time.monotonic", lambda: now[0])
+    monkeypatch.setattr("alpha_atlas.terminal._PROGRESS_TEXT", "MCTS-LLM │ 阶段=formula_0")
     with caplog.at_level(logging.INFO, logger="alpha_atlas.progress"), TerminalStream() as stream:
         assert "等待首字" in stream._render_line()
         now[0] = 1.0
@@ -397,7 +397,7 @@ def test_terminal_stream_reports_observed_activity_and_silence_without_reasoning
         line = stream._render_line()
         assert "无新内容 35s" in line and "private reasoning" not in line
         with monkeypatch.context() as narrow:
-            narrow.setattr("alpha_atlas.reporting._terminal_width", lambda: 24)
+            narrow.setattr("alpha_atlas.terminal._terminal_width", lambda: 24)
             assert _stream_display_width(stream._render_line()) <= 24
         now[0] = 37.0
         stream.delta("content", '{"expression":"$close"}')
@@ -422,10 +422,10 @@ def test_terminal_stream_renders_only_reply_as_one_rewritten_line(client, monkey
         return ("data: " + json.dumps({"choices": [{"delta": delta}]}) + "\n\n").encode()
 
     terminal = Terminal()
-    monkeypatch.setattr("alpha_atlas.reporting.sys.stderr", terminal)
-    monkeypatch.setattr("alpha_atlas.reporting._PROGRESS_TEXT", "[Explorer · round 1]")
+    monkeypatch.setattr("alpha_atlas.terminal.sys.stderr", terminal)
+    monkeypatch.setattr("alpha_atlas.terminal._PROGRESS_TEXT", "[Explorer · round 1]")
     monkeypatch.setattr(
-        "alpha_atlas.reporting.shutil.get_terminal_size",
+        "alpha_atlas.terminal.shutil.get_terminal_size",
         lambda **_: SimpleNamespace(columns=80, lines=24),
     )
 
@@ -455,14 +455,14 @@ def test_terminal_stream_renders_only_reply_as_one_rewritten_line(client, monkey
 
 
 def test_noninteractive_stream_keeps_one_request_without_response_noise(monkeypatch, caplog):
-    from alpha_atlas.reporting import terminal_progress
+    from alpha_atlas.terminal import terminal_progress
 
     class Terminal(io.StringIO):
         def isatty(self):
             return False
 
     terminal = Terminal()
-    monkeypatch.setattr("alpha_atlas.reporting.sys.stderr", terminal)
+    monkeypatch.setattr("alpha_atlas.terminal.sys.stderr", terminal)
     with caplog.at_level(logging.INFO, logger="alpha_atlas.progress"):
         terminal_progress("Explorer", transient=True, 计划=12, 对话="1/40")
         with TerminalStream() as stream:
@@ -478,20 +478,20 @@ def test_noninteractive_stream_keeps_one_request_without_response_noise(monkeypa
 
 
 def test_terminal_stream_keeps_progress_and_latest_reply_visible(monkeypatch, caplog):
-    from alpha_atlas.reporting import _display_width, _stream_display_width
+    from alpha_atlas.terminal import _display_width, _stream_display_width
 
     class Terminal(io.StringIO):
         def isatty(self):
             return True
 
     terminal = Terminal()
-    monkeypatch.setattr("alpha_atlas.reporting.sys.stderr", terminal)
+    monkeypatch.setattr("alpha_atlas.terminal.sys.stderr", terminal)
     monkeypatch.setattr(
-        "alpha_atlas.reporting._PROGRESS_TEXT",
+        "alpha_atlas.terminal._PROGRESS_TEXT",
         "Miner │ 进度=12/500 · 计划=2",
     )
     monkeypatch.setattr(
-        "alpha_atlas.reporting.shutil.get_terminal_size",
+        "alpha_atlas.terminal.shutil.get_terminal_size",
         lambda **_: SimpleNamespace(columns=73, lines=24),
     )
 
@@ -506,9 +506,9 @@ def test_terminal_stream_keeps_progress_and_latest_reply_visible(monkeypatch, ca
 
 
 def test_narrow_stream_prioritizes_plan_and_dialogue_over_reply_preview(monkeypatch, caplog):
-    monkeypatch.setattr("alpha_atlas.reporting._terminal_width", lambda: 78)
+    monkeypatch.setattr("alpha_atlas.terminal._terminal_width", lambda: 78)
     monkeypatch.setattr(
-        "alpha_atlas.reporting._PROGRESS_TEXT",
+        "alpha_atlas.terminal._PROGRESS_TEXT",
         "Explorer │ 计划=397 · 对话=22/40 · 模式=breadth",
     )
     with caplog.at_level(logging.INFO, logger="alpha_atlas.progress"), TerminalStream() as stream:
@@ -519,20 +519,20 @@ def test_narrow_stream_prioritizes_plan_and_dialogue_over_reply_preview(monkeypa
 
 
 def test_terminal_stream_reply_ticker_stays_bounded_on_wide_terminals(monkeypatch, caplog):
-    from alpha_atlas.reporting import _stream_display_width
+    from alpha_atlas.terminal import _stream_display_width
 
     class Terminal(io.StringIO):
         def isatty(self):
             return True
 
     terminal = Terminal()
-    monkeypatch.setattr("alpha_atlas.reporting.sys.stderr", terminal)
+    monkeypatch.setattr("alpha_atlas.terminal.sys.stderr", terminal)
     monkeypatch.setattr(
-        "alpha_atlas.reporting._PROGRESS_TEXT",
+        "alpha_atlas.terminal._PROGRESS_TEXT",
         "Miner │ 计划=24 · 进度=117/500 · 模式=breadth · 计划候选=2/5 · 修复=1/4",
     )
     monkeypatch.setattr(
-        "alpha_atlas.reporting.shutil.get_terminal_size",
+        "alpha_atlas.terminal.shutil.get_terminal_size",
         lambda **_: SimpleNamespace(columns=240, lines=24),
     )
 
@@ -546,17 +546,17 @@ def test_terminal_stream_reply_ticker_stays_bounded_on_wide_terminals(monkeypatc
 
 
 def test_progress_notices_refresh_the_active_response_row(monkeypatch, caplog):
-    from alpha_atlas.reporting import terminal_progress
+    from alpha_atlas.terminal import terminal_progress
 
     class Terminal(io.StringIO):
         def isatty(self):
             return True
 
     terminal = Terminal()
-    monkeypatch.setattr("alpha_atlas.reporting.sys.stderr", terminal)
-    monkeypatch.setattr("alpha_atlas.reporting._PROGRESS_TEXT", "Miner │ 计划=2 · 进度=8/500")
+    monkeypatch.setattr("alpha_atlas.terminal.sys.stderr", terminal)
+    monkeypatch.setattr("alpha_atlas.terminal._PROGRESS_TEXT", "Miner │ 计划=2 · 进度=8/500")
     monkeypatch.setattr(
-        "alpha_atlas.reporting.shutil.get_terminal_size",
+        "alpha_atlas.terminal.shutil.get_terminal_size",
         lambda **_: SimpleNamespace(columns=80, lines=24),
     )
 
@@ -574,15 +574,15 @@ def test_progress_notices_refresh_the_active_response_row(monkeypatch, caplog):
 
 
 def test_tty_progress_is_replaced_and_cleared_before_a_permanent_event(monkeypatch):
-    from alpha_atlas.reporting import terminal_progress
+    from alpha_atlas.terminal import terminal_progress
 
     class Terminal(io.StringIO):
         def isatty(self):
             return True
 
     terminal = Terminal()
-    monkeypatch.setattr("alpha_atlas.reporting.sys.stderr", terminal)
-    monkeypatch.setattr("alpha_atlas.reporting._STATUS_VISIBLE", False)
+    monkeypatch.setattr("alpha_atlas.terminal.sys.stderr", terminal)
+    monkeypatch.setattr("alpha_atlas.terminal._STATUS_VISIBLE", False)
     logger = logging.getLogger("alpha_atlas.progress")
     monkeypatch.setattr(logger, "handlers", [logging.StreamHandler(terminal)])
     monkeypatch.setattr(logger, "level", logging.INFO)

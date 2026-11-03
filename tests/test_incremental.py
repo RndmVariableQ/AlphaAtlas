@@ -445,7 +445,7 @@ def refit_study(tmp_path, monkeypatch, config):
             else (spec, frozen)
         ),
     )
-    monkeypatch.setattr("alpha_atlas.incremental._check_config", lambda *a: (None, None))
+    monkeypatch.setattr("alpha_atlas.incremental.check_config", lambda *a: (None, None))
     monkeypatch.setattr("alpha_atlas.incremental._runtime", lambda *a: None)
     monkeypatch.setattr("alpha_atlas.incremental._registry", lambda *a: OperatorRegistry())
     monkeypatch.setattr("alpha_atlas.incremental.load_version", lambda *a: target_version)

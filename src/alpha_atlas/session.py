@@ -8,8 +8,8 @@ from inspect import signature
 from alpha_atlas.contracts import Candidate, EvaluationReport, SearchContext, TargetDefinition
 from alpha_atlas.expressions import compile_factor
 from alpha_atlas.operators.registry import ALIASES, MINIMUM_WINDOWS
-from alpha_atlas.reporting import terminal_candidate, terminal_evaluation, terminal_progress
 from alpha_atlas.storage import candidate_from_dict, feedback_from_dict
+from alpha_atlas.terminal import terminal_candidate, terminal_evaluation, terminal_progress
 
 READ_ONLY_TOOLS = {
     "get_context": "get_context(): stable fields, operators, evaluation and reference settings",

@@ -177,7 +177,7 @@ def main() -> None:
 
         if args.oos:
             from alpha_atlas.checkpoint import read_json
-            from alpha_atlas.reporting import terminal_oos
+            from alpha_atlas.terminal import terminal_oos
 
             directory = args.run_dir.resolve()
             if not (directory / "oos.json").exists():
@@ -198,7 +198,7 @@ def main() -> None:
         report = compare(root)
         result = {"runs": len(report["runs"]), "output": str(root / "artifacts/comparison.json")}
     if args.command == "test" and not args.json:
-        from alpha_atlas.reporting import terminal_oos
+        from alpha_atlas.terminal import terminal_oos
 
         print(terminal_oos(result, args.run_dir.resolve()))
     else:

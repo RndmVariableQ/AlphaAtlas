@@ -7,9 +7,9 @@ from test_evaluation_library import market_frame
 from test_operator_validation import SimulatedRuntime, identity
 from test_pipeline import project as project
 
+from alpha_atlas.config import one_year_before, warmup_period
 from alpha_atlas.contracts import Candidate
 from alpha_atlas.expressions import compile_factor, execute
-from alpha_atlas.history import one_year_before, warmup_period
 from alpha_atlas.operators import OperatorDefinition, OperatorRegistry
 from alpha_atlas.runner import run
 from alpha_atlas.runner import test_frozen as evaluate_frozen

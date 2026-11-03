@@ -20,16 +20,16 @@ from alpha_atlas.evaluation import (
     split_panel,
 )
 from alpha_atlas.model import factor_panel, fit_models, fit_preprocessing, predict, transform
-from alpha_atlas.reporting import _expression, terminal_progress
 from alpha_atlas.runner import (
-    _check_config,
     _data_fields,
     _market,
     _registry,
     _runtime,
+    check_config,
     source_fingerprint,
 )
 from alpha_atlas.storage import RunStore
+from alpha_atlas.terminal import _expression, terminal_progress
 from alpha_atlas.versions import load_version
 
 
@@ -128,7 +128,7 @@ def _load_study(root, scope_path, directories):
     sources = {}
     for directory in directories:
         spec, frozen = _frozen(directory)
-        fold, _ = _check_config(root, spec)
+        fold, _ = check_config(root, spec)
         if (
             spec["method"] in sources
             or spec["method"] not in scope["methods"]

@@ -261,7 +261,7 @@ def test_report_io_failure_does_not_undo_freeze_or_hide_method_exception(project
 
 
 def test_progress_lines_handle_chinese_wrapping_and_control_characters(caplog):
-    from alpha_atlas.reporting import _display_width, terminal_progress
+    from alpha_atlas.terminal import _display_width, terminal_progress
 
     with caplog.at_level(logging.INFO, logger="alpha_atlas.progress"):
         terminal_progress(
@@ -275,9 +275,9 @@ def test_progress_lines_handle_chinese_wrapping_and_control_characters(caplog):
 
 
 def test_progress_preserves_long_paths_reasons_and_reminders(caplog, monkeypatch):
-    from alpha_atlas.reporting import _display_width, terminal_progress
+    from alpha_atlas.terminal import _display_width, terminal_progress
 
-    monkeypatch.setattr("alpha_atlas.reporting._terminal_width", lambda: 40)
+    monkeypatch.setattr("alpha_atlas.terminal._terminal_width", lambda: 40)
     path = "/synthetic/" + "long-directory/" * 10 + "report.md"
     reason = "需要重新验证完整历史和边界条件" * 10
     with caplog.at_level(logging.INFO, logger="alpha_atlas.progress"):
@@ -298,7 +298,7 @@ def test_candidate_result_shows_summary_and_full_expression(caplog, defined):
     from dataclasses import replace
 
     from alpha_atlas.contracts import EvaluationReport, Metric, TrialFeedback
-    from alpha_atlas.reporting import _display_width, terminal_candidate
+    from alpha_atlas.terminal import _display_width, terminal_candidate
 
     name = "time_series_weighted_pearson_ic"
     metrics = (
@@ -352,7 +352,7 @@ def test_candidate_result_shows_summary_and_full_expression(caplog, defined):
 
 def test_candidate_result_shows_weighted_futures_metrics_in_primary_order(caplog):
     from alpha_atlas.contracts import Candidate, EvaluationReport, Metric, TrialFeedback
-    from alpha_atlas.reporting import _display_width, metric_text, terminal_candidate
+    from alpha_atlas.terminal import _display_width, metric_text, terminal_candidate
 
     values = (
         ("time_series_weighted_pearson_ic", -0.004295, 0.002212),
@@ -392,9 +392,9 @@ def test_candidate_result_shows_weighted_futures_metrics_in_primary_order(caplog
 
 def test_candidate_expression_preserves_source_lines_and_wraps_long_lines(caplog, monkeypatch):
     from alpha_atlas.contracts import Candidate, EvaluationReport, TrialFeedback
-    from alpha_atlas.reporting import _display_width, terminal_candidate
+    from alpha_atlas.terminal import _display_width, terminal_candidate
 
-    monkeypatch.setattr("alpha_atlas.reporting._terminal_width", lambda: 80)
+    monkeypatch.setattr("alpha_atlas.terminal._terminal_width", lambda: 80)
     report = EvaluationReport("factor", (), -1, 0.9, 1.0, "success")
     expression = (
         "signed_amount = $amount * SIGN($close - $open)\n"
@@ -475,7 +475,7 @@ def test_cli_progress_stays_on_stderr_and_quiet_preserves_results(project):
 
 @pytest.mark.parametrize("legacy", [False, True])
 def test_oos_table_dual_metrics_missing_values_errors_and_empty_library(tmp_path, legacy):
-    from alpha_atlas.reporting import _display_width, terminal_oos
+    from alpha_atlas.terminal import _display_width, terminal_oos
 
     report = {
         "run_id": "synthetic",
@@ -546,7 +546,7 @@ def test_oos_table_dual_metrics_missing_values_errors_and_empty_library(tmp_path
 
 
 def test_saved_spearman_only_report_does_not_invent_pearson(tmp_path):
-    from alpha_atlas.reporting import terminal_oos
+    from alpha_atlas.terminal import terminal_oos
 
     report = {
         "run_id": "old",

@@ -12,8 +12,8 @@ from dataclasses import dataclass
 
 from alpha_atlas.methods.annealing import AnnealingLLMConfig, AnnealingLLMSearch
 from alpha_atlas.methods.models import parse_json_object
-from alpha_atlas.reporting import terminal_progress
 from alpha_atlas.session import READ_ONLY_QUERY_HELP, READ_ONLY_TOOLS
+from alpha_atlas.terminal import terminal_progress
 
 REVIEW = {
     "importance": (

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import tomllib
+from datetime import date, timedelta
 from pathlib import Path
 
 from alpha_atlas.contracts import AssetProfile, DateRange, Fold
@@ -26,3 +27,17 @@ def asset_config(root: Path, asset: str) -> dict:
     result.setdefault("panel", "contract")
     AssetProfile.from_mapping(result)
     return result
+
+
+def one_year_before(day: date) -> date:
+    try:
+        return day.replace(year=day.year - 1)
+    except ValueError:
+        return day.replace(year=day.year - 1, day=28)
+
+
+def warmup_period(train_start: date) -> dict:
+    return {
+        "start": one_year_before(train_start).isoformat(),
+        "end": (train_start - timedelta(days=1)).isoformat(),
+    }

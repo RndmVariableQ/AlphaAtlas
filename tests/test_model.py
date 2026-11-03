@@ -15,7 +15,7 @@ from alpha_atlas.checkpoint import read_json
 from alpha_atlas.config import load_toml
 from alpha_atlas.contracts import Candidate, DateRange
 from alpha_atlas.model import evaluate_models, fit_models, predict, transform, validate_config
-from alpha_atlas.runner import _check_config, run, run_model
+from alpha_atlas.runner import check_config, run, run_model
 
 
 @pytest.fixture
@@ -296,7 +296,7 @@ def test_model_pipeline_separates_test_and_preserves_search(project, frozen_run,
 def test_old_frozen_library_is_an_explicit_new_experiment(project, frozen_run, monkeypatch):
     spec = read_json(frozen_run / "run.json")
     monkeypatch.setattr("alpha_atlas.runner.source_fingerprint", lambda: "new-model-source")
-    _check_config(project, spec)
+    check_config(project, spec)
     run_model(project, frozen_run)
     model_spec = read_json(frozen_run / "model/fit.json")["spec"]
     assert not model_spec["source_matches_search"]

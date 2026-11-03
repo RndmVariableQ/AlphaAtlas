@@ -22,9 +22,9 @@ import numpy as np
 from alpha_atlas.contracts import Candidate
 from alpha_atlas.methods.models import HTTPModels, parse_json_object
 from alpha_atlas.methods.prompt_examples import render_factor_examples
-from alpha_atlas.reporting import terminal_progress
 from alpha_atlas.session import READ_ONLY_QUERY_HELP
 from alpha_atlas.storage import candidate_from_dict
+from alpha_atlas.terminal import terminal_progress
 
 CATEGORIES = ("event", "context", "quality", "direction", "output")
 DIAGNOSTICS = "icir_turnover_lag1_v2"

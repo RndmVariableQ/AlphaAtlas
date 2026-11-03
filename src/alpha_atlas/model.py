@@ -16,7 +16,7 @@ from alpha_atlas.evaluation import (
     split_panel,
 )
 from alpha_atlas.expressions import compile_factor, execute
-from alpha_atlas.reporting import terminal_progress
+from alpha_atlas.terminal import terminal_progress
 
 
 def validate_config(config):

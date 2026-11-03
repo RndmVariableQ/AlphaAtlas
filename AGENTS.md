@@ -23,6 +23,7 @@ AlphaAtlas 是 train/val 因子搜索与研究评估平台。方法负责搜索�
 | `methods/` | 方法专属搜索策略、奖励、提示词与状态 |
 | `runner.py`、`checkpoint.py` | 运行调度、恢复、冻结及 OOS |
 | `storage.py`、`reporting.py` | 原子持久化、只读重建与报告 |
+| `terminal.py` | 终端进度显示，不读写记录 |
 | `cli.py` | 命令行入口 |
 
 公共协议以 `contracts.py` 和现有代码为准。方法共用 SearchSession 的 `get_context`、`library_search`、

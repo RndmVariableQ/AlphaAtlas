@@ -111,7 +111,7 @@ class Checkpoint:
         self.spec.update(status=status, total_seconds=self.elapsed(), **extra)
         atomic_json(self.directory / "run.json", self.spec)
         if status in {"frozen", "failed", "interrupted"}:
-            from alpha_atlas.reporting import terminal_progress
+            from alpha_atlas.terminal import terminal_progress
 
             terminal_progress(
                 {"frozen": "搜索完成", "failed": "运行失败", "interrupted": "运行中断"}[status],

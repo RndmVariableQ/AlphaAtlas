@@ -309,7 +309,7 @@ def test_risk_stream_retry_preserves_stage_and_charges_one_evaluation(
             return True
 
     terminal = Terminal()
-    monkeypatch.setattr("alpha_atlas.reporting.sys.stderr", terminal)
+    monkeypatch.setattr("alpha_atlas.terminal.sys.stderr", terminal)
     monkeypatch.setattr(
         logging.getLogger("alpha_atlas.progress"), "handlers", [logging.StreamHandler(terminal)]
     )

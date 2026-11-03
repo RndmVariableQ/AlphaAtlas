@@ -1081,7 +1081,7 @@ def test_native_runner_freezes_async_config(project, monkeypatch, caplog):
             return True
 
     terminal = Terminal()
-    monkeypatch.setattr("alpha_atlas.reporting.sys.stderr", terminal)
+    monkeypatch.setattr("alpha_atlas.terminal.sys.stderr", terminal)
     monkeypatch.setattr(
         logging.getLogger("alpha_atlas.progress"), "handlers", [logging.StreamHandler(terminal)]
     )

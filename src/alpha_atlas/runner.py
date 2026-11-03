@@ -22,7 +22,7 @@ from alpha_atlas.checkpoint import (
     run_lock,
     tracked_run,
 )
-from alpha_atlas.config import asset_config, load_fold, load_toml
+from alpha_atlas.config import asset_config, load_fold, load_toml, one_year_before, warmup_period
 from alpha_atlas.contracts import Expression, Metric, Region, fingerprint
 from alpha_atlas.evaluation import (
     FUTURES_METRICS,
@@ -34,14 +34,12 @@ from alpha_atlas.evaluation import (
     split_panel,
 )
 from alpha_atlas.expressions import compile_factor, execute
-from alpha_atlas.history import one_year_before, warmup_period
 from alpha_atlas.library import FactorLibrary
 from alpha_atlas.methods import make_method
 from alpha_atlas.methods.baselines import default_regions
 from alpha_atlas.methods.v1 import ExplorerUnresolved
 from alpha_atlas.operators import OperatorRegistry
 from alpha_atlas.operators.runtime import NumbaRuntime, RuntimeLimits
-from alpha_atlas.reporting import metric_text, terminal_progress
 from alpha_atlas.session import SearchSession
 from alpha_atlas.storage import (
     FORMAT_VERSION,
@@ -50,6 +48,7 @@ from alpha_atlas.storage import (
     candidate_from_dict,
     feedback_from_dict,
 )
+from alpha_atlas.terminal import metric_text, terminal_progress
 
 
 def source_fingerprint() -> str:
@@ -540,7 +539,7 @@ def run_model(root: Path, directory: Path, *, test: bool = False) -> dict:
         )
         profile = spec["profile"]
         if "experiment_version" in spec:
-            _check_config(root, spec)
+            check_config(root, spec)
             config = spec["experiment_version"]["model"]
         else:
             config = load_toml(root / "configs/model.toml")
@@ -648,7 +647,7 @@ def resume(root: Path, directory: Path, *, method_impl=None) -> Path:
         with tracked_run(directory, spec) as progress:
             progress.stage = "resume_checks"
             terminal_progress("恢复检查 / 加载行情", 运行=spec["run_id"])
-            fold, profile = _check_config(root, spec)
+            fold, profile = check_config(root, spec)
             method = method_impl
             if method is None:
                 if spec["implementation"] == "session_plugin":
@@ -719,7 +718,7 @@ def _check_checkpoint(checkpoint, trials, limit, *, initial_count=0):
             raise ValueError("pending candidate differs from committed trial")
 
 
-def _check_config(root, spec):
+def check_config(root, spec):
     if spec.get("format_version") != FORMAT_VERSION:
         raise ValueError("unsupported run format; old artifacts are not migrated")
     if config_fingerprint(spec) != spec["config_fingerprint"]:
@@ -829,7 +828,7 @@ def _test_frozen(root: Path, directory: Path) -> dict:
         raise ValueError("unsupported run format; old artifacts are not migrated")
     if spec["status"] != "frozen":
         raise ValueError("OOS requires a frozen run")
-    fold, profile = _check_config(root, spec)
+    fold, profile = check_config(root, spec)
     freeze_path = directory / "frozen/library.json"
     if hashlib.sha256(freeze_path.read_bytes()).hexdigest() != spec["library_sha256"]:
         raise ValueError("frozen library was modified")

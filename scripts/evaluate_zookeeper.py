@@ -30,7 +30,7 @@ from alpha_atlas.evaluation import (
 from alpha_atlas.expressions import compile_factor, execute
 from alpha_atlas.factor_libraries.zookeeper import VERSION, candidates, definitions
 from alpha_atlas.library import FactorLibrary
-from alpha_atlas.runner import _check_config, source_fingerprint
+from alpha_atlas.runner import check_config, source_fingerprint
 from alpha_atlas.storage import FORMAT_VERSION, RunStore
 
 ASSET = "futures_kernel_5m_full"
@@ -158,7 +158,7 @@ def freeze(root: Path, fold_id: str):
 
 def test(root: Path, directory: Path):
     spec = read_json(directory / "run.json")
-    fold, profile = _check_config(root, spec)
+    fold, profile = check_config(root, spec)
     if spec["status"] != "frozen":
         raise ValueError("test requires a frozen catalogue")
     frozen_path = directory / "frozen/library.json"

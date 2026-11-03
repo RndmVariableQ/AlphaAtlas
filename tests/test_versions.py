@@ -11,7 +11,7 @@ from alpha_atlas.assets.market import ParqMarketData
 from alpha_atlas.checkpoint import read_json
 from alpha_atlas.config import asset_config, load_fold
 from alpha_atlas.experiment import finish_experiment
-from alpha_atlas.runner import _check_config, resume, run, run_model
+from alpha_atlas.runner import check_config, resume, run, run_model
 from alpha_atlas.storage import RunStore
 from alpha_atlas.versions import load_version
 
@@ -65,7 +65,7 @@ def test_version_run_finish_uses_saved_rules_and_model_config(project, version, 
     for path in (project / "configs").glob("*.toml"):
         path.write_text("invalid = [")
     (project / "configs/assets/ashare.toml").write_text("invalid = [")
-    _check_config(project, spec)
+    check_config(project, spec)
     finish_experiment(project, directory)
     assert calls == [date(2020, 12, 31)] * 2 + [date(2022, 12, 31)]
     fitted = read_json(directory / "model/fit.json")
@@ -108,7 +108,7 @@ def test_version_resume_matches_uninterrupted_and_checks_changes(project, versio
     value["rules"]["min_coverage"] = 0.123
     atomic_json(path, value)
     with pytest.raises(ValueError, match="version changed"):
-        _check_config(project, read_json(directory / "run.json"))
+        check_config(project, read_json(directory / "run.json"))
 
 
 def test_version_rejects_drift_before_loading_features(project, version, monkeypatch):

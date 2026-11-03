@@ -23,6 +23,7 @@
 | [methods/](../src/alpha_atlas/methods/) | 方法搜索机制、奖励、提示词及状态 |
 | [runner.py](../src/alpha_atlas/runner.py)、[checkpoint.py](../src/alpha_atlas/checkpoint.py) | 运行、恢复、冻结与 OOS |
 | [storage.py](../src/alpha_atlas/storage.py)、[reporting.py](../src/alpha_atlas/reporting.py) | 原子记录、只读重建与报告 |
+| [terminal.py](../src/alpha_atlas/terminal.py) | 终端进度与流式状态，各层共用，不读写记录 |
 | [cli.py](../src/alpha_atlas/cli.py) | 命令行入口 |
 
 ```text
@@ -65,7 +66,7 @@ pwsh -File scripts/check.ps1
 
 ## 终端与日志
 
-展示统一由 `reporting.py` 处理，按运行信息、Agent 阶段、候选评估组织。运行信息只在启动、
+终端展示统一由 `terminal.py` 处理，按运行信息、Agent 阶段、候选评估组织。运行信息只在启动、
 恢复和结束时给出；研究日志以 `[计划 #编号 · Explorer/Analyst/Miner]` 为标题，每次实际
 请求、方向提交和计划提交都作为持久事件保留。方向和假设完整换行，不截成固定长度摘要。
 并行计划按实际发生顺序交错展示，通过计划编号关联，不伪装成串行流程。

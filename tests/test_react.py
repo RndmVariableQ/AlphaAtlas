@@ -962,7 +962,7 @@ def sse(delta):
 def test_stream_is_incremental_preserves_unicode_usage_and_think_tags(monkeypatch, capsys, caplog):
     import logging
 
-    from alpha_atlas.reporting import TerminalStream
+    from alpha_atlas.terminal import TerminalStream
 
     class Response(io.BytesIO):
         def __iter__(self):
@@ -998,7 +998,7 @@ def test_stream_is_incremental_preserves_unicode_usage_and_think_tags(monkeypatc
 def test_separate_reasoning_stream_and_quiet(monkeypatch, capsys, caplog, key, quiet):
     import logging
 
-    from alpha_atlas.reporting import TerminalStream
+    from alpha_atlas.terminal import TerminalStream
 
     data = sse({key: "独立思考\n检查\x1b"}) + sse({"content": "{}"}) + b"data: [DONE]\n\n"
     monkeypatch.setattr("alpha_atlas.methods.models.urlopen", lambda *a, **kw: io.BytesIO(data))

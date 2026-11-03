@@ -12,27 +12,22 @@ import polars as pl
 
 from alpha_atlas.assets.common import atomic_json
 from alpha_atlas.checkpoint import read_json, run_lock
-from alpha_atlas.config import load_toml
+from alpha_atlas.config import load_toml, warmup_period
 from alpha_atlas.contracts import fingerprint
 from alpha_atlas.evaluation import FUTURES_METRICS, product_weights, split_panel
-from alpha_atlas.history import warmup_period
 from alpha_atlas.model import evaluate_models, factor_panel
-from alpha_atlas.reporting import (
-    refresh_report,
-    terminal_progress,
-    update_experiment_overview,
-    write_model_report,
-)
+from alpha_atlas.reporting import refresh_report, update_experiment_overview, write_model_report
 from alpha_atlas.runner import (
-    _check_config,
     _data_fields,
     _frozen_factor_result,
     _frozen_scores,
     _market,
     _registry,
     _runtime,
+    check_config,
     run_model,
 )
+from alpha_atlas.terminal import terminal_progress
 
 
 def _raw_factor(scored, item, index, columns):
@@ -118,7 +113,7 @@ def finish_experiment(root, directory):
     initial = read_json(directory / "run.json")
     if initial["status"] != "frozen":
         raise ValueError("experiment completion requires a frozen run")
-    _check_config(root, initial)
+    check_config(root, initial)
     # The public model entrypoint validates saved models and never refits an existing fit.
     # Its lock is released before taking the completion lock; no nested run locks.
     if initial["library_size"]:
@@ -141,7 +136,7 @@ def _finish_experiment(root, directory):
     spec = read_json(directory / "run.json")
     if spec["status"] != "frozen":
         raise ValueError("experiment completion requires a frozen run")
-    fold, profile = _check_config(root, spec)
+    fold, profile = check_config(root, spec)
     frozen_path = directory / "frozen/library.json"
     if hashlib.sha256(frozen_path.read_bytes()).hexdigest() != spec["library_sha256"]:
         raise ValueError("frozen library was modified")

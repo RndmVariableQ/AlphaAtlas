@@ -4,12 +4,14 @@ import json
 import math
 import os
 import time
+from dataclasses import dataclass
 from email.utils import parsedate_to_datetime
 from http.client import IncompleteRead
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
-from alpha_atlas.reporting import TerminalStream, terminal_progress
+from alpha_atlas.terminal import TerminalStream, terminal_progress
 
 
 class ContextLimitError(RuntimeError):
@@ -338,3 +340,57 @@ class HTTPModels:
             return [r["embedding"] for r in rows], response.get("usage")
         except (KeyError, TypeError, ValueError):
             raise RuntimeError("embedding response does not match requested texts") from None
+
+
+@dataclass(frozen=True)
+class LLMSearchConfig:
+    chat_model: str = ""
+    chat_base_url: str = "http://127.0.0.1:8001/v1"
+    chat_key_env: str = "ALPHA_ATLAS_LLM_API_KEY"
+    temperature: float = 1.0
+    repair_temperature: float = 0.8
+    risk_temperature: float = 0.1
+    timeout_seconds: float = 120.0
+    max_formula_repairs: int = 3
+    max_dialogue_rounds: int = 8
+
+    def __post_init__(self):
+        if type(self.max_dialogue_rounds) is not int or self.max_dialogue_rounds < 1:
+            raise ValueError("max_dialogue_rounds must be a positive integer")
+        for key in ("max_formula_repairs",):
+            if type(getattr(self, key)) is not int or getattr(self, key) < 0:
+                raise ValueError(f"{key} must be a nonnegative integer")
+        for key in (
+            "timeout_seconds",
+            "temperature",
+            "repair_temperature",
+            "risk_temperature",
+        ):
+            value = getattr(self, key)
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(value)
+            ):
+                raise ValueError(f"{key} must be finite")
+        if self.timeout_seconds <= 0:
+            raise ValueError("timeout must be positive")
+        if any(
+            not 0 <= t <= 2
+            for t in (self.temperature, self.repair_temperature, self.risk_temperature)
+        ):
+            raise ValueError("invalid model temperature")
+        url = urlsplit(self.chat_base_url)
+        if (
+            url.scheme not in {"http", "https"}
+            or not url.hostname
+            or url.username is not None
+            or url.password is not None
+            or url.query
+            or url.fragment
+        ):
+            raise ValueError("model endpoint must be HTTP(S) without credentials")
+
+    @classmethod
+    def from_mapping(cls, value):
+        return cls(**value)

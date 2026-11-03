@@ -21,8 +21,8 @@ from alpha_atlas.methods.v1 import (
     _normalize,
     _unresolved,
 )
-from alpha_atlas.reporting import terminal_progress
 from alpha_atlas.storage import candidate_from_dict
+from alpha_atlas.terminal import terminal_progress
 
 
 @dataclass(frozen=True)
