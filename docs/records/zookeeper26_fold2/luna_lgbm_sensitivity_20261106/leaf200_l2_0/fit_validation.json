@@ -1,0 +1,31 @@
+{
+  "validated_before_test_at": "2026-11-06T15:50:22.251856+08:00",
+  "only_lambda_l2_changed": true,
+  "all_preprocessing_and_linear_equal": true,
+  "baseline_fits_equal": true,
+  "standalone_baseline_preprocessing_and_linear_equal_to_prior_round": true,
+  "comparison_baseline": "paired B26 fitted within each incremental scope; standalone fit supplies model configuration",
+  "groups": [
+    {
+      "group": "earlier_methods",
+      "path": "artifacts/comparisons/zk26_luna_l2zero_20261106/earlier_methods/fit.json",
+      "fit_sha256": "f197d78ce5513e3950c2b5c56791a250558a2a886c2ccbc3290b6dbcb3787322",
+      "training_rows": 5296605,
+      "paired_models": 14
+    },
+    {
+      "group": "overview_methods",
+      "path": "artifacts/comparisons/zk26_luna_l2zero_20261106/overview_methods/fit.json",
+      "fit_sha256": "3885bec514206da8aa1d9d6f3bba4c90eee1a1eb0666019ee01d1c7e1e86ce35",
+      "training_rows": 5296605,
+      "paired_models": 10
+    },
+    {
+      "group": "v3",
+      "path": "artifacts/comparisons/zk26_luna_l2zero_20261106/v3/fit.json",
+      "fit_sha256": "753ee68bc37577c538e43c4603750d7b0f04ae663f4396c21df3b04f9dffc37e",
+      "training_rows": 5296605,
+      "paired_models": 6
+    }
+  ]
+}

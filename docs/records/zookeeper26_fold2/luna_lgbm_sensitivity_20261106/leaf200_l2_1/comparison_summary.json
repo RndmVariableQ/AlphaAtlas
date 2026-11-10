@@ -1,0 +1,12 @@
+{
+  "selection_criterion": "unweighted mean of six 300-attempt frozen-library Test weighted Pearson IC values on the fixed B26-common 80 products",
+  "leaf2000_mean_ic": 0.014889916188727119,
+  "leaf200_mean_ic": 0.015362914564343863,
+  "mean_ic_change": 0.0004729983756167448,
+  "leaf200_higher_ic_count": 5,
+  "method_count": 6,
+  "selected_min_data_in_leaf": 200,
+  "lambda_l2": 1.0,
+  "next_lambda_l2": 0.0,
+  "historical_test_selection": true
+}

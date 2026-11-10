@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "id": "zk26_seeded_fold2_haiku55_all_300_20261106_v3",
+  "parent_plan": "configs/experiments/zk26_seeded_fold2_haiku55_all_300_20261106/v3_plan.json",
+  "experiment_version": "rq8_zk26_seeded_fold2_v3async_haiku55_20261106",
+  "include_union": false,
+  "methods": [
+    "v3_async"
+  ],
+  "seeds": [
+    42
+  ],
+  "attempts_per_method": 300,
+  "evaluation_nodes": [
+    200,
+    300
+  ],
+  "purpose": "Haiku 5.5 五方法并行搜索；全组冻结并保存配对模型后评估 B26 增量。"
+}

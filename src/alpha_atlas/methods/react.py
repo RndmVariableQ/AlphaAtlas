@@ -137,6 +137,11 @@ PROPERTY_MEANINGS = {
     "target.return_type": "Return definition; log_return means ln(future price / current price).",
     "target.boundary": "The target's start and end must share an instrument and continuity segment.",
     "metric": "Primary score used to choose direction and judge factor quality; see scoring rules.",
+    "initial_library.members": "Number of pre-existing baseline members in the run library.",
+    "prepared_fields.description": "Definition of this published input feature.",
+    "prepared_fields.calculation_frequency": "Frequency used to prepare the feature, not the unit of method-expression windows.",
+    "prepared_fields.publication": "Rule determining when prepared values become available.",
+    "prepared_fields.calculation_expression": "Adapter preparation recipe; its raw inputs are not additional permitted method fields.",
     "max_nodes": "Maximum compiled expression nodes, including expanded operator definitions.",
     "max_depth": "Maximum nesting depth of the compiled expression tree.",
     "timeframes.suffixes": "Allowed coarser field suffixes; an empty list permits no coarser scopes.",
@@ -157,6 +162,8 @@ PROPERTY_MEANINGS = {
 }
 
 RULE_TITLES = {
+    "initial_library.semantics": "3.1 Initial baseline library",
+    "prepared_fields.semantics": "5.2.3 Published feature preparation",
     "syntax_rules": "5.2.1 Single-line and multiline DSL",
     "syntax_example": "5.2.2 JSON expression example",
     "timeframes.semantics": "5.3 Timeframe calculation and publication",
@@ -216,7 +223,10 @@ def _prompt_section(name, values):
                 prose.append(f"### {RULE_TITLES[path]}\n\n- " + value.replace(". ", ".\n- "))
             else:
                 text = value if isinstance(value, str) else _json(value)
-                rows.append(f"| {path} | {_markdown_cell(text)} | {PROPERTY_MEANINGS[path]} |")
+                meaning = (
+                    f"prepared_fields.{key}" if path.startswith("prepared_fields.fields.") else path
+                )
+                rows.append(f"| {path} | {_markdown_cell(text)} | {PROPERTY_MEANINGS[meaning]} |")
 
     append(values)
     return "\n".join(rows) + ("\n\n" + "\n\n".join(prose) if prose else "")

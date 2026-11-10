@@ -1,0 +1,1985 @@
+{
+  "schema_version": 1,
+  "id": "rq8_zk26_lgbm_defaults_20261106",
+  "description": "B26 Luna 与 Haiku 统一下游重训：省略 min_data_in_leaf，使用锁定 LightGBM 4.7.0 默认 20；lambda_l2=0。固定其余模型参数、冻结库及共同样本，显式报告配对 B26 的绝对 IC 与原始/变换后 WMSE。",
+  "asset": "futures_kernel_5m_full",
+  "universe": "all",
+  "profile": {
+    "asset_id": "futures_kernel_5m_full",
+    "frequency": "5m",
+    "provider": "ricequant",
+    "data_dir": "data/futures_kernel_5m_full",
+    "default_universe": "all",
+    "universes": [
+      "all"
+    ],
+    "timezone": "Asia/Shanghai",
+    "bar_time_label": "end",
+    "price_field": "adj_close",
+    "target_horizon_bars": 12,
+    "metric": "time_series_weighted_pearson_ic",
+    "panel": "product",
+    "min_train_val_ic": 0.005,
+    "fundamentals": false,
+    "start": "2012-01-04",
+    "end": "2026-09-28"
+  },
+  "fold": {
+    "id": "fold2",
+    "train": {
+      "start": "2019-01-01",
+      "end": "2021-12-31"
+    },
+    "val": {
+      "start": "2022-01-01",
+      "end": "2023-12-31"
+    },
+    "test": {
+      "start": "2024-01-01",
+      "end": "2025-12-31"
+    }
+  },
+  "fields": [
+    "adj_close",
+    "adj_open",
+    "adj_high",
+    "adj_low",
+    "adj_vwap",
+    "volume",
+    "amount",
+    "open_interest",
+    "zk_mom1",
+    "zk_mom12",
+    "zk_val36",
+    "zk_val60",
+    "zk_seasonality",
+    "zk_dOI",
+    "zk_atv",
+    "zk_dmaOI",
+    "zk_val",
+    "zk_cv",
+    "zk_iliq",
+    "zk_max",
+    "zk_skew",
+    "zk_kurt",
+    "zk_var",
+    "zk_vov",
+    "zk_basis",
+    "zk_rbasis",
+    "zk_bmom",
+    "zk_basis12",
+    "zk_rbasis12",
+    "zk_bmom12",
+    "zk_l2basis12",
+    "zk_l2rbasis",
+    "zk_l2bmom12",
+    "zk_ivolaBGR"
+  ],
+  "data": {
+    "adapter": "zookeeper_monthly_dsl_v2",
+    "sources": {
+      "base": {
+        "path": "data/futures_kernel_5m_full",
+        "snapshot_id": "73db06c2d7223ce5829b8d3d9846a27b35e59e0d621a11a4a94d99dcc6ec0e87",
+        "allow_incomplete": false
+      },
+      "curve": {
+        "path": "data/futures_curve",
+        "snapshot_id": "3cb13b7e7e0015f96f93e0f36e6da2bb39448d5a26a13e165d74b940e13a152b",
+        "allow_incomplete": true
+      }
+    }
+  },
+  "rules": {
+    "max_attempts": 300,
+    "reference_library": "futures_cta",
+    "search_diagnostics": "icir_turnover_lag1_v2",
+    "clip_quantiles": [
+      0.01,
+      0.99
+    ],
+    "min_abs_val_ic": 0.01,
+    "min_coverage": 0.8,
+    "max_abs_corr": 0.7,
+    "min_corr_overlap": 100,
+    "max_expression_nodes": 100,
+    "max_expression_depth": 20,
+    "seed": 42,
+    "warmup_policy": "one_calendar_year_before_train",
+    "target_boundary_policy": "target_end_must_be_within_split",
+    "admission": "train_sign_then_positive_val_ic; first_accepted_wins",
+    "oos_policy": "freeze_first; no_test_feedback"
+  },
+  "model": {
+    "seed": 42,
+    "preprocessing": {
+      "clip_quantiles": [
+        0.01,
+        0.99
+      ],
+      "product_demean": true
+    },
+    "linear": {
+      "rcond": 1e-12
+    },
+    "lightgbm": {
+      "num_boost_round": 50,
+      "learning_rate": 0.05,
+      "num_leaves": 15,
+      "lambda_l2": 0.0,
+      "num_threads": 4,
+      "max_depth": 5
+    }
+  },
+  "method_configs": {
+    "alphaprobe": {
+      "chat_model": "gpt-6-luna",
+      "embedding_model": "Qwen3-Embedding-0.6B",
+      "chat_base_url": "http://127.0.0.1:27483/codex/v1",
+      "embedding_base_url": "http://127.0.0.1:8003/v1",
+      "chat_key_env": "ATLAS_EXPLORER_OPENAI_API_KEY",
+      "embedding_key_env": "ALPHA_ATLAS_EMBEDDING_API_KEY",
+      "temperature": 1.0,
+      "max_output_tokens": 65536,
+      "timeout_seconds": 1800.0,
+      "pool_capacity": 50,
+      "top_k": 15,
+      "offspring": 5,
+      "depth_penalty": 0.05,
+      "retrieval_penalty": 0.1,
+      "min_train_quality": 0.006,
+      "initial_expressions": []
+    },
+    "alphaschema": {
+      "chat_model": "gpt-6-luna",
+      "chat_base_url": "http://127.0.0.1:27483/codex/v1",
+      "chat_key_env": "ATLAS_EXPLORER_OPENAI_API_KEY",
+      "temperature": 1.0,
+      "max_output_tokens": 65536,
+      "timeout_seconds": 1800.0,
+      "candidate_pool_size": 10000,
+      "batch_size": 16,
+      "periods": [
+        20,
+        80
+      ],
+      "max_repairs": 1,
+      "max_dialogue_rounds": 8,
+      "ensemble_size": 8,
+      "bootstrap_fraction": 0.7,
+      "reward_alpha": 10.0,
+      "reward_beta": 1.0,
+      "lag1_penalty": 2.0,
+      "quality_count_weights": {
+        "0": 0.15,
+        "1": 0.35,
+        "2": 0.35,
+        "3": 0.15
+      },
+      "mutation_weights": {
+        "replace_quality": 0.22,
+        "replace_context": 0.16,
+        "replace_output": 0.16,
+        "add_quality": 0.14,
+        "drop_quality": 0.12,
+        "replace_direction": 0.12,
+        "replace_event": 0.08
+      },
+      "schedule": [
+        {
+          "max_observations": 150,
+          "min_observations": 0,
+          "explore": 16,
+          "exploit": 0,
+          "mutate": 0
+        },
+        {
+          "max_observations": 300,
+          "min_observations": 150,
+          "explore": 8,
+          "exploit": 6,
+          "mutate": 2
+        },
+        {
+          "max_observations": 700,
+          "min_observations": 300,
+          "explore": 5,
+          "exploit": 8,
+          "mutate": 3
+        },
+        {
+          "max_observations": null,
+          "min_observations": 700,
+          "explore": 3,
+          "exploit": 8,
+          "mutate": 5
+        }
+      ]
+    },
+    "react": {
+      "framework": "agentscope",
+      "chat_model": "gpt-6-luna",
+      "chat_base_url": "http://127.0.0.1:27483/codex/v1",
+      "chat_key_env": "ATLAS_EXPLORER_OPENAI_API_KEY",
+      "temperature": 1.0,
+      "max_output_tokens": 65536,
+      "summary_output_tokens": 768,
+      "timeout_seconds": 1800.0,
+      "context_size": 131072
+    },
+    "mcts_llm": {
+      "chat_model": "gpt-6-luna",
+      "chat_base_url": "http://127.0.0.1:27483/codex/v1",
+      "chat_key_env": "ATLAS_EXPLORER_OPENAI_API_KEY",
+      "temperature": 1.0,
+      "repair_temperature": 0.8,
+      "risk_temperature": 0.1,
+      "timeout_seconds": 1800.0,
+      "exploration": 1.0,
+      "dimension_temperature": 1.0,
+      "tree_budget": 3,
+      "budget_increment": 1,
+      "fsa_top_k": 3,
+      "max_formula_repairs": 3,
+      "max_dialogue_rounds": 8,
+      "tree_selection": true
+    },
+    "annealing": {
+      "chat_model": "gpt-6-luna",
+      "chat_base_url": "http://127.0.0.1:27483/codex/v1",
+      "chat_key_env": "ATLAS_EXPLORER_OPENAI_API_KEY",
+      "temperature": 1.0,
+      "repair_temperature": 0.8,
+      "timeout_seconds": 1800.0,
+      "max_formula_repairs": 3,
+      "max_dialogue_rounds": 8,
+      "candidates_per_plan": 5,
+      "analyst_feedback_top_k": 5,
+      "initial_temperature": 0.25,
+      "final_temperature": 0.02
+    },
+    "v1": {
+      "chat_model": "gpt-6-luna",
+      "chat_base_url": "http://127.0.0.1:27483/codex/v1",
+      "chat_key_env": "ATLAS_EXPLORER_OPENAI_API_KEY",
+      "temperature": 1.0,
+      "repair_temperature": 0.8,
+      "timeout_seconds": 1800.0,
+      "max_formula_repairs": 3,
+      "max_dialogue_rounds": 40,
+      "candidates_per_plan": 5,
+      "analyst_feedback_top_k": 5,
+      "initial_temperature": 0.25,
+      "final_temperature": 0.02
+    },
+    "v1_async": {
+      "chat_model": "gpt-6-luna",
+      "chat_base_url": "http://127.0.0.1:27483/codex/v1",
+      "chat_key_env": "ATLAS_EXPLORER_OPENAI_API_KEY",
+      "temperature": 1.0,
+      "repair_temperature": 0.8,
+      "risk_temperature": 0.1,
+      "timeout_seconds": 1800.0,
+      "max_formula_repairs": 3,
+      "max_dialogue_rounds": 40,
+      "initial_temperature": 0.25,
+      "final_temperature": 0.02,
+      "candidates_per_plan": 5,
+      "analyst_feedback_top_k": 5,
+      "selection_policy": "boltzmann",
+      "parallel_plans": 5
+    },
+    "random": null,
+    "gp": null,
+    "mcts": null,
+    "atlas": null
+  },
+  "runtime_limits": {
+    "validation_seconds": 120.0,
+    "evaluation_seconds": 120.0,
+    "benchmark_small_size": 64,
+    "benchmark_large_size": 256,
+    "benchmark_repeats": 5,
+    "benchmark_floor_seconds": 0.001,
+    "benchmark_max_growth": 3.0
+  },
+  "operator_versions": {
+    "ABS": "1",
+    "ADD": "1",
+    "AND": "1",
+    "CLIP": "1",
+    "CS_DEMEAN": "1",
+    "CS_LAGGED_MEAN": "1",
+    "CS_LAGGED_SPREAD": "1",
+    "CS_RANK": "1",
+    "CS_SCALE": "1",
+    "CS_WINSORIZE": "1",
+    "CS_ZSCORE": "1",
+    "DELAY": "1",
+    "DELTA": "1",
+    "DIVIDE": "1",
+    "EQ": "1",
+    "EXP": "1",
+    "FILLNA": "1",
+    "GE": "1",
+    "GT": "1",
+    "IF_THEN_ELSE": "1",
+    "IS_FINITE": "1",
+    "LE": "1",
+    "LOG": "1",
+    "LOG1P": "1",
+    "LT": "1",
+    "MAX": "1",
+    "MIN": "1",
+    "MULTIPLY": "1",
+    "NE": "1",
+    "NEG": "1",
+    "NOT": "1",
+    "OBS_LAG": "1",
+    "OR": "1",
+    "POWER": "1",
+    "RETURN": "1",
+    "SIGN": "1",
+    "SIGNED_POWER": "1",
+    "SQRT": "1",
+    "SUBTRACT": "1",
+    "TS_ALL": "1",
+    "TS_ANY": "1",
+    "TS_ARGMAX": "1",
+    "TS_ARGMIN": "1",
+    "TS_CORR": "1",
+    "TS_COUNT": "1",
+    "TS_COV": "1",
+    "TS_KURT": "1",
+    "TS_KURT_POP": "1",
+    "TS_LINEAR_DECAY": "1",
+    "TS_MAX": "1",
+    "TS_MEAN": "1",
+    "TS_MEDIAN": "1",
+    "TS_MIN": "1",
+    "TS_PROD": "1",
+    "TS_QUANTILE": "1",
+    "TS_RANK": "1",
+    "TS_RANKCORR": "1",
+    "TS_RATE": "1",
+    "TS_RESID_STD3": "1",
+    "TS_SKEW": "1",
+    "TS_SKEW_POP": "1",
+    "TS_STD": "1",
+    "TS_SUM": "1",
+    "TS_VAR": "1",
+    "TS_WINSORIZE": "1",
+    "TS_ZSCORE": "1"
+  },
+  "limitations": [
+    "Base is the previously authorized Kernel 1m-to-5m export, not native 5m.",
+    "Computational causality on a fixed final snapshot; full vendor vintage PIT not certified.",
+    "Test 2024-2025 has already been observed and is a historical diagnostic holdout.",
+    "Curve snapshot is incomplete: two documented auxiliary bars remain missing.",
+    "Integration is original 5m rows plus published monthly features. Raw far-contract 5m bars are not merged into the eight-field dataset.",
+    "The monthly formula DSL runs inside the data adapter. In a 5m method expression, zk_* is a published feature; rolling windows count 5m rows.",
+    "Method parameter reproduction on current implementation; not a replay of historical source, LLM responses or asynchronous ordering.",
+    "Historical overview used eight fields, no B26 initial library and 1000 attempts; this requested incremental experiment keeps 34 fields, B26 initial library and 300 attempts.",
+    "Shared lag1 search diagnostics remain enabled for both methods; the historical Luna AlphaAtlas run used icir_turnover_v1."
+  ],
+  "warmup_notes": "5m search windows retain one-year warmup; monthly DSL preparation uses all available source history and publishes only the exact previous calendar month.",
+  "data_recipe": {
+    "version": "zookeeper_monthly_dsl_v2",
+    "calendar_version": "observed_calendar_months_v1",
+    "daily": [
+      {
+        "name": "r",
+        "expression": "RETURN($price, 1)"
+      },
+      {
+        "name": "daily_std",
+        "expression": "TS_STD($r, 250)"
+      },
+      {
+        "name": "daily_skew",
+        "expression": "TS_SKEW_POP($r, 250)"
+      },
+      {
+        "name": "daily_kurt",
+        "expression": "TS_KURT_POP($r, 250)"
+      },
+      {
+        "name": "daily_vov",
+        "expression": "TS_STD($daily_std, 250)"
+      },
+      {
+        "name": "liquidity",
+        "expression": "IF_THEN_ELSE(GT($amount, 0), $amount / ABS($r), 0 / 0)"
+      }
+    ],
+    "curve_daily": [
+      {
+        "name": "curve_r0",
+        "expression": "RETURN($F0, 1)"
+      },
+      {
+        "name": "curve_r1",
+        "expression": "RETURN($F1, 1)"
+      }
+    ],
+    "base_reductions": [
+      {
+        "name": "P",
+        "source": "price",
+        "op": "last"
+      },
+      {
+        "name": "V",
+        "source": "volume",
+        "op": "sum"
+      },
+      {
+        "name": "OI",
+        "source": "oi",
+        "op": "last"
+      },
+      {
+        "name": "R",
+        "source": "r",
+        "op": "compound"
+      },
+      {
+        "name": "return_max",
+        "source": "r",
+        "op": "max"
+      },
+      {
+        "name": "return_sum",
+        "source": "r",
+        "op": "sum"
+      },
+      {
+        "name": "return_squares",
+        "source": "r",
+        "op": "sum_squares"
+      },
+      {
+        "name": "return_count",
+        "source": "r",
+        "op": "count"
+      },
+      {
+        "name": "liquidity_mean",
+        "source": "liquidity",
+        "op": "mean",
+        "coverage": 0.8,
+        "min_count": 2
+      },
+      {
+        "name": "daily_std_last",
+        "source": "daily_std",
+        "op": "last"
+      },
+      {
+        "name": "daily_skew_last",
+        "source": "daily_skew",
+        "op": "last"
+      },
+      {
+        "name": "daily_kurt_last",
+        "source": "daily_kurt",
+        "op": "last"
+      },
+      {
+        "name": "daily_vov_last",
+        "source": "daily_vov",
+        "op": "last"
+      }
+    ],
+    "curve_reductions": [
+      {
+        "name": "F0",
+        "source": "F0",
+        "op": "last"
+      },
+      {
+        "name": "F1",
+        "source": "F1",
+        "op": "last"
+      },
+      {
+        "name": "F2",
+        "source": "F2",
+        "op": "last"
+      },
+      {
+        "name": "C0",
+        "source": "curve_r0",
+        "op": "compound",
+        "coverage": 0.8,
+        "min_count": 2
+      },
+      {
+        "name": "C1",
+        "source": "curve_r1",
+        "op": "compound",
+        "coverage": 0.8,
+        "min_count": 2
+      }
+    ],
+    "risk_returns": [
+      {
+        "name": "risk_avg",
+        "expression": "CS_LAGGED_MEAN($R, AND(IS_FINITE($P), IS_FINITE($R)), 4, 0.8)"
+      },
+      {
+        "name": "risk_basis",
+        "expression": "CS_LAGGED_SPREAD($R, $basis, AND(IS_FINITE($P), IS_FINITE($R)), 0.25, 0.8)"
+      },
+      {
+        "name": "risk_mom",
+        "expression": "CS_LAGGED_SPREAD($R, $mom12, AND(IS_FINITE($P), IS_FINITE($R)), 0.25, 0.8)"
+      }
+    ],
+    "notes": [
+      "Daily windows reset on gaps in the observed union trading calendar. Curve returns also reset on actual leg changes.",
+      "Missing calendar months are explicit null rows; monthly rolling windows do not compress time.",
+      "Daily/monthly intermediate panels are not supervised targets and never enter method context as labels."
+    ],
+    "factors": [
+      {
+        "schema_version": 2,
+        "library": "zookeeper_26",
+        "version": "zookeeper_monthly_dsl_v2",
+        "name": "mom1",
+        "source_name": "mom1",
+        "description": "一个自然月动量",
+        "family": "momentum",
+        "status": "adapted_proxy",
+        "input_group": "eight_fields",
+        "source_fields": [
+          "adj_vwap",
+          "volume"
+        ],
+        "prepared_field": "zk_mom1",
+        "expression": "$R",
+        "formula": "R_m",
+        "lookback_months": 1,
+        "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+        "update_frequency": "monthly",
+        "available_at": "first observed 5m bar of the following trading month",
+        "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+        "adaptation_notes": "已复权日 VWAP 代理收益，允许正常主力切换。",
+        "source": {
+          "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+          "authors": "Fan, Li, Qiao, Zhang",
+          "ssrn_id": "6618461",
+          "url": "https://ssrn.com/abstract=6618461",
+          "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+        },
+        "implementation": "alpha_atlas.factor_libraries.zookeeper.dsl.compute_monthly",
+        "source_dependencies": {
+          "futures_kernel_5m_full": [
+            "adj_vwap",
+            "volume"
+          ]
+        },
+        "formula_language": "atlas-dsl-v2 on calendar-month panel; published_expression on base 5m panel",
+        "lookback_trading_days": null,
+        "published_expression": "$zk_mom1",
+        "calculation_frequency": "calendar_month",
+        "publication": "Exact previous trading-day calendar month; no stale forward fill",
+        "input_recipe": "pipeline.json"
+      },
+      {
+        "schema_version": 2,
+        "library": "zookeeper_26",
+        "version": "zookeeper_monthly_dsl_v2",
+        "name": "mom12",
+        "source_name": "mom12",
+        "description": "十二个自然月动量",
+        "family": "momentum",
+        "status": "adapted_proxy",
+        "input_group": "eight_fields",
+        "source_fields": [
+          "adj_vwap",
+          "volume"
+        ],
+        "prepared_field": "zk_mom12",
+        "expression": "TS_PROD(1 + $R, 12) - 1",
+        "formula": "prod(1 + R[m-11:m]) - 1",
+        "lookback_months": 12,
+        "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+        "update_frequency": "monthly",
+        "available_at": "first observed 5m bar of the following trading month",
+        "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+        "adaptation_notes": "完整的连续 12 个月收益。",
+        "source": {
+          "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+          "authors": "Fan, Li, Qiao, Zhang",
+          "ssrn_id": "6618461",
+          "url": "https://ssrn.com/abstract=6618461",
+          "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+        },
+        "implementation": "alpha_atlas.factor_libraries.zookeeper.dsl.compute_monthly",
+        "source_dependencies": {
+          "futures_kernel_5m_full": [
+            "adj_vwap",
+            "volume"
+          ]
+        },
+        "formula_language": "atlas-dsl-v2 on calendar-month panel; published_expression on base 5m panel",
+        "lookback_trading_days": null,
+        "published_expression": "$zk_mom12",
+        "calculation_frequency": "calendar_month",
+        "publication": "Exact previous trading-day calendar month; no stale forward fill",
+        "input_recipe": "pipeline.json"
+      },
+      {
+        "schema_version": 2,
+        "library": "zookeeper_26",
+        "version": "zookeeper_monthly_dsl_v2",
+        "name": "val36",
+        "source_name": "val36",
+        "description": "三年累计收益",
+        "family": "value",
+        "status": "adapted_proxy",
+        "input_group": "eight_fields",
+        "source_fields": [
+          "adj_vwap",
+          "volume"
+        ],
+        "prepared_field": "zk_val36",
+        "expression": "TS_PROD(1 + $R, 36) - 1",
+        "formula": "prod(1 + R[m-35:m]) - 1",
+        "lookback_months": 36,
+        "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+        "update_frequency": "monthly",
+        "available_at": "first observed 5m bar of the following trading month",
+        "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+        "adaptation_notes": "完整 36 个自然月；不把 36 个月换成固定 756 天。",
+        "source": {
+          "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+          "authors": "Fan, Li, Qiao, Zhang",
+          "ssrn_id": "6618461",
+          "url": "https://ssrn.com/abstract=6618461",
+          "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+        },
+        "implementation": "alpha_atlas.factor_libraries.zookeeper.dsl.compute_monthly",
+        "source_dependencies": {
+          "futures_kernel_5m_full": [
+            "adj_vwap",
+            "volume"
+          ]
+        },
+        "formula_language": "atlas-dsl-v2 on calendar-month panel; published_expression on base 5m panel",
+        "lookback_trading_days": null,
+        "published_expression": "$zk_val36",
+        "calculation_frequency": "calendar_month",
+        "publication": "Exact previous trading-day calendar month; no stale forward fill",
+        "input_recipe": "pipeline.json"
+      },
+      {
+        "schema_version": 2,
+        "library": "zookeeper_26",
+        "version": "zookeeper_monthly_dsl_v2",
+        "name": "val60",
+        "source_name": "val60",
+        "description": "五年累计收益",
+        "family": "value",
+        "status": "adapted_proxy",
+        "input_group": "eight_fields",
+        "source_fields": [
+          "adj_vwap",
+          "volume"
+        ],
+        "prepared_field": "zk_val60",
+        "expression": "TS_PROD(1 + $R, 60) - 1",
+        "formula": "prod(1 + R[m-59:m]) - 1",
+        "lookback_months": 60,
+        "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+        "update_frequency": "monthly",
+        "available_at": "first observed 5m bar of the following trading month",
+        "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+        "adaptation_notes": "完整 60 个自然月；上市不足历史保持空值。",
+        "source": {
+          "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+          "authors": "Fan, Li, Qiao, Zhang",
+          "ssrn_id": "6618461",
+          "url": "https://ssrn.com/abstract=6618461",
+          "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+        },
+        "implementation": "alpha_atlas.factor_libraries.zookeeper.dsl.compute_monthly",
+        "source_dependencies": {
+          "futures_kernel_5m_full": [
+            "adj_vwap",
+            "volume"
+          ]
+        },
+        "formula_language": "atlas-dsl-v2 on calendar-month panel; published_expression on base 5m panel",
+        "lookback_trading_days": null,
+        "published_expression": "$zk_val60",
+        "calculation_frequency": "calendar_month",
+        "publication": "Exact previous trading-day calendar month; no stale forward fill",
+        "input_recipe": "pipeline.json"
+      },
+      {
+        "schema_version": 2,
+        "library": "zookeeper_26",
+        "version": "zookeeper_monthly_dsl_v2",
+        "name": "seasonality",
+        "source_name": "seasonality",
+        "description": "季节性：十一月前的单月收益",
+        "family": "momentum",
+        "status": "adapted_proxy",
+        "input_group": "eight_fields",
+        "source_fields": [
+          "adj_vwap",
+          "volume"
+        ],
+        "prepared_field": "zk_seasonality",
+        "expression": "OBS_LAG($R, 11)",
+        "formula": "R[m-11]",
+        "lookback_months": 12,
+        "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+        "update_frequency": "monthly",
+        "available_at": "first observed 5m bar of the following trading month",
+        "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+        "adaptation_notes": "11 个月滞后，不是过去 11 个月累计收益。",
+        "source": {
+          "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+          "authors": "Fan, Li, Qiao, Zhang",
+          "ssrn_id": "6618461",
+          "url": "https://ssrn.com/abstract=6618461",
+          "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+        },
+        "implementation": "alpha_atlas.factor_libraries.zookeeper.dsl.compute_monthly",
+        "source_dependencies": {
+          "futures_kernel_5m_full": [
+            "adj_vwap",
+            "volume"
+          ]
+        },
+        "formula_language": "atlas-dsl-v2 on calendar-month panel; published_expression on base 5m panel",
+        "lookback_trading_days": null,
+        "published_expression": "$zk_seasonality",
+        "calculation_frequency": "calendar_month",
+        "publication": "Exact previous trading-day calendar month; no stale forward fill",
+        "input_recipe": "pipeline.json"
+      },
+      {
+        "schema_version": 2,
+        "library": "zookeeper_26",
+        "version": "zookeeper_monthly_dsl_v2",
+        "name": "dOI",
+        "source_name": "dOI",
+        "description": "月末主力持仓量环比差",
+        "family": "positioning",
+        "status": "adapted_proxy",
+        "input_group": "eight_fields",
+        "source_fields": [
+          "open_interest"
+        ],
+        "prepared_field": "zk_dOI",
+        "expression": "$OI - OBS_LAG($OI, 1)",
+        "formula": "OI_m - OI[m-1]",
+        "lookback_months": 2,
+        "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+        "update_frequency": "monthly",
+        "available_at": "first observed 5m bar of the following trading month",
+        "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+        "adaptation_notes": "论文 change 未指定比例；本版固定为绝对差。主力 OI 替代全期限 gross OI。",
+        "source": {
+          "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+          "authors": "Fan, Li, Qiao, Zhang",
+          "ssrn_id": "6618461",
+          "url": "https://ssrn.com/abstract=6618461",
+          "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+        },
+        "implementation": "alpha_atlas.factor_libraries.zookeeper.dsl.compute_monthly",
+        "source_dependencies": {
+          "futures_kernel_5m_full": [
+            "open_interest"
+          ]
+        },
+        "formula_language": "atlas-dsl-v2 on calendar-month panel; published_expression on base 5m panel",
+        "lookback_trading_days": null,
+        "published_expression": "$zk_dOI",
+        "calculation_frequency": "calendar_month",
+        "publication": "Exact previous trading-day calendar month; no stale forward fill",
+        "input_recipe": "pipeline.json"
+      },
+      {
+        "schema_version": 2,
+        "library": "zookeeper_26",
+        "version": "zookeeper_monthly_dsl_v2",
+        "name": "atv",
+        "source_name": "atv",
+        "description": "相对前十二个月平均成交量的异常成交量",
+        "family": "liquidity",
+        "status": "adapted_proxy",
+        "input_group": "eight_fields",
+        "source_fields": [
+          "volume"
+        ],
+        "prepared_field": "zk_atv",
+        "expression": "$V / OBS_LAG(TS_MEAN($V, 12), 1) - 1",
+        "formula": "V_m / mean(V[m-12:m-1]) - 1",
+        "lookback_months": 13,
+        "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+        "update_frequency": "monthly",
+        "available_at": "first observed 5m bar of the following trading month",
+        "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+        "adaptation_notes": "均值排除当前月；V 为主力合约成交量，非全期限总成交量。",
+        "source": {
+          "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+          "authors": "Fan, Li, Qiao, Zhang",
+          "ssrn_id": "6618461",
+          "url": "https://ssrn.com/abstract=6618461",
+          "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+        },
+        "implementation": "alpha_atlas.factor_libraries.zookeeper.dsl.compute_monthly",
+        "source_dependencies": {
+          "futures_kernel_5m_full": [
+            "volume"
+          ]
+        },
+        "formula_language": "atlas-dsl-v2 on calendar-month panel; published_expression on base 5m panel",
+        "lookback_trading_days": null,
+        "published_expression": "$zk_atv",
+        "calculation_frequency": "calendar_month",
+        "publication": "Exact previous trading-day calendar month; no stale forward fill",
+        "input_recipe": "pipeline.json"
+      },
+      {
+        "schema_version": 2,
+        "library": "zookeeper_26",
+        "version": "zookeeper_monthly_dsl_v2",
+        "name": "dmaOI",
+        "source_name": "dmaOI",
+        "description": "月末主力持仓量相对过去十二月均值偏离",
+        "family": "positioning",
+        "status": "adapted_proxy",
+        "input_group": "eight_fields",
+        "source_fields": [
+          "open_interest"
+        ],
+        "prepared_field": "zk_dmaOI",
+        "expression": "$OI / OBS_LAG(TS_MEAN($OI, 12), 1) - 1",
+        "formula": "OI_m / mean(OI[m-12:m-1]) - 1",
+        "lookback_months": 13,
+        "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+        "update_frequency": "monthly",
+        "available_at": "first observed 5m bar of the following trading month",
+        "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+        "adaptation_notes": "本版固定为比例偏离，历史均值排除当前月；主力 OI 代理。",
+        "source": {
+          "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+          "authors": "Fan, Li, Qiao, Zhang",
+          "ssrn_id": "6618461",
+          "url": "https://ssrn.com/abstract=6618461",
+          "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+        },
+        "implementation": "alpha_atlas.factor_libraries.zookeeper.dsl.compute_monthly",
+        "source_dependencies": {
+          "futures_kernel_5m_full": [
+            "open_interest"
+          ]
+        },
+        "formula_language": "atlas-dsl-v2 on calendar-month panel; published_expression on base 5m panel",
+        "lookback_trading_days": null,
+        "published_expression": "$zk_dmaOI",
+        "calculation_frequency": "calendar_month",
+        "publication": "Exact previous trading-day calendar month; no stale forward fill",
+        "input_recipe": "pipeline.json"
+      },
+      {
+        "schema_version": 2,
+        "library": "zookeeper_26",
+        "version": "zookeeper_monthly_dsl_v2",
+        "name": "val",
+        "source_name": "val",
+        "description": "当前价格与 42–54 月前均价之比",
+        "family": "value",
+        "status": "adapted_proxy",
+        "input_group": "eight_fields",
+        "source_fields": [
+          "adj_vwap",
+          "volume"
+        ],
+        "prepared_field": "zk_val",
+        "expression": "$P / OBS_LAG(TS_MEAN($P, 13), 42)",
+        "formula": "P_m / mean(P[m-54:m-42])",
+        "lookback_months": 55,
+        "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+        "update_frequency": "monthly",
+        "available_at": "first observed 5m bar of the following trading month",
+        "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+        "adaptation_notes": "使用 13 个历史月末已复权日 VWAP 的均值；这是对历史区间 settlement 均价的月末采样适配。",
+        "source": {
+          "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+          "authors": "Fan, Li, Qiao, Zhang",
+          "ssrn_id": "6618461",
+          "url": "https://ssrn.com/abstract=6618461",
+          "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+        },
+        "implementation": "alpha_atlas.factor_libraries.zookeeper.dsl.compute_monthly",
+        "source_dependencies": {
+          "futures_kernel_5m_full": [
+            "adj_vwap",
+            "volume"
+          ]
+        },
+        "formula_language": "atlas-dsl-v2 on calendar-month panel; published_expression on base 5m panel",
+        "lookback_trading_days": null,
+        "published_expression": "$zk_val",
+        "calculation_frequency": "calendar_month",
+        "publication": "Exact previous trading-day calendar month; no stale forward fill",
+        "input_recipe": "pipeline.json"
+      },
+      {
+        "schema_version": 2,
+        "library": "zookeeper_26",
+        "version": "zookeeper_monthly_dsl_v2",
+        "name": "cv",
+        "source_name": "cv",
+        "description": "十二个月日收益方差与均值之比",
+        "family": "risk",
+        "status": "adapted_proxy",
+        "input_group": "eight_fields",
+        "source_fields": [
+          "adj_vwap",
+          "volume"
+        ],
+        "prepared_field": "zk_cv",
+        "expression": "s = TS_SUM($return_sum, 12); n = TS_SUM($return_count, 12); q = TS_SUM($return_squares, 12); ((q - s * s / n) / (n - 1)) / (s / n)",
+        "formula": "sample_var(r over calendar months m-11:m) / mean(r over same dates)",
+        "lookback_months": 12,
+        "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+        "update_frequency": "monthly",
+        "available_at": "first observed 5m bar of the following trading month",
+        "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+        "adaptation_notes": "遵循论文 variance/mean；不改成 std/mean；均值绝对值不超过 1e-12 时为空。",
+        "source": {
+          "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+          "authors": "Fan, Li, Qiao, Zhang",
+          "ssrn_id": "6618461",
+          "url": "https://ssrn.com/abstract=6618461",
+          "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+        },
+        "implementation": "alpha_atlas.factor_libraries.zookeeper.dsl.compute_monthly",
+        "source_dependencies": {
+          "futures_kernel_5m_full": [
+            "adj_vwap",
+            "volume"
+          ]
+        },
+        "formula_language": "atlas-dsl-v2 on calendar-month panel; published_expression on base 5m panel",
+        "lookback_trading_days": null,
+        "published_expression": "$zk_cv",
+        "calculation_frequency": "calendar_month",
+        "publication": "Exact previous trading-day calendar month; no stale forward fill",
+        "input_recipe": "pipeline.json"
+      },
+      {
+        "schema_version": 2,
+        "library": "zookeeper_26",
+        "version": "zookeeper_monthly_dsl_v2",
+        "name": "iliq",
+        "source_name": "iliq",
+        "description": "月度 Amivest 流动性倒数",
+        "family": "liquidity",
+        "status": "adapted_proxy",
+        "input_group": "eight_fields",
+        "source_fields": [
+          "adj_vwap",
+          "volume",
+          "amount"
+        ],
+        "prepared_field": "zk_iliq",
+        "expression": "1 / $liquidity_mean",
+        "formula": "1 / mean(A_d / abs(r_d) for valid d in month m)",
+        "lookback_months": 1,
+        "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+        "update_frequency": "monthly",
+        "available_at": "first observed 5m bar of the following trading month",
+        "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+        "adaptation_notes": "A 为人民币成交额；排除零收益和非正成交额日，要求至少 80% 当月交易日有效；是均值倒数，非日倒数均值。",
+        "source": {
+          "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+          "authors": "Fan, Li, Qiao, Zhang",
+          "ssrn_id": "6618461",
+          "url": "https://ssrn.com/abstract=6618461",
+          "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+        },
+        "implementation": "alpha_atlas.factor_libraries.zookeeper.dsl.compute_monthly",
+        "source_dependencies": {
+          "futures_kernel_5m_full": [
+            "adj_vwap",
+            "volume",
+            "amount"
+          ]
+        },
+        "formula_language": "atlas-dsl-v2 on calendar-month panel; published_expression on base 5m panel",
+        "lookback_trading_days": null,
+        "published_expression": "$zk_iliq",
+        "calculation_frequency": "calendar_month",
+        "publication": "Exact previous trading-day calendar month; no stale forward fill",
+        "input_recipe": "pipeline.json"
+      },
+      {
+        "schema_version": 2,
+        "library": "zookeeper_26",
+        "version": "zookeeper_monthly_dsl_v2",
+        "name": "max",
+        "source_name": "max",
+        "description": "最近完成月份的最大日收益",
+        "family": "distribution",
+        "status": "adapted_proxy",
+        "input_group": "eight_fields",
+        "source_fields": [
+          "adj_vwap",
+          "volume"
+        ],
+        "prepared_field": "zk_max",
+        "expression": "$return_max",
+        "formula": "max(r_d for d in month m)",
+        "lookback_months": 1,
+        "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+        "update_frequency": "monthly",
+        "available_at": "first observed 5m bar of the following trading month",
+        "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+        "adaptation_notes": "m 月末计算，在 m+1 月使用，故为预测月份的前月。",
+        "source": {
+          "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+          "authors": "Fan, Li, Qiao, Zhang",
+          "ssrn_id": "6618461",
+          "url": "https://ssrn.com/abstract=6618461",
+          "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+        },
+        "implementation": "alpha_atlas.factor_libraries.zookeeper.dsl.compute_monthly",
+        "source_dependencies": {
+          "futures_kernel_5m_full": [
+            "adj_vwap",
+            "volume"
+          ]
+        },
+        "formula_language": "atlas-dsl-v2 on calendar-month panel; published_expression on base 5m panel",
+        "lookback_trading_days": null,
+        "published_expression": "$zk_max",
+        "calculation_frequency": "calendar_month",
+        "publication": "Exact previous trading-day calendar month; no stale forward fill",
+        "input_recipe": "pipeline.json"
+      },
+      {
+        "schema_version": 2,
+        "library": "zookeeper_26",
+        "version": "zookeeper_monthly_dsl_v2",
+        "name": "skew",
+        "source_name": "skew",
+        "description": "过去 250 交易日收益偏度",
+        "family": "distribution",
+        "status": "adapted_proxy",
+        "input_group": "eight_fields",
+        "source_fields": [
+          "adj_vwap",
+          "volume"
+        ],
+        "prepared_field": "zk_skew",
+        "expression": "$daily_skew_last",
+        "formula": "mean((r-mean(r))^3) / mean((r-mean(r))^2)^1.5",
+        "lookback_months": null,
+        "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+        "update_frequency": "monthly",
+        "available_at": "first observed 5m bar of the following trading month",
+        "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+        "adaptation_notes": "250 个完整日收益；总体矩偏度，非偏差修正估计。",
+        "source": {
+          "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+          "authors": "Fan, Li, Qiao, Zhang",
+          "ssrn_id": "6618461",
+          "url": "https://ssrn.com/abstract=6618461",
+          "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+        },
+        "implementation": "alpha_atlas.factor_libraries.zookeeper.dsl.compute_monthly",
+        "source_dependencies": {
+          "futures_kernel_5m_full": [
+            "adj_vwap",
+            "volume"
+          ]
+        },
+        "formula_language": "atlas-dsl-v2 on calendar-month panel; published_expression on base 5m panel",
+        "lookback_trading_days": 250,
+        "published_expression": "$zk_skew",
+        "calculation_frequency": "calendar_month",
+        "publication": "Exact previous trading-day calendar month; no stale forward fill",
+        "input_recipe": "pipeline.json"
+      },
+      {
+        "schema_version": 2,
+        "library": "zookeeper_26",
+        "version": "zookeeper_monthly_dsl_v2",
+        "name": "kurt",
+        "source_name": "kurt",
+        "description": "过去 250 交易日收益超额峰度",
+        "family": "distribution",
+        "status": "adapted_proxy",
+        "input_group": "eight_fields",
+        "source_fields": [
+          "adj_vwap",
+          "volume"
+        ],
+        "prepared_field": "zk_kurt",
+        "expression": "$daily_kurt_last",
+        "formula": "mean((r-mean(r))^4) / mean((r-mean(r))^2)^2 - 3",
+        "lookback_months": null,
+        "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+        "update_frequency": "monthly",
+        "available_at": "first observed 5m bar of the following trading month",
+        "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+        "adaptation_notes": "250 个完整日收益；总体矩估计，减 3。",
+        "source": {
+          "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+          "authors": "Fan, Li, Qiao, Zhang",
+          "ssrn_id": "6618461",
+          "url": "https://ssrn.com/abstract=6618461",
+          "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+        },
+        "implementation": "alpha_atlas.factor_libraries.zookeeper.dsl.compute_monthly",
+        "source_dependencies": {
+          "futures_kernel_5m_full": [
+            "adj_vwap",
+            "volume"
+          ]
+        },
+        "formula_language": "atlas-dsl-v2 on calendar-month panel; published_expression on base 5m panel",
+        "lookback_trading_days": 250,
+        "published_expression": "$zk_kurt",
+        "calculation_frequency": "calendar_month",
+        "publication": "Exact previous trading-day calendar month; no stale forward fill",
+        "input_recipe": "pipeline.json"
+      },
+      {
+        "schema_version": 2,
+        "library": "zookeeper_26",
+        "version": "zookeeper_monthly_dsl_v2",
+        "name": "var",
+        "source_name": "var",
+        "description": "过去 250 交易日日收益标准差",
+        "family": "risk",
+        "status": "adapted_proxy",
+        "input_group": "eight_fields",
+        "source_fields": [
+          "adj_vwap",
+          "volume"
+        ],
+        "prepared_field": "zk_var",
+        "expression": "$daily_std_last",
+        "formula": "sample_std(r[d-249:d])",
+        "lookback_months": null,
+        "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+        "update_frequency": "monthly",
+        "available_at": "first observed 5m bar of the following trading month",
+        "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+        "adaptation_notes": "遵循附录文字 standard deviation；虽然论文名称为 Variance，实际不是方差。",
+        "source": {
+          "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+          "authors": "Fan, Li, Qiao, Zhang",
+          "ssrn_id": "6618461",
+          "url": "https://ssrn.com/abstract=6618461",
+          "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+        },
+        "implementation": "alpha_atlas.factor_libraries.zookeeper.dsl.compute_monthly",
+        "source_dependencies": {
+          "futures_kernel_5m_full": [
+            "adj_vwap",
+            "volume"
+          ]
+        },
+        "formula_language": "atlas-dsl-v2 on calendar-month panel; published_expression on base 5m panel",
+        "lookback_trading_days": 250,
+        "published_expression": "$zk_var",
+        "calculation_frequency": "calendar_month",
+        "publication": "Exact previous trading-day calendar month; no stale forward fill",
+        "input_recipe": "pipeline.json"
+      },
+      {
+        "schema_version": 2,
+        "library": "zookeeper_26",
+        "version": "zookeeper_monthly_dsl_v2",
+        "name": "vov",
+        "source_name": "vov",
+        "description": "波动率的波动率",
+        "family": "risk",
+        "status": "adapted_proxy",
+        "input_group": "eight_fields",
+        "source_fields": [
+          "adj_vwap",
+          "volume"
+        ],
+        "prepared_field": "zk_vov",
+        "expression": "$daily_vov_last",
+        "formula": "sample_std(var_daily[d-249:d])",
+        "lookback_months": null,
+        "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+        "update_frequency": "monthly",
+        "available_at": "first observed 5m bar of the following trading month",
+        "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+        "adaptation_notes": "var_daily 是 250 日收益标准差；至少需要 499 个有效日收益。",
+        "source": {
+          "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+          "authors": "Fan, Li, Qiao, Zhang",
+          "ssrn_id": "6618461",
+          "url": "https://ssrn.com/abstract=6618461",
+          "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+        },
+        "implementation": "alpha_atlas.factor_libraries.zookeeper.dsl.compute_monthly",
+        "source_dependencies": {
+          "futures_kernel_5m_full": [
+            "adj_vwap",
+            "volume"
+          ]
+        },
+        "formula_language": "atlas-dsl-v2 on calendar-month panel; published_expression on base 5m panel",
+        "lookback_trading_days": 499,
+        "published_expression": "$zk_vov",
+        "calculation_frequency": "calendar_month",
+        "publication": "Exact previous trading-day calendar month; no stale forward fill",
+        "input_recipe": "pipeline.json"
+      },
+      {
+        "schema_version": 2,
+        "library": "zookeeper_26",
+        "version": "zookeeper_monthly_dsl_v2",
+        "name": "basis",
+        "source_name": "basis",
+        "description": "月末主力与第一远月价格比",
+        "family": "curve",
+        "status": "adapted_proxy",
+        "input_group": "curve",
+        "source_fields": [
+          "close",
+          "close_p1"
+        ],
+        "prepared_field": "zk_basis",
+        "expression": "$F0 / $F1",
+        "formula": "F0_m / F1_m",
+        "lookback_months": 1,
+        "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+        "update_frequency": "monthly",
+        "available_at": "first observed 5m bar of the following trading month",
+        "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+        "adaptation_notes": "主力及其后第一到期合约替代第一、第二近月；使用同一时刻未复权收盘价。",
+        "source": {
+          "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+          "authors": "Fan, Li, Qiao, Zhang",
+          "ssrn_id": "6618461",
+          "url": "https://ssrn.com/abstract=6618461",
+          "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+        },
+        "implementation": "alpha_atlas.factor_libraries.zookeeper.dsl.compute_monthly",
+        "source_dependencies": {
+          "futures_curve": [
+            "close",
+            "close_p1"
+          ]
+        },
+        "formula_language": "atlas-dsl-v2 on calendar-month panel; published_expression on base 5m panel",
+        "lookback_trading_days": null,
+        "published_expression": "$zk_basis",
+        "calculation_frequency": "calendar_month",
+        "publication": "Exact previous trading-day calendar month; no stale forward fill",
+        "input_recipe": "pipeline.json"
+      },
+      {
+        "schema_version": 2,
+        "library": "zookeeper_26",
+        "version": "zookeeper_monthly_dsl_v2",
+        "name": "rbasis",
+        "source_name": "rbasis",
+        "description": "相邻期限价格比之比",
+        "family": "curve",
+        "status": "adapted_proxy",
+        "input_group": "curve",
+        "source_fields": [
+          "close",
+          "close_p1",
+          "close_p2"
+        ],
+        "prepared_field": "zk_rbasis",
+        "expression": "($F0 / $F1) / ($F1 / $F2)",
+        "formula": "(F0_m / F1_m) / (F1_m / F2_m)",
+        "lookback_months": 1,
+        "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+        "update_frequency": "monthly",
+        "available_at": "first observed 5m bar of the following trading month",
+        "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+        "adaptation_notes": "按附录 ratio of basis 固定为价格比之比；不是价差之比，也不按到期天数年化。",
+        "source": {
+          "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+          "authors": "Fan, Li, Qiao, Zhang",
+          "ssrn_id": "6618461",
+          "url": "https://ssrn.com/abstract=6618461",
+          "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+        },
+        "implementation": "alpha_atlas.factor_libraries.zookeeper.dsl.compute_monthly",
+        "source_dependencies": {
+          "futures_curve": [
+            "close",
+            "close_p1",
+            "close_p2"
+          ]
+        },
+        "formula_language": "atlas-dsl-v2 on calendar-month panel; published_expression on base 5m panel",
+        "lookback_trading_days": null,
+        "published_expression": "$zk_rbasis",
+        "calculation_frequency": "calendar_month",
+        "publication": "Exact previous trading-day calendar month; no stale forward fill",
+        "input_recipe": "pipeline.json"
+      },
+      {
+        "schema_version": 2,
+        "library": "zookeeper_26",
+        "version": "zookeeper_monthly_dsl_v2",
+        "name": "bmom",
+        "source_name": "bmom",
+        "description": "主力与第一远月十二月收益之差",
+        "family": "curve",
+        "status": "adapted_proxy",
+        "input_group": "curve",
+        "source_fields": [
+          "close",
+          "close_p1",
+          "instrument_id",
+          "instrument_id_p1"
+        ],
+        "prepared_field": "zk_bmom",
+        "expression": "TS_PROD(1 + $C0, 12) - TS_PROD(1 + $C1, 12)",
+        "formula": "prod(1 + C0[m-11:m]) - prod(1 + C1[m-11:m])",
+        "lookback_months": 12,
+        "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+        "update_frequency": "monthly",
+        "available_at": "first observed 5m bar of the following trading month",
+        "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+        "adaptation_notes": "Cj 只复合相邻交易日同一真实合约的收益，剔除换腿日；每月有效收益日比例至少 80%，不会把跨合约价差当收益。",
+        "source": {
+          "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+          "authors": "Fan, Li, Qiao, Zhang",
+          "ssrn_id": "6618461",
+          "url": "https://ssrn.com/abstract=6618461",
+          "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+        },
+        "implementation": "alpha_atlas.factor_libraries.zookeeper.dsl.compute_monthly",
+        "source_dependencies": {
+          "futures_curve": [
+            "close",
+            "close_p1",
+            "instrument_id",
+            "instrument_id_p1"
+          ]
+        },
+        "formula_language": "atlas-dsl-v2 on calendar-month panel; published_expression on base 5m panel",
+        "lookback_trading_days": null,
+        "published_expression": "$zk_bmom",
+        "calculation_frequency": "calendar_month",
+        "publication": "Exact previous trading-day calendar month; no stale forward fill",
+        "input_recipe": "pipeline.json"
+      },
+      {
+        "schema_version": 2,
+        "library": "zookeeper_26",
+        "version": "zookeeper_monthly_dsl_v2",
+        "name": "basis12",
+        "source_name": "basis12",
+        "description": "十二个月平均基差",
+        "family": "curve",
+        "status": "adapted_proxy",
+        "input_group": "curve",
+        "source_fields": [
+          "close",
+          "close_p1"
+        ],
+        "prepared_field": "zk_basis12",
+        "expression": "TS_MEAN($basis, 12)",
+        "formula": "mean(basis[m-11:m])",
+        "lookback_months": 12,
+        "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+        "update_frequency": "monthly",
+        "available_at": "first observed 5m bar of the following trading month",
+        "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+        "adaptation_notes": "月末价格比的完整 12 月均值。",
+        "source": {
+          "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+          "authors": "Fan, Li, Qiao, Zhang",
+          "ssrn_id": "6618461",
+          "url": "https://ssrn.com/abstract=6618461",
+          "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+        },
+        "implementation": "alpha_atlas.factor_libraries.zookeeper.dsl.compute_monthly",
+        "source_dependencies": {
+          "futures_curve": [
+            "close",
+            "close_p1"
+          ]
+        },
+        "formula_language": "atlas-dsl-v2 on calendar-month panel; published_expression on base 5m panel",
+        "lookback_trading_days": null,
+        "published_expression": "$zk_basis12",
+        "calculation_frequency": "calendar_month",
+        "publication": "Exact previous trading-day calendar month; no stale forward fill",
+        "input_recipe": "pipeline.json"
+      },
+      {
+        "schema_version": 2,
+        "library": "zookeeper_26",
+        "version": "zookeeper_monthly_dsl_v2",
+        "name": "rbasis12",
+        "source_name": "rbasis12",
+        "description": "十二个月平均相对基差",
+        "family": "curve",
+        "status": "adapted_proxy",
+        "input_group": "curve",
+        "source_fields": [
+          "close",
+          "close_p1",
+          "close_p2"
+        ],
+        "prepared_field": "zk_rbasis12",
+        "expression": "TS_MEAN($rbasis, 12)",
+        "formula": "mean(rbasis[m-11:m])",
+        "lookback_months": 12,
+        "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+        "update_frequency": "monthly",
+        "available_at": "first observed 5m bar of the following trading month",
+        "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+        "adaptation_notes": "完整 12 月相对基差均值。",
+        "source": {
+          "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+          "authors": "Fan, Li, Qiao, Zhang",
+          "ssrn_id": "6618461",
+          "url": "https://ssrn.com/abstract=6618461",
+          "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+        },
+        "implementation": "alpha_atlas.factor_libraries.zookeeper.dsl.compute_monthly",
+        "source_dependencies": {
+          "futures_curve": [
+            "close",
+            "close_p1",
+            "close_p2"
+          ]
+        },
+        "formula_language": "atlas-dsl-v2 on calendar-month panel; published_expression on base 5m panel",
+        "lookback_trading_days": null,
+        "published_expression": "$zk_rbasis12",
+        "calculation_frequency": "calendar_month",
+        "publication": "Exact previous trading-day calendar month; no stale forward fill",
+        "input_recipe": "pipeline.json"
+      },
+      {
+        "schema_version": 2,
+        "library": "zookeeper_26",
+        "version": "zookeeper_monthly_dsl_v2",
+        "name": "bmom12",
+        "source_name": "bmom12",
+        "description": "十二个月平均基差动量",
+        "family": "curve",
+        "status": "adapted_proxy",
+        "input_group": "curve",
+        "source_fields": [
+          "close",
+          "close_p1",
+          "instrument_id",
+          "instrument_id_p1"
+        ],
+        "prepared_field": "zk_bmom12",
+        "expression": "TS_MEAN($bmom, 12)",
+        "formula": "mean(bmom[m-11:m])",
+        "lookback_months": 23,
+        "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+        "update_frequency": "monthly",
+        "available_at": "first observed 5m bar of the following trading month",
+        "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+        "adaptation_notes": "完整 12 月基差动量均值。",
+        "source": {
+          "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+          "authors": "Fan, Li, Qiao, Zhang",
+          "ssrn_id": "6618461",
+          "url": "https://ssrn.com/abstract=6618461",
+          "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+        },
+        "implementation": "alpha_atlas.factor_libraries.zookeeper.dsl.compute_monthly",
+        "source_dependencies": {
+          "futures_curve": [
+            "close",
+            "close_p1",
+            "instrument_id",
+            "instrument_id_p1"
+          ]
+        },
+        "formula_language": "atlas-dsl-v2 on calendar-month panel; published_expression on base 5m panel",
+        "lookback_trading_days": null,
+        "published_expression": "$zk_bmom12",
+        "calculation_frequency": "calendar_month",
+        "publication": "Exact previous trading-day calendar month; no stale forward fill",
+        "input_recipe": "pipeline.json"
+      },
+      {
+        "schema_version": 2,
+        "library": "zookeeper_26",
+        "version": "zookeeper_monthly_dsl_v2",
+        "name": "l2basis12",
+        "source_name": "l2basis12",
+        "description": "十二月平均基差滞后两个月",
+        "family": "curve",
+        "status": "adapted_proxy",
+        "input_group": "curve",
+        "source_fields": [
+          "close",
+          "close_p1"
+        ],
+        "prepared_field": "zk_l2basis12",
+        "expression": "OBS_LAG($basis12, 2)",
+        "formula": "basis12[m-2]",
+        "lookback_months": 14,
+        "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+        "update_frequency": "monthly",
+        "available_at": "first observed 5m bar of the following trading month",
+        "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+        "adaptation_notes": "滞后单位为自然月。",
+        "source": {
+          "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+          "authors": "Fan, Li, Qiao, Zhang",
+          "ssrn_id": "6618461",
+          "url": "https://ssrn.com/abstract=6618461",
+          "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+        },
+        "implementation": "alpha_atlas.factor_libraries.zookeeper.dsl.compute_monthly",
+        "source_dependencies": {
+          "futures_curve": [
+            "close",
+            "close_p1"
+          ]
+        },
+        "formula_language": "atlas-dsl-v2 on calendar-month panel; published_expression on base 5m panel",
+        "lookback_trading_days": null,
+        "published_expression": "$zk_l2basis12",
+        "calculation_frequency": "calendar_month",
+        "publication": "Exact previous trading-day calendar month; no stale forward fill",
+        "input_recipe": "pipeline.json"
+      },
+      {
+        "schema_version": 2,
+        "library": "zookeeper_26",
+        "version": "zookeeper_monthly_dsl_v2",
+        "name": "l2rbasis",
+        "source_name": "l2rbasis",
+        "description": "相对基差滞后两个月",
+        "family": "curve",
+        "status": "adapted_proxy",
+        "input_group": "curve",
+        "source_fields": [
+          "close",
+          "close_p1",
+          "close_p2"
+        ],
+        "prepared_field": "zk_l2rbasis",
+        "expression": "OBS_LAG($rbasis, 2)",
+        "formula": "rbasis[m-2]",
+        "lookback_months": 3,
+        "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+        "update_frequency": "monthly",
+        "available_at": "first observed 5m bar of the following trading month",
+        "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+        "adaptation_notes": "按名称固定为原始 rbasis 的两月滞后，非 rbasis12 的滞后。",
+        "source": {
+          "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+          "authors": "Fan, Li, Qiao, Zhang",
+          "ssrn_id": "6618461",
+          "url": "https://ssrn.com/abstract=6618461",
+          "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+        },
+        "implementation": "alpha_atlas.factor_libraries.zookeeper.dsl.compute_monthly",
+        "source_dependencies": {
+          "futures_curve": [
+            "close",
+            "close_p1",
+            "close_p2"
+          ]
+        },
+        "formula_language": "atlas-dsl-v2 on calendar-month panel; published_expression on base 5m panel",
+        "lookback_trading_days": null,
+        "published_expression": "$zk_l2rbasis",
+        "calculation_frequency": "calendar_month",
+        "publication": "Exact previous trading-day calendar month; no stale forward fill",
+        "input_recipe": "pipeline.json"
+      },
+      {
+        "schema_version": 2,
+        "library": "zookeeper_26",
+        "version": "zookeeper_monthly_dsl_v2",
+        "name": "l2bmom12",
+        "source_name": "l2bmom12",
+        "description": "十二月平均基差动量滞后两个月",
+        "family": "curve",
+        "status": "adapted_proxy",
+        "input_group": "curve",
+        "source_fields": [
+          "close",
+          "close_p1",
+          "instrument_id",
+          "instrument_id_p1"
+        ],
+        "prepared_field": "zk_l2bmom12",
+        "expression": "OBS_LAG($bmom12, 2)",
+        "formula": "bmom12[m-2]",
+        "lookback_months": 25,
+        "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+        "update_frequency": "monthly",
+        "available_at": "first observed 5m bar of the following trading month",
+        "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+        "adaptation_notes": "滞后单位为自然月。",
+        "source": {
+          "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+          "authors": "Fan, Li, Qiao, Zhang",
+          "ssrn_id": "6618461",
+          "url": "https://ssrn.com/abstract=6618461",
+          "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+        },
+        "implementation": "alpha_atlas.factor_libraries.zookeeper.dsl.compute_monthly",
+        "source_dependencies": {
+          "futures_curve": [
+            "close",
+            "close_p1",
+            "instrument_id",
+            "instrument_id_p1"
+          ]
+        },
+        "formula_language": "atlas-dsl-v2 on calendar-month panel; published_expression on base 5m panel",
+        "lookback_trading_days": null,
+        "published_expression": "$zk_l2bmom12",
+        "calculation_frequency": "calendar_month",
+        "publication": "Exact previous trading-day calendar month; no stale forward fill",
+        "input_recipe": "pipeline.json"
+      },
+      {
+        "schema_version": 2,
+        "library": "zookeeper_26",
+        "version": "zookeeper_monthly_dsl_v2",
+        "name": "ivolaBGR",
+        "source_name": "ivolaBGR",
+        "description": "BGR 三因子模型的十二月残差波动",
+        "family": "risk",
+        "status": "adapted_proxy",
+        "input_group": "composite",
+        "source_fields": [
+          "adj_vwap",
+          "volume",
+          "close",
+          "close_p1"
+        ],
+        "prepared_field": "zk_ivolaBGR",
+        "expression": "TS_RESID_STD3($R, $risk_avg, $risk_basis, $risk_mom, 12)",
+        "formula": "sample_std(OLS_residual(R, [1, AVG, BASIS, MOM], window=12 calendar months))",
+        "lookback_months": 24,
+        "minimum_history_note": "日窗口按实际交易日；月窗口按自然月；完整窗口且不填补缺失。",
+        "update_frequency": "monthly",
+        "available_at": "first observed 5m bar of the following trading month",
+        "missing_policy": "null; finite values only; denominator abs > 1e-12; curve monthly return coverage >= 0.8",
+        "adaptation_notes": "本版固定为 12 月内拟合并计算该窗残差标准差；含截距且矩阵满秩。上月价格、月收益均有效的品种组成候选集合；AVG 为该集合等权收益，BASIS/MOM 按上月 basis/mom12 排序取上下四分位，最少 4 个品种。组合成员先定，每个组合当月有效收益覆盖至少 80% 才对已观测成员等权平均；缺失成员不以其他品种替补。高减低，不用预测标签；这是观测收益代理，非完整可交易组合。",
+        "source": {
+          "title": "Call the Zookeeper: A Unified Framework for Commodity Risk Premiums",
+          "authors": "Fan, Li, Qiao, Zhang",
+          "ssrn_id": "6618461",
+          "url": "https://ssrn.com/abstract=6618461",
+          "location": "Table A1, PDF pages 55–56; BGR model described on PDF page 28"
+        },
+        "implementation": "alpha_atlas.factor_libraries.zookeeper.dsl.compute_monthly",
+        "source_dependencies": {
+          "futures_kernel_5m_full": [
+            "adj_vwap",
+            "volume"
+          ],
+          "futures_curve": [
+            "close",
+            "close_p1"
+          ]
+        },
+        "formula_language": "atlas-dsl-v2 on calendar-month panel; published_expression on base 5m panel",
+        "lookback_trading_days": null,
+        "published_expression": "$zk_ivolaBGR",
+        "calculation_frequency": "calendar_month",
+        "publication": "Exact previous trading-day calendar month; no stale forward fill",
+        "input_recipe": "pipeline.json"
+      }
+    ]
+  },
+  "initial_library": {
+    "source": {
+      "run_id": "zookeeper26-fold2-435d201527",
+      "library_sha256": "8204b56cc9e203adae068dd42ad083d0578940732634fc141eade0553e05a234"
+    },
+    "factors": [
+      {
+        "candidate": {
+          "expression": "$zk_mom1",
+          "region_ids": [],
+          "hypothesis": "一个自然月动量",
+          "name": "mom1",
+          "evaluation": {}
+        },
+        "factor_id": "9c9c185f4236892beafbe7299674c467ed058dae04b8f84074b0508555df7dce"
+      },
+      {
+        "candidate": {
+          "expression": "$zk_mom12",
+          "region_ids": [],
+          "hypothesis": "十二个自然月动量",
+          "name": "mom12",
+          "evaluation": {}
+        },
+        "factor_id": "e1c5937577943987b2eb1d1cbc0e05afcba2775c5e584d119c4ab6f825dd42e3"
+      },
+      {
+        "candidate": {
+          "expression": "$zk_seasonality",
+          "region_ids": [],
+          "hypothesis": "季节性：十一月前的单月收益",
+          "name": "seasonality",
+          "evaluation": {}
+        },
+        "factor_id": "f0091ae273204e30bbc4ef2480a1ecfc4fa45bd3729cc97c5153023b535fa555"
+      },
+      {
+        "candidate": {
+          "expression": "$zk_skew",
+          "region_ids": [],
+          "hypothesis": "过去 250 交易日收益偏度",
+          "name": "skew",
+          "evaluation": {}
+        },
+        "factor_id": "c2a8d2f4eb0beab952a9c4a3fcc518b7ef451fc1b0f984a0e388abc4c1dabfdc"
+      },
+      {
+        "candidate": {
+          "expression": "$zk_kurt",
+          "region_ids": [],
+          "hypothesis": "过去 250 交易日收益超额峰度",
+          "name": "kurt",
+          "evaluation": {}
+        },
+        "factor_id": "4620eb6f7333bd0c74ddd4923893d09eee432906cc7a151fd600ba6090559e1a"
+      },
+      {
+        "candidate": {
+          "expression": "$zk_max",
+          "region_ids": [],
+          "hypothesis": "最近完成月份的最大日收益",
+          "name": "max",
+          "evaluation": {}
+        },
+        "factor_id": "2e2691ebfb33ff3b565e61ca08417351980c1fee0dabdd8527c062fa11c7558b"
+      },
+      {
+        "candidate": {
+          "expression": "$zk_var",
+          "region_ids": [],
+          "hypothesis": "过去 250 交易日日收益标准差",
+          "name": "var",
+          "evaluation": {}
+        },
+        "factor_id": "2986ead82b9d4f6c597b0d3d4727e2a3e51ce0067181b89b7793859191bb7670"
+      },
+      {
+        "candidate": {
+          "expression": "$zk_cv",
+          "region_ids": [],
+          "hypothesis": "十二个月日收益方差与均值之比",
+          "name": "cv",
+          "evaluation": {}
+        },
+        "factor_id": "391875065e047d932cef4593374620e23e2e1efe26d1dd7194e8741632625c29"
+      },
+      {
+        "candidate": {
+          "expression": "$zk_vov",
+          "region_ids": [],
+          "hypothesis": "波动率的波动率",
+          "name": "vov",
+          "evaluation": {}
+        },
+        "factor_id": "57e8d50d9be6c43b83e58a79d965b4b6f6ab225f87aa36df964ab4544f8d1d4e"
+      },
+      {
+        "candidate": {
+          "expression": "$zk_atv",
+          "region_ids": [],
+          "hypothesis": "相对前十二个月平均成交量的异常成交量",
+          "name": "atv",
+          "evaluation": {}
+        },
+        "factor_id": "b455c94f85c8982454c9e7478a38467f9ece8aa8ff1f72fa66edff129dec17c9"
+      },
+      {
+        "candidate": {
+          "expression": "$zk_iliq",
+          "region_ids": [],
+          "hypothesis": "月度 Amivest 流动性倒数",
+          "name": "iliq",
+          "evaluation": {}
+        },
+        "factor_id": "6e8b82bb8968a475d59bc991c57a67bc92ad511a917a4d9b56e301b4946ad85d"
+      },
+      {
+        "candidate": {
+          "expression": "$zk_dOI",
+          "region_ids": [],
+          "hypothesis": "月末主力持仓量环比差",
+          "name": "dOI",
+          "evaluation": {}
+        },
+        "factor_id": "4c287504c495b21f9e960db48c2fac414e175d7be46b81508d38ecc0a226b1da"
+      },
+      {
+        "candidate": {
+          "expression": "$zk_dmaOI",
+          "region_ids": [],
+          "hypothesis": "月末主力持仓量相对过去十二月均值偏离",
+          "name": "dmaOI",
+          "evaluation": {}
+        },
+        "factor_id": "7d772b81c8af6a3198cf87574040fab8d3f4f5bda2ce0cea50f6452e2e9553a1"
+      },
+      {
+        "candidate": {
+          "expression": "$zk_val",
+          "region_ids": [],
+          "hypothesis": "当前价格与 42–54 月前均价之比",
+          "name": "val",
+          "evaluation": {}
+        },
+        "factor_id": "756fa2f17667a53428a5b48831cfad3fb3ec1dfe9ea5f77a978288fdf461f183"
+      },
+      {
+        "candidate": {
+          "expression": "$zk_val36",
+          "region_ids": [],
+          "hypothesis": "三年累计收益",
+          "name": "val36",
+          "evaluation": {}
+        },
+        "factor_id": "7e783525d4bbb2adbad27814e2b9d02fa2d23f5532619f8567242696bb4c9d67"
+      },
+      {
+        "candidate": {
+          "expression": "$zk_val60",
+          "region_ids": [],
+          "hypothesis": "五年累计收益",
+          "name": "val60",
+          "evaluation": {}
+        },
+        "factor_id": "fb6064462d3a301d860b252463a2c29a94dba952faa22179d8205285bf0b6692"
+      },
+      {
+        "candidate": {
+          "expression": "$zk_basis",
+          "region_ids": [],
+          "hypothesis": "月末主力与第一远月价格比",
+          "name": "basis",
+          "evaluation": {}
+        },
+        "factor_id": "7438b787a4f115706794f4359d4c05987adc8c8d1c1ddd5ca0e92601165cc357"
+      },
+      {
+        "candidate": {
+          "expression": "$zk_basis12",
+          "region_ids": [],
+          "hypothesis": "十二个月平均基差",
+          "name": "basis12",
+          "evaluation": {}
+        },
+        "factor_id": "6005030d7be2c77936dbad6f3d2180d04ccbfa9b39ef81da79428b22ec3fd1e2"
+      },
+      {
+        "candidate": {
+          "expression": "$zk_l2basis12",
+          "region_ids": [],
+          "hypothesis": "十二月平均基差滞后两个月",
+          "name": "l2basis12",
+          "evaluation": {}
+        },
+        "factor_id": "2be8a5b4853aa607f5235ece09142bc6348d306be48422d9f19d6caf55945e02"
+      },
+      {
+        "candidate": {
+          "expression": "$zk_bmom",
+          "region_ids": [],
+          "hypothesis": "主力与第一远月十二月收益之差",
+          "name": "bmom",
+          "evaluation": {}
+        },
+        "factor_id": "64e342e39d1c0b8cb59c04919051af7898a489ffb2d289dc7178c772dd3ea980"
+      },
+      {
+        "candidate": {
+          "expression": "$zk_bmom12",
+          "region_ids": [],
+          "hypothesis": "十二个月平均基差动量",
+          "name": "bmom12",
+          "evaluation": {}
+        },
+        "factor_id": "083cb7e8d65ff728ae28953a9e08b78935ce7762d3115597c29a3d04a8a7bf88"
+      },
+      {
+        "candidate": {
+          "expression": "$zk_l2bmom12",
+          "region_ids": [],
+          "hypothesis": "十二月平均基差动量滞后两个月",
+          "name": "l2bmom12",
+          "evaluation": {}
+        },
+        "factor_id": "c0f1ad185ab22f08fa018fff68770883b0c97e272874dd0d34132f968d7e1a4f"
+      },
+      {
+        "candidate": {
+          "expression": "$zk_rbasis",
+          "region_ids": [],
+          "hypothesis": "相邻期限价格比之比",
+          "name": "rbasis",
+          "evaluation": {}
+        },
+        "factor_id": "b693ae9733eadc9e9ca24e2c34bd15ef641003a0e1e88fded956e341e8fa38d7"
+      },
+      {
+        "candidate": {
+          "expression": "$zk_rbasis12",
+          "region_ids": [],
+          "hypothesis": "十二个月平均相对基差",
+          "name": "rbasis12",
+          "evaluation": {}
+        },
+        "factor_id": "ab183aff7816f29e8eb69d2155289d37b60491e7d4017cbfacfb5e7b33c404a5"
+      },
+      {
+        "candidate": {
+          "expression": "$zk_l2rbasis",
+          "region_ids": [],
+          "hypothesis": "相对基差滞后两个月",
+          "name": "l2rbasis",
+          "evaluation": {}
+        },
+        "factor_id": "87b0564b835de52b2fb7694a3753031c27a2b072ef40ba0ba6d720748ea49ea1"
+      },
+      {
+        "candidate": {
+          "expression": "$zk_ivolaBGR",
+          "region_ids": [],
+          "hypothesis": "BGR 三因子模型的十二月残差波动",
+          "name": "ivolaBGR",
+          "evaluation": {}
+        },
+        "factor_id": "3bd6d4a98411a6ffd2d3ba4cacb108efee83d02f58ebac9a8f3f119e81c327db"
+      }
+    ]
+  },
+  "configuration_sources": {
+    "overview": "experiment_overview.md#期货因子搜索fold2",
+    "v1_async": "artifacts/runs/futures_kernel_5m_full-all-fold2-v1_async-42-382bb38611/run.json",
+    "alphaschema": "artifacts/comparisons/alphaschema_luna_fold2_20261102/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-alphaschema-42-7ce881f635/run.json",
+    "downstream_model": "artifacts/comparisons/lgbm_leaf2000_depth5_fold2_20261030/luna36/artifacts/runs/futures_kernel_5m_full-all-fold2-v1_async-42-382bb38611-leaf2000-depth5/model/fit.json"
+  }
+}

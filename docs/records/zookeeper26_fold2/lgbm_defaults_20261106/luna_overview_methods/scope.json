@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "id": "zk26_lgbm_defaults_20261106_luna_overview_methods",
+  "parent_plan": "configs/experiments/zk26_lgbm_defaults_20261106/plan.json",
+  "experiment_version": "rq8_zk26_lgbm_defaults_20261106",
+  "source_experiment_version": "rq8_zk26_seeded_fold2_overview_luna_v5",
+  "include_union": false,
+  "methods": [
+    "v1_async",
+    "alphaschema"
+  ],
+  "seeds": [
+    42
+  ],
+  "attempts_per_method": 300,
+  "evaluation_nodes": [
+    200,
+    300
+  ],
+  "runs": [
+    "artifacts/runs/futures_kernel_5m_full-all-fold2-v1_async-42-5f77947f20",
+    "artifacts/runs/futures_kernel_5m_full-all-fold2-alphaschema-42-3a4f640d02"
+  ],
+  "purpose": "B26 Luna 冻结库按默认 min_data_in_leaf 与 L2=0 重训。"
+}

@@ -74,7 +74,7 @@ monthly = compute_monthly(base_daily, curve_daily, plan=plan)
 缺失位置；默认截至 2023 年末，只比较特征，不计算目标或 OOS 绩效。
 
 ```bash
-uv run atlas run --version rq8_zk26_fold2_v2 --method random --search-only
+uv run atlas run --config rq8_zk26_fold2_v2 --method random --search-only
 uv run atlas finish artifacts/runs/<run_id>
 ```
 

@@ -45,7 +45,8 @@ Zookeeper 固定目录将该限制保留为历史诊断 baseline，见其[说明
 新运行默认使用 `MarketData.get_fields()` 从快照 schema 读取的全部可用数值特征，包括行情、
 复权价格、已导出的远月行情及 PIT 基本面。不按字段的实际值或覆盖率筛选；身份、成员资格、
 质量计数、复权因子等元数据以及 label/target 不进入默认输入。`--fields` 可显式缩小范围，
-目标价格字段仍保留。实际字段列表在搜索前写入 run 配置并参与冻结；恢复沿用原列表，不重新扩展。
+以 `label` 或 `target` 开头的字段不能显式载入；目标价格字段仍保留。实际字段列表在搜索前写入
+run 配置并参与冻结；恢复沿用原列表，不重新扩展。
 
 ## 数据划分
 
@@ -68,6 +69,10 @@ Zookeeper 固定目录将该限制保留为历史诊断 baseline，见其[说明
 这是独立固定目录审计，不改变搜索运行的默认预热或参考库权限。
 
 ## 统一评估与准入
+
+实验版本可在启用 `library_residual = "residual_ic_v1"` 时设置 `min_residual_ic`：
+原有准入条件通过后，库残差 IC 必须有限且严格大于该值，否则以 `residual_threshold` 拒绝。
+未设置该阈值时，库残差只用于反馈，不改变准入。
 
 | 项目 | A 股 | 期货 |
 | --- | --- | --- |
@@ -185,8 +190,11 @@ product panel 可跨主力换约，已知 product 缺口重置；contract panel 
 ## 数据与算子版本
 
 `configs/versions/<name>.json` 是一个可审查的实验配置快照。`atlas versions` 列出版本，
-`atlas versions <name>` 展示完整配置。`atlas run --version <name> --method <method>`
-复用普通 runner、SearchSession、准入、恢复、冻结和模型评估，不增加另一套研究权限。
+`atlas versions <name>` 展示完整配置。单方法配置可用 `atlas run --config <name>`，
+多方法配置须另指定 `--method <method>`。两者均复用普通 runner、SearchSession、准入、
+恢复、冻结和模型评估，不增加另一套研究权限。
+新的独立重复运行复用同一配置，每次调用 `atlas run` 产生独立运行 ID；历史运行引用的配置快照保留。
+`atlas experiment` 按 scope、方法和 seed 确定运行 ID，同一 scope 的重复调用用于恢复。
 
 版本固定数据适配器及每个源的 MarketData snapshot、允许字段、规范算子语义版本、
 asset profile、fold、benchmark 规则、方法配置、算子运行限额和模型参数。
@@ -247,10 +255,10 @@ seed 和尝试预算仍可显式指定，并记录在运行身份与配置中，
 4. 冻结同组全部开发决策与因子库，单独执行 OOS，不按 test 再选因子或调参。
 5. 按相同条件报告全部运行；结果写入[实验记录](records/experiments.md)，列出配置与产物 ID。
 
-### 自动评估与填表
+### 自动评估
 
 `atlas run` 和 `atlas resume` 在搜索冻结后默认调用完整收尾流程：
-Train+Val 拟合并保存 Linear、LightGBM → 单因子 Test → 保存模型的 Test → Val 全库相似度 → 填表。
+Train+Val 拟合并保存 Linear、LightGBM → 单因子 Test → 保存模型的 Test → Val 全库相似度 → 运行报告。
 模型保存后才加载 Test；搜索方法此时已经关闭，Test 和相似度结果不回传方法。
 Python 调用在 `runner.run`／`runner.resume` 返回后使用
 `experiment.finish_experiment(root, directory)` 完成同一流程。
@@ -271,17 +279,12 @@ Python 调用在 `runner.run`／`runner.resume` 返回后使用
 结果原子保存在运行目录的 `library_similarity.json`，包括完整配对和汇总统计。
 组合模型保持[模型评估](model.md)的独立预处理口径，不把单因子评分裁剪隐式套到模型输入。
 
-只有单因子、两个组合模型与全库相似度全部完成，才一起更新 `experiment_overview.md`
-对应 fold 的结果表和相似度表，并移除该 fold 对应的待开展条目。运行报告链接标识唯一行，
-重复执行更新原行；保留人工说明及已知实验人，不用方法名或 seed 覆盖另一独立运行。
-报告链接按工作区和运行目录的真实路径计算，允许运行目录通过符号链接位于工作区外；
-同一运行的真实路径与符号链接入口复用同一表格行，收尾重试仍复用已完成评估。
-同一张表的数据或 Fold／seed 完全一致时，可将对应列提到表前的
-`**数据设置**：数据描述。`、`**Fold / seed**：fold2 / 42。`。相似度表的名称也可省略
-已统一注明的 Fold／seed。自动填表沿用该布局并核对共同设置；混合设置仍逐行标注。
-正式实验总表保留预定预算节点的完整评估结果；中途按入库数量截取的阶段对照保留在
-独立比较目录，不汇入正式总表。
-任一步失败均不写入半套表格；冻结搜索和已完成评估保留，重试复用完成阶段，
+运行与收尾不自动修改 `experiment_overview.md`；研究者按已保存的评估结果人工整理总表。
+历史批次入口和评分脚本保存报告与记录，不自动修改总表。历史源码快照保留原样作为复现证据，
+不作为实验入口，其中保留的旧版收尾代码仍有填表行为；既有填表函数不参与主流程。
+`artifacts/` 不纳入 Git，其中历史脚本的本地修改不会随仓库合并。
+人工汇总的多次运行均值／标准差不自动重算。
+任一步失败时冻结搜索和已完成评估保留，重试复用完成阶段，
 不重复拟合已保存模型，不新增搜索 trial，也不调用模型服务。
 空库记录零成员和未定义指标，组合模型不适用，不补造模型或零分。
 
@@ -344,6 +347,8 @@ B 与 B + L(m, k)，不按 Test、单因子排名或人工判断筛选新因子�
 所有方法和 B 使用同一训练 row_id 集合、模型超参及预处理规则；新因子部分缺失沿用训练
 均值填补，不要求所有因子完整。Test 主比较固定为 B 可预测且目标有效的行，不把扩充库
 新增覆盖混入增量。预测误差使用原始目标；品种去均值模型的校准影响须与 IC 分开解释。
+按用户另行要求报告变换后目标误差时，明确标为补充诊断，冻结训练期标签变换并单列
+训练期未见品种的中心规则；原始标签结果保留，见[模型误差口径](model.md#预测误差增量诊断)。
 两组 IC 使用共同有效品种；横向排名再列所有可评分方法共同有效品种的结果及损失覆盖。
 不能直接拿新结果减去历史归档 IC，因为历史拟合样本可能不同。
 
@@ -362,7 +367,7 @@ B 与 B + L(m, k)，不按 Test、单因子排名或人工判断筛选新因子�
 模型 → 统一评估历史 Test。命令示例：
 
 ```bash
-uv run atlas run --version rq8_zk26_fold2_luna_v3 --method v1 --seed 42 --attempts 300 --search-only
+uv run atlas run --config rq8_zk26_fold2_luna_v3 --method v1 --seed 42 --attempts 300 --search-only
 ```
 
 搜索与配对增量统一由 `atlas experiment <scope.json>` 执行，搜索复用现有 runner；使用及产物见

@@ -7,6 +7,7 @@ import json
 import math
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor, wait
 from dataclasses import asdict, replace
 from datetime import date
 from pathlib import Path
@@ -172,11 +173,17 @@ def run(
             raise ValueError(f"method is not configured in this version: {method_name}")
         options = experiment_version["method_configs"][method_name]
     method = method_impl if method_impl is not None else make_method(method_name, seed, options)
-    if method_name == "v2_sync" and not _library_residual(rules):
-        raise ValueError("v2_sync requires a version with library_residual = residual_ic_v1")
-    if method_name in {"mcts_llm", "annealing", "v1", "v1_async", "v2_sync"} and rules.get(
-        "search_diagnostics"
-    ) not in {"icir_turnover_v1", "icir_turnover_lag1_v2"}:
+    if method_name in {"v2_sync", "v2_async", "v3_async"} and not _library_residual(rules):
+        raise ValueError(f"{method_name} requires a version with library_residual = residual_ic_v1")
+    if method_name in {
+        "mcts_llm",
+        "annealing",
+        "v1",
+        "v1_async",
+        "v2_sync",
+        "v2_async",
+        "v3_async",
+    } and rules.get("search_diagnostics") not in {"icir_turnover_v1", "icir_turnover_lag1_v2"}:
         raise ValueError(f"{method_name} requires shared icir_turnover_v1 diagnostics")
     if method_name == "alphaschema" and rules.get("search_diagnostics") != "icir_turnover_lag1_v2":
         raise ValueError("alphaschema requires shared icir_turnover_lag1_v2 diagnostics")
@@ -215,6 +222,10 @@ def run(
             if method_name == "mcts_llm"
             else "atlas_mechanism_v2_sync"
             if method_name == "v2_sync"
+            else "atlas_mechanism_v2_async"
+            if method_name == "v2_async"
+            else "atlas_mechanism_v3_async"
+            if method_name == "v3_async"
             else "atlas_explorer_v1_async"
             if method_name == "v1_async"
             else "atlas_explorer_v1"
@@ -302,7 +313,8 @@ def _search(directory, spec, method, progress, features, fold, runtime, checkpoi
             "max_depth": rules["max_expression_depth"],
         },
         retain_training=hasattr(method, "correlation_pairs")
-        or spec["method"] in {"mcts_llm", "annealing", "v1", "v1_async", "v2_sync"},
+        or spec["method"]
+        in {"mcts_llm", "annealing", "v1", "v1_async", "v2_sync", "v2_async", "v3_async"},
         diagnostics=rules.get("search_diagnostics", ""),
         clip_quantiles=rules.get("clip_quantiles"),
     )
@@ -392,6 +404,10 @@ def _search(directory, spec, method, progress, features, fold, runtime, checkpoi
         if hasattr(method, "run"):
             progress.stage = "method_run"
             method.run(session)
+        elif getattr(method, "evaluation_slots", 1) > 1:
+            search_stop_reason = _search_concurrent(
+                method, session, atlas, spec, progress, trials, pending, save
+            )
         else:
             while pending is not None or session.remaining_budget():
                 if pending is None:
@@ -476,6 +492,90 @@ def _search(directory, spec, method, progress, features, fold, runtime, checkpoi
         library_sha256=hashlib.sha256((directory / "frozen/library.json").read_bytes()).hexdigest(),
         **({"search_stop_reason": search_stop_reason} if search_stop_reason else {}),
     )
+
+
+def _search_concurrent(method, session, atlas, spec, progress, trials, pending, save):
+    """Compute up to evaluation_slots candidates at once; admit and tell strictly in trial order.
+
+    Each in-flight candidate is checkpointed with its trial index before computation, so a
+    resumed run recomputes uncommitted ones and reuses committed trials. Returns a stop reason.
+    """
+    slots = method.evaluation_slots
+    executor = ThreadPoolExecutor(max_workers=slots, thread_name_prefix="evaluate")
+    inflight, stop = [], None
+
+    def records():
+        return [{k: v for k, v in e.items() if k != "future"} for e in inflight] or None
+
+    def submit(entry):
+        committed = entry["factor_trial_index"] <= len(trials)
+        candidate = candidate_from_dict(entry["candidate"])
+        entry["future"] = None if committed else executor.submit(session.measure, candidate)
+        inflight.append(entry)
+
+    method.set_checkpoint(lambda: save(records()))
+    for entry in pending if isinstance(pending, list) else [pending] if pending else []:
+        submit(dict(entry))
+    try:
+        while inflight or stop is None and session.remaining_budget():
+            free = min(slots - len(inflight), session.remaining_budget() - len(inflight))
+            if stop is None and free > 0:
+                progress.stage = "ask"
+                step = time.perf_counter()
+                try:
+                    # Block for a candidate only when nothing is being computed.
+                    candidates = method.ask(session.get_context(), count=free, block=not inflight)
+                except ExplorerUnresolved as exc:
+                    stop, candidates = str(exc), []
+                    terminal_progress(
+                        "研究提前结束，完成在算候选后保存",
+                        在算=len(inflight),
+                        原因=stop,
+                    )
+                _sync_method_regions(method, atlas)
+                for candidate in candidates:
+                    submit(
+                        {
+                            "factor_trial_index": session.factor_trial_count + len(inflight) + 1,
+                            "candidate": asdict(candidate),
+                            "generation_seconds": time.perf_counter() - step,
+                        }
+                    )
+                progress.stage = "checkpoint"
+                save(records())
+                if candidates:
+                    continue
+            if not inflight:
+                break
+            head = inflight[0]
+            if head["future"] is not None and not head["future"].done():
+                # Poll for model replies while slots are free; otherwise wait for the result.
+                wait([head["future"]], timeout=0.5 if stop is None and free > 0 else None)
+                continue
+            progress.stage = "evaluate"
+            if head["future"] is None:
+                feedback = feedback_from_dict(trials[head["factor_trial_index"] - 1]["feedback"])
+                terminal_progress(
+                    "恢复已提交反馈", 候选=head["factor_trial_index"], 结果=feedback.reason
+                )
+            else:
+                feedback = session.evaluate(
+                    candidate_from_dict(head["candidate"]),
+                    generation_seconds=head["generation_seconds"],
+                    research_plan_index=getattr(method, "pending_research_plan_index", None),
+                    measured=head["future"].result(),
+                )
+            # Leave the in-flight list before tell: the method checkpoints the told state.
+            inflight.pop(0)
+            progress.stage = "tell"
+            method.tell([feedback])
+            atlas.observe(feedback)
+            progress.stage = "checkpoint"
+            save(records())
+    finally:
+        # Running computations cannot be interrupted; their results are never committed.
+        executor.shutdown(wait=False, cancel_futures=True)
+    return stop
 
 
 def _rebuild_member(evaluator, entry):
@@ -722,22 +822,24 @@ def resume(root: Path, directory: Path, *, method_impl=None) -> Path:
 
 def _check_checkpoint(checkpoint, trials, limit, *, initial_count=0):
     completed, pending = checkpoint["completed"], checkpoint["pending"]
+    # Serial runs save one pending trial; concurrent evaluation saves the in-flight list.
+    entries = pending if isinstance(pending, list) else [] if pending is None else [pending]
     if type(completed) is not int or not 0 <= completed <= len(trials):
         raise ValueError("checkpoint trial cursor mismatch")
-    if len(trials) > completed + int(pending is not None):
+    if len(trials) > completed + len(entries):
         raise ValueError("unexpected trials beyond checkpoint")
     attempts = sum(t["feedback"]["reason"] != "budget_rejected" for t in trials[:completed])
     version = trials[completed - 1]["feedback"]["library_version"] if completed else initial_count
     if checkpoint["attempts"] != attempts or checkpoint["library_version"] != version:
         raise ValueError("checkpoint budget or library version mismatch")
-    if len(trials) > limit or pending is not None and completed >= limit:
+    if len(trials) > limit or completed + len(entries) > limit:
         raise ValueError("checkpoint exceeds attempt budget")
-    if pending is not None:
-        if pending["factor_trial_index"] != completed + 1:
+    for offset, entry in enumerate(entries):
+        if entry["factor_trial_index"] != completed + offset + 1:
             raise ValueError("pending trial index mismatch")
-        if len(trials) > completed and candidate_from_dict(
-            pending["candidate"]
-        ) != candidate_from_dict(trials[completed]["feedback"]["candidate"]):
+        if len(trials) > completed + offset and candidate_from_dict(
+            entry["candidate"]
+        ) != candidate_from_dict(trials[completed + offset]["feedback"]["candidate"]):
             raise ValueError("pending candidate differs from committed trial")
 
 

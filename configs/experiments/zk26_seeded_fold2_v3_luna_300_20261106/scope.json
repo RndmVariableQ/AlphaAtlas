@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "id": "zk26_seeded_fold2_v3_luna_300_20261106",
+  "parent_plan": "configs/experiments/zk26_seeded_fold2_v3_luna_300_20261106/plan.json",
+  "experiment_version": "rq8_zk26_seeded_fold2_v3async_luna_20261106",
+  "include_union": false,
+  "methods": [
+    "v3_async"
+  ],
+  "seeds": [
+    42
+  ],
+  "attempts_per_method": 300,
+  "evaluation_nodes": [
+    200,
+    300
+  ],
+  "purpose": "补齐实验总览 B26 初始库表中的 AlphaAtlas V3；先搜索冻结，再统一配对拟合与历史 Test。"
+}

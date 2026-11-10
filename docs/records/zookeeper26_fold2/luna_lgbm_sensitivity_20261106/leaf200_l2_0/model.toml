@@ -1,0 +1,18 @@
+# B26 Luna sensitivity: min_data_in_leaf=200; lambda_l2 changes from 1 to 0.
+seed = 42
+
+[preprocessing]
+clip_quantiles = [0.01, 0.99]
+product_demean = true
+
+[linear]
+rcond = 1e-12
+
+[lightgbm]
+num_boost_round = 50
+learning_rate = 0.05
+num_leaves = 15
+min_data_in_leaf = 200
+lambda_l2 = 0.0
+num_threads = 4
+max_depth = 5

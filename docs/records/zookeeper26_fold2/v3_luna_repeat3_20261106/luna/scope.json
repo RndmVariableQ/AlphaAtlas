@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "id": "zk26_seeded_fold2_v3_luna_repeat3_20261106",
+  "parent_plan": "configs/experiments/zk26_seeded_fold2_v3_luna_repeat3_20261106/plan.json",
+  "experiment_version": "rq8_zk26_lgbm_defaults_20261106",
+  "source_experiment_version": "rq8_zk26_seeded_fold2_v3async_luna_20261106",
+  "include_union": false,
+  "methods": [
+    "v3_async"
+  ],
+  "seeds": [
+    42
+  ],
+  "attempts_per_method": 300,
+  "evaluation_nodes": [
+    200,
+    300
+  ],
+  "purpose": "用户指定 B26 Luna AlphaAtlas V3 第三次独立重复；保持同配置，完成后立即配对评估并追加原表。"
+}

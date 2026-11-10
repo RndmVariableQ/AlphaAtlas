@@ -8,6 +8,7 @@ __pycache__/
 .tmp/
 /tmp/
 .env
+/logs/
 data/**
 !data/.gitkeep
 artifacts/**

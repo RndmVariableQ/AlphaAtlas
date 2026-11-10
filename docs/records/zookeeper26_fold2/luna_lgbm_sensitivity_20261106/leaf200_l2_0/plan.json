@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "id": "zk26_luna_l2zero_20261106",
+  "status": "protocol",
+  "question": "固定 B26 Luna 六次冻结搜索与 min_data_in_leaf=200，比较 lambda_l2=0 与 1。",
+  "experiment_version": "rq8_zk26_luna_l2zero_20261106",
+  "baseline_frozen_library": "docs/records/zookeeper26_fold2/frozen/library.json",
+  "baseline_model_config": "artifacts/comparisons/zk26_luna_l2zero_20261106/baseline_workspace/baseline/model/fit.json#spec.config",
+  "baseline_factor_order": "artifacts/comparisons/zk26_luna_l2zero_20261106/baseline_workspace/baseline/model/fit.json#factor_ids",
+  "search_policy": "只复用指定运行的冻结因子、方向及准入顺序，不重新搜索，不按历史 Test 筛选。",
+  "arms": {
+    "B": "固定 B26，在共同 Train+Val 上按 v5 模型配置重新拟合。",
+    "B_plus_method": "B26 + 该运行在 200/300 次前缀的全部新增准入成员；每个运行独立拟合。",
+    "models": [
+      "linear",
+      "lightgbm"
+    ],
+    "ordering": "B26 保存顺序在先，然后按该运行实际准入 trial 顺序。",
+    "unusable_columns": "沿用训练预处理删除全缺失或常量列，报告总成员和保留列数。"
+  },
+  "budget": {
+    "attempts_per_search": 300,
+    "primary_node": 300,
+    "secondary_nodes": [
+      200
+    ],
+    "search_seed": 42,
+    "model_seed": 42,
+    "new_search_attempts": 0
+  },
+  "paired_fit": {
+    "training_cohort": "固定 B26 可用的同一 Train+Val row_id 集合，预处理仅在该集合拟合。",
+    "prediction_cohort": "Test 使用 B26 可预测且标签有效的相同 row_id；指标使用公共有效品种。",
+    "model_configuration": "min_data_in_leaf=200、lambda_l2=0；Linear OLS；LightGBM 50 轮、learning_rate=0.05、num_leaves=15、max_depth=5、seed=42、4 线程。",
+    "source_version": "scope.source_experiment_version 保留真实搜索来源，数据/字段/算子/目标/B26 必须与评估版本一致。"
+  },
+  "metrics": {
+    "primary": "delta_time_series_weighted_pearson_ic",
+    "mse": "1 - weighted_MSE(B26 + new) / weighted_MSE(B26)",
+    "weights": "完整 Test eligible 行的品种 sqrt(sum(amount))，两组固定同权重。"
+  },
+  "uncertainty": {
+    "kind": "paired_moving_trading_day_blocks",
+    "block_length_days": 20,
+    "replicates": 2000,
+    "seed": 20261102,
+    "fixed_predictions": true,
+    "resampling": "按年分层、全市场同步交易日块。"
+  },
+  "sequence": [
+    "按用户要求选择较好的叶样本数组，固定 L2=0；独立导入 B26 并保存基准拟合。",
+    "完成 earlier_methods、overview_methods、v3 三个 scope 的全部 Train+Val 拟合并保存模型。",
+    "统一评估历史 Test，导出全部方法 200/300 次结果，并与原 leaf2000 产物核对样本、预处理和 Linear。"
+  ],
+  "limitations": [
+    "叶样本数根据已查看的历史 Test 平均 IC 选择，本轮继续用于历史敏感性分析，不是新的盲测。",
+    "用户指定将 lambda_l2 恢复 LightGBM 默认值 0；不扩大参数搜索，不重选因子。",
+    "V3 的残差反馈、提示词和并发配置与原方法不同；本次分别比较各冻结因子库在两种参数下的变化。",
+    "区块区间只描述固定模型在测试期的波动，不包含搜索 seed 的随机性。",
+    "供应商 vintage PIT 尚未认证，原数据来源和缺失限制沿用版本。"
+  ],
+  "leaf_size_selection": {
+    "selection_criterion": "unweighted mean of six 300-attempt frozen-library Test weighted Pearson IC values on the fixed B26-common 80 products",
+    "leaf2000_mean_ic": 0.014889916188727119,
+    "leaf200_mean_ic": 0.015362914564343863,
+    "mean_ic_change": 0.0004729983756167448,
+    "leaf200_higher_ic_count": 5,
+    "method_count": 6,
+    "selected_min_data_in_leaf": 200,
+    "lambda_l2": 1.0,
+    "next_lambda_l2": 0.0,
+    "historical_test_selection": true
+  },
+  "selection_evidence": "artifacts/comparisons/zk26_luna_leaf200_20261106/comparison_summary.json"
+}

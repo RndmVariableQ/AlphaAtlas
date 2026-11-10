@@ -1,0 +1,216 @@
+{
+  "schema_version": 1,
+  "id": "rq8_fold2_v3async_luna_p8_pe8_px3_avail_nodepth_residual_v10",
+  "description": "V3 Async + GPT6-luna：与主表 fold2 的 Kernel 八字段、all、1%–99% 裁剪、seed 42、空初始库及统一下游模型一致；开启 library_residual，方法为 v3_async（parallel_plans=16）：Region 得分为入库因子残差/尝试，地图状态按 Region×特征跨度分档以入库判定（probe_attempts=20，分档为日内／1–20 日／20 日以上，Region 状态只由已测分档推导），按分档深挖，Explorer 可提交 1–4 个方向；退火温度 0.25→0.02，无 region_budget_share。 与 rq8_fold2_v3async_luna_v1 仅差分档方案与 probe_attempts。 与 rq8_fold2_v3async_luna_v2 仅差 parallel_plans=16，用于比较并发对效果和速度的影响。 v3：并行评估 parallel_evaluations=16（feature/parallel-eval），与 rq8_fold2_v3async_luna_p16_v2 仅差此项。 v5：Region 可用性 region_admission_limit=5、region_plan_limit=1（feature/region-availability），并发统一为 parallel_plans=10、parallel_evaluations=10、parallel_explorers=3；与 rq8_fold2_v3async_luna_p16_pe_v3 仅差这些项（Luna 原组为 16 计划、16 路评估、单 Explorer）。 v6：selection_policy=greedy（无深挖：每轮 breadth，退火不移动活动 Region），与 rq8_fold2_v3async_luna_p10_pe_px3_avail_v5 仅差此项。 v8：提示词精简与一致化（feature/prompt-cleanup：Miner 以 done 正常结束计划，blocked 只表示缺失能力；available_slots 说明改正；Region 选择规则只出现一次；分档状态按判定顺序描述），并发改为 parallel_plans=8、parallel_evaluations=8，其余与 rq8_fold2_v3async_luna_p10_pe_px3_avail_nodepth_v6 相同。 v9：Explorer 不能报告 unresolved（受阻时提示其搜索新方向，回复 unresolved 由平台在对话内退回），其余与 rq8_fold2_v3async_luna_p8_pe8_px3_avail_nodepth_v8 相同。 v10：平台准入增加库残差门槛 min_residual_ic=0（入库须 residual_ic 严格 > 0，即在已有库线性解释之外仍有正向 Val 信息；未测得残差同样拒绝，原因 residual_threshold），其余与 rq8_fold2_v3async_luna_p8_pe8_px3_avail_nodepth_v9 相同（仍为分档提示词）。",
+  "asset": "futures_kernel_5m_full",
+  "universe": "all",
+  "profile": {
+    "asset_id": "futures_kernel_5m_full",
+    "frequency": "5m",
+    "provider": "ricequant",
+    "data_dir": "data/futures_kernel_5m_full",
+    "default_universe": "all",
+    "universes": [
+      "all"
+    ],
+    "timezone": "Asia/Shanghai",
+    "bar_time_label": "end",
+    "price_field": "adj_close",
+    "target_horizon_bars": 12,
+    "metric": "time_series_weighted_pearson_ic",
+    "panel": "product",
+    "min_train_val_ic": 0.005,
+    "fundamentals": false,
+    "start": "2012-01-04",
+    "end": "2026-09-28"
+  },
+  "fold": {
+    "id": "fold2",
+    "train": {
+      "start": "2019-01-01",
+      "end": "2021-12-31"
+    },
+    "val": {
+      "start": "2022-01-01",
+      "end": "2023-12-31"
+    },
+    "test": {
+      "start": "2024-01-01",
+      "end": "2025-12-31"
+    }
+  },
+  "fields": [
+    "adj_close",
+    "adj_open",
+    "adj_high",
+    "adj_low",
+    "adj_vwap",
+    "volume",
+    "amount",
+    "open_interest"
+  ],
+  "data": {
+    "adapter": "parquet",
+    "sources": {
+      "base": {
+        "path": "data/futures_kernel_5m_full",
+        "snapshot_id": "73db06c2d7223ce5829b8d3d9846a27b35e59e0d621a11a4a94d99dcc6ec0e87",
+        "allow_incomplete": false
+      }
+    }
+  },
+  "rules": {
+    "max_attempts": 100,
+    "reference_library": "futures_cta",
+    "search_diagnostics": "icir_turnover_v1",
+    "clip_quantiles": [
+      0.01,
+      0.99
+    ],
+    "min_abs_val_ic": 0.01,
+    "min_coverage": 0.8,
+    "max_abs_corr": 0.7,
+    "min_corr_overlap": 100,
+    "max_expression_nodes": 100,
+    "max_expression_depth": 20,
+    "seed": 42,
+    "warmup_policy": "one_calendar_year_before_train",
+    "target_boundary_policy": "target_end_must_be_within_split",
+    "admission": "train_sign_then_positive_val_ic; library_residual_ic_gt_min; first_accepted_wins",
+    "oos_policy": "freeze_first; no_test_feedback",
+    "library_residual": "residual_ic_v1",
+    "min_residual_ic": 0.0
+  },
+  "model": {
+    "seed": 42,
+    "preprocessing": {
+      "clip_quantiles": [
+        0.01,
+        0.99
+      ],
+      "product_demean": true
+    },
+    "linear": {
+      "rcond": 1e-12
+    },
+    "lightgbm": {
+      "num_boost_round": 50,
+      "learning_rate": 0.05,
+      "num_leaves": 15,
+      "min_data_in_leaf": 2000,
+      "lambda_l2": 1.0,
+      "num_threads": 4,
+      "max_depth": 5
+    }
+  },
+  "method_configs": {
+    "v3_async": {
+      "chat_model": "gpt-6-luna",
+      "chat_base_url": "http://127.0.0.1:27483/codex/v1",
+      "chat_key_env": "ATLAS_EXPLORER_OPENAI_API_KEY",
+      "temperature": 1.0,
+      "repair_temperature": 0.8,
+      "risk_temperature": 0.1,
+      "timeout_seconds": 1800.0,
+      "max_formula_repairs": 3,
+      "max_dialogue_rounds": 40,
+      "initial_temperature": 0.25,
+      "final_temperature": 0.02,
+      "candidates_per_plan": 5,
+      "analyst_feedback_top_k": 5,
+      "sea_level": 0.005,
+      "probe_attempts": 20,
+      "parallel_plans": 8,
+      "scale_bands": "intraday_1d_20d",
+      "parallel_evaluations": 8,
+      "parallel_explorers": 3,
+      "region_admission_limit": 5,
+      "region_plan_limit": 1,
+      "selection_policy": "greedy"
+    }
+  },
+  "runtime_limits": {
+    "validation_seconds": 120.0,
+    "evaluation_seconds": 120.0,
+    "benchmark_small_size": 64,
+    "benchmark_large_size": 256,
+    "benchmark_repeats": 5,
+    "benchmark_floor_seconds": 0.001,
+    "benchmark_max_growth": 3.0
+  },
+  "operator_versions": {
+    "ABS": "1",
+    "ADD": "1",
+    "AND": "1",
+    "CLIP": "1",
+    "CS_DEMEAN": "1",
+    "CS_RANK": "1",
+    "CS_SCALE": "1",
+    "CS_WINSORIZE": "1",
+    "CS_ZSCORE": "1",
+    "DELAY": "1",
+    "DELTA": "1",
+    "DIVIDE": "1",
+    "EQ": "1",
+    "EXP": "1",
+    "FILLNA": "1",
+    "GE": "1",
+    "GT": "1",
+    "IF_THEN_ELSE": "1",
+    "IS_FINITE": "1",
+    "LE": "1",
+    "LOG": "1",
+    "LOG1P": "1",
+    "LT": "1",
+    "MAX": "1",
+    "MIN": "1",
+    "MULTIPLY": "1",
+    "NE": "1",
+    "NEG": "1",
+    "NOT": "1",
+    "OR": "1",
+    "POWER": "1",
+    "RETURN": "1",
+    "SIGN": "1",
+    "SIGNED_POWER": "1",
+    "SQRT": "1",
+    "SUBTRACT": "1",
+    "TS_ALL": "1",
+    "TS_ANY": "1",
+    "TS_ARGMAX": "1",
+    "TS_ARGMIN": "1",
+    "TS_CORR": "1",
+    "TS_COUNT": "1",
+    "TS_COV": "1",
+    "TS_KURT": "1",
+    "TS_LINEAR_DECAY": "1",
+    "TS_MAX": "1",
+    "TS_MEAN": "1",
+    "TS_MEDIAN": "1",
+    "TS_MIN": "1",
+    "TS_PROD": "1",
+    "TS_QUANTILE": "1",
+    "TS_RANK": "1",
+    "TS_RANKCORR": "1",
+    "TS_RATE": "1",
+    "TS_SKEW": "1",
+    "TS_STD": "1",
+    "TS_SUM": "1",
+    "TS_VAR": "1",
+    "TS_WINSORIZE": "1",
+    "TS_ZSCORE": "1"
+  },
+  "limitations": [
+    "Base is the previously authorized Kernel 1m-to-5m export, not native 5m.",
+    "Computational causality on a fixed final snapshot; full vendor vintage PIT not certified.",
+    "Test 2024-2025 has already been observed and is a historical diagnostic holdout."
+  ],
+  "warmup_notes": "5m search windows use one calendar year before train; target horizon remains 12 native rows.",
+  "configuration_sources": {
+    "base_version": "configs/versions/rq8_fold2_v1.json",
+    "rules.search_diagnostics": "artifacts/runs/futures_kernel_5m_full-all-fold2-v1_async-42-531d4676f6/run.json",
+    "model": "configs/versions/rq8_zk26_seeded_fold2_overview_luna_v5.json (主表统一下游参数)",
+    "overview": "experiment_overview.md#期货因子搜索fold2",
+    "v3_async": "connection of rq8_fold2_v2sync_luna_v4; V2 Async settings with v3 rules (docs/methods/v3_async.md), temperatures of v3 (0.25 -> 0.02); v2: bands intraday/1d_to_20d/over_20d, tested-band Region rule, probe_attempts=20; parallel_evaluations=16 (concurrent Train/Valid computation, serial admission)"
+  }
+}

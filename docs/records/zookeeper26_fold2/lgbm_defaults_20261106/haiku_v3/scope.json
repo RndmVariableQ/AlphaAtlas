@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "id": "zk26_lgbm_defaults_20261106_haiku_v3",
+  "parent_plan": "configs/experiments/zk26_lgbm_defaults_20261106/plan.json",
+  "experiment_version": "rq8_zk26_lgbm_defaults_20261106",
+  "source_experiment_version": "rq8_zk26_seeded_fold2_v3async_haiku55_20261106",
+  "include_union": false,
+  "methods": [
+    "v3_async"
+  ],
+  "seeds": [
+    42
+  ],
+  "attempts_per_method": 300,
+  "evaluation_nodes": [
+    200,
+    300
+  ],
+  "runs": [
+    "artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-61c42b9f7c"
+  ],
+  "purpose": "B26 Haiku 冻结后按默认 min_data_in_leaf 与 L2=0 重训；未冻结不启动。"
+}

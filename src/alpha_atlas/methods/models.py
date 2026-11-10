@@ -70,8 +70,15 @@ def parse_json_object(text):
             ):
                 text = text[: exc.pos] + text[exc.pos + 1 :]
                 continue
+            # Show where parsing stopped: a bare column number is not enough for a model to
+            # find an object it closed too early.
+            before = text[max(0, exc.pos - 160) : exc.pos]
+            after = text[exc.pos : exc.pos + 40]
             raise ValueError(
                 f"Invalid JSON at line {exc.lineno}, column {exc.colno}: {exc.msg}. "
+                f"Parsing stopped at <<HERE>> in: ...{before}<<HERE>>{after}... "
+                "Check that each object and array closes where intended; a brace that closes "
+                "an enclosing object early often causes this. "
                 "Return one complete JSON object without surrounding prose."
             ) from None
     if not isinstance(value, dict):
@@ -127,7 +134,7 @@ class HTTPModels:
                 )
                 return self._validate_chat_response(body) if kind == "chat" else body
         except HTTPError as exc:
-            if exc.code in {408, 429, 500, 502, 503, 504}:
+            if exc.code in {408, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524}:
                 retry_after = 0
                 header = exc.headers.get("Retry-After") if exc.headers else None
                 if header:
@@ -143,7 +150,7 @@ class HTTPModels:
                 exc.close()
                 raise _RetryableError(
                     f"{kind} model request failed (HTTP {exc.code})",
-                    backoff=30 if exc.code == 429 else 1,
+                    backoff=30 if exc.code in {429, 503} else 1,
                     retry_after=retry_after,
                 ) from None
             if kind == "chat" and exc.code in {400, 413, 422}:
@@ -181,7 +188,7 @@ class HTTPModels:
             }:
                 raise _RetryableError(
                     "chat model service temporarily unavailable",
-                    backoff=30 if code == "rate_limit_exceeded" else 1,
+                    backoff=1 if code == "server_error" else 30,
                 )
             if code == "context_length_exceeded":
                 raise ContextLimitError("model context length exceeded")
@@ -307,6 +314,7 @@ class HTTPModels:
         self, messages, *, max_output_tokens=None, on_delta=None, temperature=None, post
     ):
         output_limit = max_output_tokens or getattr(self.config, "max_output_tokens", None)
+        effort = getattr(self.config, "reasoning_effort", None)
         response = post(
             "chat",
             "/chat/completions",
@@ -315,6 +323,7 @@ class HTTPModels:
                 "messages": messages,
                 "temperature": self.config.temperature if temperature is None else temperature,
                 **({"max_tokens": output_limit} if output_limit is not None else {}),
+                **({"reasoning_effort": effort} if effort is not None else {}),
                 **({"stream": True, "stream_options": {"include_usage": True}} if on_delta else {}),
             },
             on_delta=on_delta,

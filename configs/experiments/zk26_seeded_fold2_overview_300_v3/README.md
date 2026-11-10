@@ -16,11 +16,11 @@
 
 ```bash
 uv run --env-file .env atlas run \
-  --version rq8_zk26_seeded_fold2_overview_luna_v5 \
+  --config rq8_zk26_seeded_fold2_overview_luna_v5 \
   --method v1_async --seed 42 --attempts 300 --search-only
 
 uv run --env-file .env atlas run \
-  --version rq8_zk26_seeded_fold2_overview_luna_v5 \
+  --config rq8_zk26_seeded_fold2_overview_luna_v5 \
   --method alphaschema --seed 42 --attempts 300 --search-only
 ```
 

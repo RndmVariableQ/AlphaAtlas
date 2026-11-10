@@ -16,7 +16,7 @@ from alpha_atlas.config import load_toml, warmup_period
 from alpha_atlas.contracts import fingerprint
 from alpha_atlas.evaluation import FUTURES_METRICS, product_weights, split_panel
 from alpha_atlas.model import evaluate_models, factor_panel
-from alpha_atlas.reporting import refresh_report, update_experiment_overview, write_model_report
+from alpha_atlas.reporting import refresh_report, write_model_report
 from alpha_atlas.runner import (
     _data_fields,
     _frozen_factor_result,
@@ -109,7 +109,7 @@ def _similarity(spec, frozen, panel, fold):
 
 
 def finish_experiment(root, directory):
-    """Fit on Train/Val, evaluate all three outputs, then publish both overview rows."""
+    """Fit on Train/Val and evaluate the frozen library without editing the overview."""
     initial = read_json(directory / "run.json")
     if initial["status"] != "frozen":
         raise ValueError("experiment completion requires a frozen run")
@@ -123,7 +123,7 @@ def finish_experiment(root, directory):
             return _finish_experiment(root, directory)
         except BaseException as exc:
             terminal_progress(
-                "实验收尾中断或失败 / 未填表",
+                "实验收尾中断或失败",
                 类型=type(exc).__name__,
                 恢复=f"atlas finish {directory}",
             )
@@ -265,6 +265,5 @@ def _finish_experiment(root, directory):
         if set(tested["reports"]["test"]) != {"linear", "lightgbm"}:
             raise ValueError("combined model Test is incomplete")
         write_model_report(directory / "model", fitted, tested)
-    overview = update_experiment_overview(root, directory, spec, oos, tested, similarity)
-    terminal_progress("实验收尾完成 / 已填表", 总表=overview)
-    return {"report": str(directory / "report.md"), "overview": str(overview)}
+    terminal_progress("实验收尾完成", 报告=directory / "report.md")
+    return {"report": str(directory / "report.md")}

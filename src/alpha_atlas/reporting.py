@@ -132,7 +132,7 @@ def write_report(directory: Path) -> Path:
         "",
     ]
     method_state = checkpoint.get("method_state", {})
-    if spec.get("method") in {"annealing", "v1", "v1_async", "v2_sync"}:
+    if spec.get("method") in {"annealing", "v1", "v1_async", "v2_sync", "v2_async", "v3_async"}:
         records = method_state.get("factor_trial_records", method_state.get("steps", []))
         lines += _table(["研究记录", "数量"], [("计划内因子尝试记录", len(records))])
     if "method_config" in spec:
@@ -194,8 +194,8 @@ def write_report(directory: Path) -> Path:
             ],
         )
     pending = checkpoint.get("pending")
-    if pending:
-        factor_trial_index = pending.get("factor_trial_index", pending.get("trial_index"))
+    for entry in pending if isinstance(pending, list) else [pending] if pending else []:
+        factor_trial_index = entry.get("factor_trial_index", entry.get("trial_index"))
         state = "结果已提交，等待恢复反馈" if factor_trial_index <= len(trials) else "结果未提交"
         lines += [f"待完成 trial {factor_trial_index}：{state}。", ""]
     reasons = Counter(t["feedback"]["reason"] for t in trials)
@@ -412,7 +412,7 @@ def write_report(directory: Path) -> Path:
     elif spec["status"] == "frozen" and not accepted and not initial_count:
         lines += ["冻结因子库为空，组合模型不适用。", ""]
     else:
-        lines += ["尚未完成组合模型 Test；atlas finish 会补齐后自动填表。", ""]
+        lines += ["尚未完成组合模型 Test；atlas finish 可补齐评估。", ""]
     similarity_path = directory / "library_similarity.json"
     lines += ["## Val 库内因子相似度", ""]
     if similarity_path.exists():
@@ -437,7 +437,7 @@ def write_report(directory: Path) -> Path:
         )
         lines += ["完整结果：[library_similarity.json](library_similarity.json)。", ""]
     else:
-        lines += ["尚未完成 Val 全库相似度；atlas finish 会补齐后自动填表。", ""]
+        lines += ["尚未完成 Val 全库相似度；atlas finish 可补齐评估。", ""]
     lines += [
         "## 数据边界与记录",
         "",
@@ -504,6 +504,14 @@ def _overview_row(text, heading, headers, row, identity, description):
             if f"**Fold / seed**：{fold_id} / {seed}。" not in lines[start + 1 : table]:
                 raise ValueError(f"overview common fold/seed setting changed: {heading}")
             row = [label, *row[1:]]
+        optional = ("Linear 加权 Spearman", "LightGBM 加权 Spearman")
+        if all(name in headers for name in optional) and not any(
+            name in displayed for name in optional
+        ):
+            for name in optional:
+                column = headers.index(name)
+                headers = headers[:column] + headers[column + 1 :]
+                row = row[:column] + row[column + 1 :]
     if table is None or lines[table] != "| " + " | ".join(headers) + " |":
         raise ValueError(f"overview table headers changed: {heading}")
     stop = table + 2
@@ -533,7 +541,7 @@ def _overview_row(text, heading, headers, row, identity, description):
 
 
 def update_experiment_overview(root, directory, spec, oos, tested, similarity):
-    """Publish both tables together only from complete, matching frozen-run outputs."""
+    """Legacy explicit publisher for complete, matching frozen-run outputs."""
     from alpha_atlas.checkpoint import run_lock
 
     identities = [item["expression_id"] for item in oos["results"]]
@@ -567,6 +575,13 @@ def update_experiment_overview(root, directory, spec, oos, tested, similarity):
     average = f"{statistics.mean(finite):.6f} / {statistics.median(finite):.6f}" if finite else "—"
     if len(finite) != count:
         average += f"，有效 {len(finite)} / {count}"
+    secondary_average = (
+        f"{statistics.mean(secondary):.6f} / {statistics.median(secondary):.6f}"
+        if secondary
+        else "—"
+    )
+    if len(secondary) != count:
+        secondary_average += f"，有效 {len(secondary)} / {count}"
     positive = (
         f"{sum(score > 0 for score in finite)} / {len(finite)}，{sum(score > 0 for score in finite) / len(finite):.2%}"
         if finite
@@ -577,8 +592,10 @@ def update_experiment_overview(root, directory, spec, oos, tested, similarity):
         "alphaschema": "AlphaSchema",
         "react": "ReAct",
         "mcts_llm": "MCTS-LLM",
-        "v1_async": "AlphaAtlas+Annealing V1 Async",
-        "v2_sync": "AlphaAtlas V2 Sync",
+        "v1_async": "AlphaAtlas V1",
+        "v2_sync": "AlphaAtlas V2",
+        "v2_async": "AlphaAtlas V2",
+        "v3_async": "AlphaAtlas V3",
         "random": "Random",
         "gp": "GP",
         "mcts": "UCT MCTS",
@@ -619,8 +636,8 @@ def update_experiment_overview(root, directory, spec, oos, tested, similarity):
         "TEST 单因子加权 Pearson（均值 / 中位数）"
         if futures
         else "TEST 单因子主 IC（均值 / 中位数）",
+        "TEST 单因子加权 Spearman（均值 / 中位数）" if futures else "单因子 Spearman 均值",
         "正 IC",
-        "单因子加权 Spearman 均值" if futures else "单因子 Spearman 均值",
         "Linear 加权 Pearson" if futures else "Linear 主 IC",
         "LightGBM 加权 Pearson" if futures else "LightGBM 主 IC",
     ]
@@ -632,10 +649,16 @@ def update_experiment_overview(root, directory, spec, oos, tested, similarity):
         f"{spec['fold']['id']} / {spec['seed']}",
         attempts,
         average,
+        secondary_average if futures else number(statistics.mean(secondary) if secondary else None),
         positive,
-        number(statistics.mean(secondary) if secondary else None),
         *map(number, combined),
     ]
+    if futures:
+        main_headers += ["Linear 加权 Spearman", "LightGBM 加权 Spearman"]
+        main_row += [
+            number(value(tested["reports"]["test"][name], spearman) if count else None)
+            for name in ("linear", "lightgbm")
+        ]
     pair_headers = [
         "方法 / 模型",
         "数据",

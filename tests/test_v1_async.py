@@ -689,6 +689,7 @@ def test_saved_unresolved_with_one_free_slot_selects_one_from_two_directions(set
     assert calls[0][1]["available_slots"] == 1
     assert len(calls[0][1]["active_proposals"]) == 2
     assert "two to four" in calls[0][0]
+    assert "starts at most that many of the submitted directions" in calls[0][0]
     assert restored.usage["chat_requests"] == saved["usage"]["chat_requests"] + 1
     assert restored.completed_attempts == saved["completed_attempts"]
     assert target.remaining_budget() == 12

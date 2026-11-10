@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "id": "zk26_seeded_fold2_haiku55_all_300_20261106_alphaprobe_ready",
+  "parent_plan": "configs/experiments/zk26_seeded_fold2_haiku55_all_300_20261106/methods_plan.json",
+  "experiment_version": "rq8_zk26_seeded_fold2_haiku55_20261106",
+  "include_union": false,
+  "methods": [
+    "alphaprobe"
+  ],
+  "seeds": [
+    42
+  ],
+  "attempts_per_method": 300,
+  "evaluation_nodes": [
+    200,
+    300
+  ],
+  "runs": [
+    "artifacts/runs/futures_kernel_5m_full-all-fold2-alphaprobe-42-a99c2b066d"
+  ],
+  "purpose": "按用户要求先评估已冻结的 AlphaPROBE 与 AlphaAtlas V3；复用原搜索及配对配置，两组模型全部保存后读取历史 Test。"
+}

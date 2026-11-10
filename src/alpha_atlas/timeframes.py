@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import replace
 
 import polars as pl
@@ -56,6 +57,68 @@ def frequency_scopes(root: Expression) -> dict[Expression, str | None]:
 
     visit(root)
     return scopes
+
+
+# Feature-span bands label research statistics only; they never change execution.
+TRADING_DAY_MINUTES = 240  # about one day session; a daily bar counts as one trading day
+SCALE_BANDS = (("up_to_1h", 60), ("1h_to_1d", TRADING_DAY_MINUTES), ("over_1d", math.inf))
+# V3: intraday, multi-day and long-horizon spans; the 20-day edge separated both library
+# correlation and Val-to-Test decay in the fold2 runs, the 1-hour edge neither.
+V3_SCALE_BANDS = (
+    ("intraday", TRADING_DAY_MINUTES),
+    ("1d_to_20d", 20 * TRADING_DAY_MINUTES),
+    ("over_20d", math.inf),
+)
+
+
+def _bar_minutes(frequency: str) -> int:
+    if frequency == "1d":
+        return TRADING_DAY_MINUTES
+    if frequency.endswith("m") and frequency[:-1].isdigit():
+        return int(frequency[:-1])
+    raise ValueError(f"unsupported bar frequency: {frequency}")
+
+
+def feature_span_minutes(root: Expression, frequency: str) -> float:
+    """Approximate trading time between the oldest and newest base bar a factor reads.
+
+    A coarse field adds its bar length beyond one base bar; each node adds its window history
+    in bars of the frequency it runs on (see frequency_scopes). Cross-sectional and unknown
+    operators add none, so RETURN($close,12) on 5m spans 60 minutes.
+    """
+    from alpha_atlas.operators.registry import builtin_specs
+
+    specs, scopes = builtin_specs(), frequency_scopes(root)
+
+    def minutes(node):
+        scope = scopes[node]
+        return _bar_minutes(frequency if scope in {None, "base"} else scope)
+
+    def visit(node):
+        if node.op == "field":
+            return minutes(node) - _bar_minutes(frequency)
+        if node.op == "const":
+            return 0
+        args = node.args
+        if node.value is not None:
+            args = (*args, Expression("const", value=node.value))
+        span = max((visit(arg) for arg in args), default=0)
+        spec = specs.get(node.op)
+        if spec is None or spec.scope != "ts" or "window" not in spec.args:
+            return span
+        index = spec.args.index("window")
+        if index < len(args):
+            window = args[index].value if args[index].op == "const" else 0
+        else:
+            window = spec.defaults[index - (len(spec.args) - len(spec.defaults))]
+        history = window if spec.history == "lag" else max(int(window) - 1, 0)
+        return span + history * minutes(node)
+
+    return visit(root)
+
+
+def scale_band(minutes: float, bands=SCALE_BANDS) -> str:
+    return next(name for name, limit in bands if minutes <= limit)
 
 
 def timeframe_panel(

@@ -12,7 +12,7 @@ import pytest
 from test_evaluation_library import average_rank
 from test_pipeline import project as project
 
-from alpha_atlas import experiment
+from alpha_atlas import experiment, reporting
 from alpha_atlas.assets.common import atomic_json, atomic_parq, with_row_id
 from alpha_atlas.assets.market import ParqMarketData
 from alpha_atlas.checkpoint import read_json
@@ -30,6 +30,20 @@ def frozen_run(project):
     directory = run(project, "ashare", "fold1", "atlas", 42, attempts=12)
     assert read_json(directory / "run.json")["library_size"] >= 2
     return directory
+
+
+def finish_and_publish(root, directory):
+    """Exercise the retained explicit publisher independently from normal completion."""
+    experiment.finish_experiment(root, directory)
+    model = directory / "model/test.json"
+    return reporting.update_experiment_overview(
+        root,
+        directory,
+        read_json(directory / "run.json"),
+        read_json(directory / "oos.json"),
+        read_json(model) if model.exists() else None,
+        read_json(directory / "library_similarity.json"),
+    )
 
 
 def test_completion_matches_canonical_metrics_and_reuses_saved_outputs(
@@ -54,6 +68,7 @@ def test_completion_matches_canonical_metrics_and_reuses_saved_outputs(
         return load(self, **kwargs)
 
     monkeypatch.setattr(ParqMarketData, "load_features", checked_load)
+    overview_before = (project / "experiment_overview.md").read_bytes()
     result = experiment.finish_experiment(project, frozen_run)
     assert loads == [date(2020, 12, 31), date(2022, 12, 31)]
     oos = read_json(frozen_run / "oos.json")
@@ -66,7 +81,8 @@ def test_completion_matches_canonical_metrics_and_reuses_saved_outputs(
     assert similarity["valid_pairs"] == similarity["pair_count"]
     assert "Val 库内因子相似度" in (frozen_run / "report.md").read_text()
     assert "[模型报告](model/report.md)" in (frozen_run / "report.md").read_text()
-    assert result["overview"] == str(project / "experiment_overview.md")
+    assert result == {"report": str(frozen_run / "report.md")}
+    assert (project / "experiment_overview.md").read_bytes() == overview_before
     (frozen_run / "oos.json").unlink()
     canonical = evaluate_frozen(project, frozen_run)
     for actual, expected in zip(oos["results"], canonical["results"], strict=True):
@@ -91,12 +107,10 @@ def test_completion_matches_canonical_metrics_and_reuses_saved_outputs(
     assert (project / "experiment_overview.md").read_bytes() == overview
     assert (frozen_run / "model/fit.json").read_bytes() == saved_fit
     assert all(path.read_bytes() == content for path, content in original.items())
-    assert overview.decode().count(f"(artifacts/runs/{frozen_run.name}/report.md)") == 2
+    assert (frozen_run / "oos.json").exists()
 
 
-def test_completion_publishes_external_run_and_reuses_outputs_through_symlink(
-    project, frozen_run, monkeypatch
-):
+def test_completion_reuses_external_run_outputs_through_symlink(project, frozen_run, monkeypatch):
     workspace = project / "comparison/workspace"
     workspace.mkdir(parents=True)
     for name in ("configs", "data", "artifacts"):
@@ -104,10 +118,7 @@ def test_completion_publishes_external_run_and_reuses_outputs_through_symlink(
     alias = workspace / "artifacts/runs" / frozen_run.name
     result = experiment.finish_experiment(workspace, frozen_run)
     overview = workspace / "experiment_overview.md"
-    original = overview.read_bytes()
-    link = frozen_run.resolve().relative_to(workspace.resolve(), walk_up=True) / "report.md"
-    assert original.decode().count(f"({link.as_posix()})") == 2
-    assert (workspace / link).resolve() == (frozen_run / "report.md").resolve()
+    assert not overview.exists()
     saved = {
         path: path.read_bytes()
         for path in (
@@ -127,8 +138,9 @@ def test_completion_publishes_external_run_and_reuses_outputs_through_symlink(
     monkeypatch.setattr(ParqMarketData, "load_features", forbid)
     monkeypatch.setattr("alpha_atlas.model.fit_models", forbid)
     repeated = experiment.finish_experiment(workspace, alias)
-    assert repeated["overview"] == result["overview"] == str(overview)
-    assert overview.read_bytes() == original
+    assert repeated["report"] == str(alias / "report.md")
+    assert result["report"] == str(frozen_run / "report.md")
+    assert not overview.exists()
     assert all(path.read_bytes() == content for path, content in saved.items())
 
 
@@ -241,7 +253,19 @@ def test_failure_does_not_publish_and_retry_only_computes_missing_stage(
     monkeypatch.setattr(ParqMarketData, "load_features", checked)
     experiment.finish_experiment(project, frozen_run)
     assert all(path.read_bytes() == content for path, content in saved.items())
-    assert (project / "experiment_overview.md").read_bytes() != overview
+    assert (project / "experiment_overview.md").read_bytes() == overview
+
+
+def test_completion_ignores_overview_layout_and_does_not_write_it(project, frozen_run):
+    path = project / "experiment_overview.md"
+    text = "# 自定义实验总览\n\n任意布局。\n"
+    path.write_text(text, encoding="utf-8")
+    result = experiment.finish_experiment(project, frozen_run)
+    assert result == {"report": str(frozen_run / "report.md")}
+    assert path.read_text(encoding="utf-8") == text
+    assert (frozen_run / "oos.json").exists()
+    assert (frozen_run / "model/test.json").exists()
+    assert (frozen_run / "library_similarity.json").exists()
 
 
 @pytest.mark.parametrize("change", ["benchmark", "model", "snapshot", "library", "similarity"])
@@ -281,9 +305,7 @@ def test_empty_library_is_reported_without_fabricating_models(project):
     assert not (directory / "model/fit.json").exists()
     assert not (directory / "model/test.json").exists()
     assert "组合模型不适用" in (directory / "report.md").read_text()
-    overview = (project / "experiment_overview.md").read_text()
-    assert "—" in overview and "0 / 0" not in overview
-    assert "| 1 |" in overview  # Actual submissions, not the unused budget of five.
+    assert not (project / "experiment_overview.md").exists()
 
 
 def test_cli_run_and_frozen_resume_complete_by_default(project, monkeypatch, capsys):
@@ -315,6 +337,8 @@ def test_cli_run_and_frozen_resume_complete_by_default(project, monkeypatch, cap
     main()
     result = json.loads(capsys.readouterr().out)
     directory = Path(result["run_dir"])
+    assert "overview" not in result
+    assert not (project / "experiment_overview.md").exists()
     assert (directory / "oos.json").exists()
     assert (directory / "model/test.json").exists()
     assert (directory / "library_similarity.json").exists()
@@ -331,12 +355,12 @@ def test_cli_run_and_frozen_resume_complete_by_default(project, monkeypatch, cap
 
 
 def test_overview_rejects_partial_table_edits_and_keeps_the_document(project, frozen_run):
-    experiment.finish_experiment(project, frozen_run)
+    finish_and_publish(project, frozen_run)
     path = project / "experiment_overview.md"
     text = path.read_text().replace("| 方法 / 模型 | 数据 |", "| 手动修改标题 | 数据 |")
     path.write_text(text)
     with pytest.raises(ValueError, match="table headers changed"):
-        experiment.finish_experiment(project, frozen_run)
+        finish_and_publish(project, frozen_run)
     assert path.read_text() == text
 
 
@@ -344,7 +368,7 @@ def test_overview_rejects_partial_table_edits_and_keeps_the_document(project, fr
 def test_completion_preserves_common_settings_without_restoring_columns(
     project, frozen_run, monkeypatch, mismatch
 ):
-    experiment.finish_experiment(project, frozen_run)
+    finish_and_publish(project, frozen_run)
     path = project / "experiment_overview.md"
     lines = path.read_text().splitlines()
     settings_count = sum(line.startswith("**数据设置**：") for line in lines)
@@ -382,9 +406,9 @@ def test_completion_preserves_common_settings_without_restoring_columns(
     monkeypatch.setattr("alpha_atlas.model.fit_models", forbid)
     if mismatch:
         with pytest.raises(ValueError, match="common .* setting changed"):
-            experiment.finish_experiment(project, frozen_run)
+            finish_and_publish(project, frozen_run)
     else:
-        experiment.finish_experiment(project, frozen_run)
+        finish_and_publish(project, frozen_run)
         assert before.decode().count("**数据设置**：") == settings_count + 2
     assert path.read_bytes() == before
 
@@ -410,7 +434,7 @@ def test_fold2_results_and_pending_tasks_are_kept_separate(project):
             assert session.evaluate(Candidate("$adj_close")).accepted
 
     directory = run(project, "ashare", "fold2", "react", 42, attempts=1, method_impl=Price())
-    experiment.finish_experiment(project, directory)
+    finish_and_publish(project, directory)
     text = path.read_text()
     assert "### A 股因子搜索：fold2" in text
     assert "### A 股库内因子相似度：fold2 / contract 窗口" in text
@@ -462,7 +486,7 @@ def test_futures_existing_tables_preserve_manual_rows_and_researcher(project):
         field_names=["close"],
         method_impl=Price(),
     )
-    experiment.finish_experiment(project, directory)
+    finish_and_publish(project, directory)
     text = overview.read_text()
     assert all(line in text for line in original.splitlines() if line.startswith("| 汤子逸 |"))
     identity = f"(artifacts/runs/{directory.name}/report.md)"
@@ -472,6 +496,6 @@ def test_futures_existing_tables_preserve_manual_rows_and_researcher(project):
     )
     text = text.replace(main_row, main_row.replace("| — |", "| 人工姓名 |", 1), 1)
     overview.write_text(text)
-    experiment.finish_experiment(project, directory)
+    finish_and_publish(project, directory)
     assert overview.read_text() == text
     assert "| 人工姓名 |" in text

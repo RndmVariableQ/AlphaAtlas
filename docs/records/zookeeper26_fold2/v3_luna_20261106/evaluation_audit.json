@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "study_id": "zk26_seeded_fold2_v3_luna_300_20261106",
+  "run_id": "futures_kernel_5m_full-all-fold2-v3_async-42-8142c2c849",
+  "initial_library": {
+    "initial_members": 26,
+    "compared_run_id": "futures_kernel_5m_full-all-fold2-v1_async-42-5f77947f20",
+    "definitions_match": true,
+    "directions_match": true,
+    "snapshot_matches": true,
+    "train_val_reports_match_with_numeric_tolerance": true,
+    "numeric_tolerance": {
+      "relative": 1e-12,
+      "absolute": 1e-15
+    },
+    "excluded_run_specific_report_fields": [
+      "elapsed_seconds",
+      "observation_ref",
+      "evaluation_id"
+    ],
+    "initial_measurement_seconds": 257.39980628108606,
+    "fixed_vs_v5": [
+      "asset",
+      "universe",
+      "profile",
+      "fold",
+      "fields",
+      "data",
+      "data_recipe",
+      "operator_versions",
+      "initial_library",
+      "model",
+      "runtime_limits"
+    ],
+    "base_rules_unchanged": true,
+    "additional_feedback": "library_residual=residual_ic_v1",
+    "method_config_source": "futures_kernel_5m_full-all-fold2-v3_async-42-af75f77310"
+  },
+  "paired_fit": {
+    "models_saved": 6,
+    "baseline_fit_identical_to_v5": true,
+    "training_rows": 5296605,
+    "all_columns_retained": true,
+    "linear_full_column_rank": true,
+    "arms": {
+      "baseline": 26,
+      "v3_async_200": 33,
+      "v3_async_300": 42
+    },
+    "all_models_saved_before_test": true,
+    "fit_bytes_unchanged_during_test": true
+  },
+  "paired_test": {
+    "compared_study": "zk26_single_methods_v5_20261103_overview_methods",
+    "eligible_rows": 2558829,
+    "common_rows": 2549205,
+    "coverage": 0.9962389045926867,
+    "row_ids_dates_products_targets_identical": true,
+    "baseline_predictions_identical": true,
+    "max_absolute_baseline_prediction_difference": {
+      "linear": 0,
+      "lightgbm": 0
+    },
+    "ic_rows": 2401248,
+    "ic_products": 80,
+    "wmse_rows": 2429676,
+    "wmse_products": 86,
+    "bootstrap_replicates": 2000,
+    "all_bootstrap_replicates_valid": true
+  },
+  "checks": {
+    "command": "pwsh -File scripts/check.ps1",
+    "exit_code": 0,
+    "tests_passed": 1343,
+    "pytest_seconds": 128.71,
+    "log": "artifacts/comparisons/zk26_seeded_fold2_v3_luna_300_20261106/check-publication.log",
+    "environment": "Bounded CPU threads; local sockets permitted for offline HTTP and asyncio tests."
+  }
+}

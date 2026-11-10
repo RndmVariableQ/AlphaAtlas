@@ -206,6 +206,18 @@ def test_lightgbm_respects_configured_max_depth(config):
     validate_config(config)
 
 
+def test_omitted_min_data_in_leaf_uses_lightgbm_default(config):
+    del config["lightgbm"]["min_data_in_leaf"]
+    x = np.linspace(-2, 2, 300)
+    train = pl.DataFrame({"a": x, "target": x**2})
+    implicit = fit_models(train, ["a"], config)
+    assert "min_data_in_leaf" not in config["lightgbm"]
+    assert "[min_data_in_leaf: 20]" in implicit["models"]["lightgbm"]["model_text"]
+    explicit_config = copy.deepcopy(config)
+    explicit_config["lightgbm"]["min_data_in_leaf"] = 20
+    assert implicit == fit_models(train, ["a"], explicit_config)
+
+
 @pytest.mark.parametrize("problem", ["empty", "constant_factors", "missing_factors", "constant_y"])
 def test_unusable_training_data_fails(config, problem):
     a = [1.0, 2.0, 3.0]
@@ -230,6 +242,11 @@ def test_unusable_training_data_fails(config, problem):
         ("num_leaves", True),
         ("learning_rate", float("nan")),
         ("lambda_l2", -1e-301),
+        ("min_data_in_leaf", 0),
+        ("min_data_in_leaf", -1),
+        ("min_data_in_leaf", True),
+        ("min_data_in_leaf", 1.5),
+        ("min_data_in_leaf", None),
         ("max_depth", 0),
         ("max_depth", -2),
         ("max_depth", True),

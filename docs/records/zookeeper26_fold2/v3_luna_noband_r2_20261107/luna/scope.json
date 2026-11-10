@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "id": "zk26_seeded_fold2_v3_luna_noband_r2_20261107",
+  "parent_plan": "configs/experiments/zk26_seeded_fold2_v3_luna_noband_r2_20261107/plan.json",
+  "experiment_version": "rq8_zk26_lgbm_defaults_20261106",
+  "source_experiment_version": "rq8_zk26_seeded_fold2_v3async_luna_noband_20261107",
+  "include_union": false,
+  "methods": [
+    "v3_async"
+  ],
+  "seeds": [
+    42
+  ],
+  "attempts_per_method": 300,
+  "evaluation_nodes": [
+    200,
+    300
+  ],
+  "purpose": "用户指定 B26 Luna AlphaAtlas V3 不分档第二次独立运行；除 scale_bands=none 外与前三次 V3 相同，完成后立即配对评估并追加原表。"
+}

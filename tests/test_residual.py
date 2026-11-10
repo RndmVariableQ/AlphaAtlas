@@ -1,5 +1,6 @@
 import json
 import math
+import shutil
 from datetime import date
 
 import numpy as np
@@ -14,7 +15,14 @@ from alpha_atlas.contracts import Candidate, DateRange, Fold
 from alpha_atlas.evaluation import FUTURES_METRICS, EvaluationService, library_projection
 from alpha_atlas.library import FactorLibrary
 from alpha_atlas.methods.v1 import EXPLORER_PROMPT, V1Search
-from alpha_atlas.methods.v2_sync import STATE_VERSION, V2SyncConfig, V2SyncSearch
+from alpha_atlas.methods.v2_sync import (
+    MECHANISM_PROMPT,
+    MECHANISM_REGION_PROMPT,
+    SCALE_PROMPT,
+    STATE_VERSION,
+    V2SyncConfig,
+    V2SyncSearch,
+)
 from alpha_atlas.runner import _library_residual
 from alpha_atlas.storage import RunStore
 
@@ -113,6 +121,26 @@ def test_library_records_residual_only_when_enabled(tmp_path):
     assert feedback_from_dict(rows[1]["feedback"]) == first
 
 
+def test_min_residual_ic_rejects_factors_without_new_valid_information():
+    values = iter([0.004, 0.0, None, 0.0001])
+
+    def residual(frame, members, direction):
+        return next(values), 0.5, [0.1] * len(members)
+
+    rules = {**RULES, "min_residual_ic": 0.0}
+    library = FactorLibrary(rules, residual=residual)
+    first = library.consider(*evaluated("a", np.arange(300.0)))
+    zero = library.consider(*evaluated("b", np.sin(np.arange(300.0))))
+    unmeasured = library.consider(*evaluated("c", np.cos(np.arange(300.0))))
+    small = library.consider(*evaluated("d", np.sin(np.arange(300.0) / 7)))
+    assert first.accepted and small.accepted and small.library_version == 2
+    assert (zero.reason, unmeasured.reason) == ("residual_threshold", "residual_threshold")
+    assert zero.residual_ic == 0.0 and not zero.accepted and zero.library_version == 1
+    assert len(library.view().members) == 2
+    with pytest.raises(ValueError, match="requires library_residual"):
+        FactorLibrary(rules)
+
+
 def test_library_residual_rule_is_explicit():
     assert _library_residual({}) is False
     assert _library_residual({"library_residual": "residual_ic_v1"}) is True
@@ -124,13 +152,16 @@ def v2_sync(**config):
     return V2SyncSearch(42, V2SyncConfig(chat_model="m", **config), models=AgentModels())
 
 
-def method_with(records, residuals, **config):
+def method_with(records, residuals, expressions=None, **config):
     method = v2_sync(**{"sea_level": 0.005, "probe_attempts": 2, **config})
+    method.context = {"frequency": "5m"}
     method.factor_trial_records = [
         {"factor_trial_index": i, "region_id": region} for i, region in enumerate(records, 1)
     ]
+    expressions = expressions or ["$adj_close"] * len(residuals)
     method._trial_results = lambda selected=None: {
-        i: {"residual_ic": value} for i, value in enumerate(residuals, 1)
+        i: {"residual_ic": value, "candidate": {"expression": expression}}
+        for i, (value, expression) in enumerate(zip(residuals, expressions, strict=True), 1)
     }
     return method
 
@@ -166,12 +197,180 @@ def test_v2_sync_configuration_state_and_prompt_leave_v1_unchanged():
     with pytest.raises(ValueError, match="V2 Sync requires its own checkpoint"):
         v2_sync().load_state({**state, "version": "atlas_explorer_v1"})
     assert V1Search.explorer_prompt is EXPLORER_PROMPT
-    assert V2SyncSearch.explorer_prompt.startswith(EXPLORER_PROMPT)
-    assert "residual_ic" in V2SyncSearch.explorer_prompt
+    assert method.explorer_prompt == MECHANISM_PROMPT
+    assert MECHANISM_PROMPT.startswith(EXPLORER_PROMPT)
+    assert "residual_ic" in MECHANISM_PROMPT
     assert "residual_ic" not in EXPLORER_PROMPT
-    for bad in ({"sea_level": 0}, {"sea_level": True}, {"probe_attempts": 0}):
+    for bad in (
+        {"sea_level": 0},
+        {"sea_level": True},
+        {"probe_attempts": 0},
+        {"scale_statistics": 1},
+    ):
         with pytest.raises(ValueError):
             V2SyncConfig(**bad)
+
+
+@pytest.mark.parametrize(
+    ("expression", "frequency", "minutes"),
+    [
+        ("$close", "5m", 0),
+        ("TS_MEAN($close, 12)", "5m", 55),
+        ("RETURN($close, 12)", "5m", 60),
+        ("CS_RANK(DELTA($close, 1))", "5m", 5),
+        ("$close / $close@1d - 1", "5m", 235),
+        ("TS_MEAN($close@30m - $close@60m, 20)", "5m", 150),
+        ("$close / TS_MEAN($close@1d, 5) - 1", "5m", 1195),
+        ("x = TS_STD($close@60m, 4)\nCS_ZSCORE(x)", "5m", 235),
+        ("TS_MEAN($close, 5)", "1d", 960),
+    ],
+)
+def test_feature_span_counts_window_history_in_each_subtree_frequency(
+    expression, frequency, minutes
+):
+    from alpha_atlas.expressions import parse
+    from alpha_atlas.timeframes import feature_span_minutes
+
+    assert feature_span_minutes(parse(expression), frequency) == minutes
+
+
+def test_scale_statistics_split_residual_information_by_feature_span():
+    from alpha_atlas.methods.v2_sync import expression_band
+    from alpha_atlas.timeframes import scale_band
+
+    assert [scale_band(m) for m in (0, 60, 61, 240, 241)] == [
+        "up_to_1h",
+        "up_to_1h",
+        "1h_to_1d",
+        "1h_to_1d",
+        "over_1d",
+    ]
+    assert expression_band("TS_MEAN($close, 12", "5m") is None
+    expressions = ["RETURN($close, 12)", "TS_MEAN($close, 100)", "$close + 1", "bad("]
+    values = [0.009, 0.001, None, 0.002]
+
+    plain = method_with(["m"] * 4, values, expressions)
+    assert "by_scale" not in plain._residual_information("m")
+    assert "scale_statistics" not in plain.configuration
+    assert plain.explorer_prompt == MECHANISM_PROMPT
+
+    method = method_with(["m"] * 4, values, expressions, scale_statistics=True)
+    information = method._residual_information("m")
+    bands = information["by_scale"]
+    assert list(bands) == ["up_to_1h", "1h_to_1d", "over_1d"]
+    assert bands["up_to_1h"]["attempts"] == 2
+    assert bands["up_to_1h"]["status"] == "land"
+    assert bands["up_to_1h"]["mean_residual_ic"] == pytest.approx(0.0045)
+    assert bands["1h_to_1d"] == {"attempts": 0}
+    assert bands["over_1d"]["status"] == "probing"
+    # Unparsed expressions stay in the Region total but in no band; the score is unchanged.
+    assert information["attempts"] == 4
+    assert method._region_score("m") == plain._region_score("m")
+    assert method.configuration["scale_statistics"] is True
+    assert method.explorer_prompt.endswith(SCALE_PROMPT)
+
+
+def mechanism_proposals(names=("Inventory pressure reversal", "Delayed discovery drift")):
+    from test_v1 import proposals
+
+    raw = proposals(len(names))
+    for item, name in zip(raw["proposals"], names, strict=True):
+        hypothesis = item.pop("region_id") + " mechanism: " + item["hypothesis"]
+        item["new_region"] = {
+            "name": name,
+            "hypothesis": hypothesis,
+            "continent_ids": ["price_volume"],
+        }
+    return raw
+
+
+def test_mechanism_regions_require_named_mechanisms_and_refuse_grammar_regions():
+    from test_v1 import proposals
+
+    catalog = {
+        **{
+            op: {"id": op, "continent_ids": ["price_volume"], "source": "baseline_grammar"}
+            for op in ("mean", "std")
+        },
+        "explorer-a": {
+            "id": "explorer-a",
+            "continent_ids": ["price_volume"],
+            "hypothesis": "Crowded positions unwind",
+            "name": "Crowding unwind",
+        },
+    }
+    plain = v2_sync()
+    assert plain._validate_proposals(proposals(2), catalog, set())["proposals"]
+    assert "mechanism_regions" not in plain.configuration
+    method = v2_sync(mechanism_regions=True)
+    assert method.configuration["mechanism_regions"] is True
+    assert method.explorer_prompt.endswith(MECHANISM_REGION_PROMPT)
+    with pytest.raises(ValueError, match="grammar Region kept as reference"):
+        method._validate_proposals(proposals(2), catalog, set())
+    unnamed = mechanism_proposals()
+    del unnamed["proposals"][0]["new_region"]["name"]
+    long = mechanism_proposals(("one two three four five six seven", "Short name"))
+    taken = mechanism_proposals(("crowding  UNWIND", "Short name"))
+    twice = mechanism_proposals(("Same name", "same name"))
+    for raw, message in (
+        (unnamed, "short mechanism name"),
+        (long, "at most 6 words"),
+        (taken, "already names Region explorer-a; use its region_id"),
+        (twice, "distinct name"),
+    ):
+        with pytest.raises(ValueError, match=message):
+            method._validate_proposals(raw, catalog, set())
+    batch = method._validate_proposals(mechanism_proposals(), catalog, set())
+    assert [p["new_region"]["name"] for p in batch["proposals"]] == [
+        "Inventory pressure reversal",
+        "Delayed discovery drift",
+    ]
+    reuse = proposals(2)
+    reuse["proposals"][0]["region_id"] = reuse["proposals"][1]["region_id"] = "explorer-a"
+    reuse["proposals"][1]["hypothesis"] += " in other states"
+    assert method._validate_proposals(reuse, catalog, set())["proposals"]
+    with pytest.raises(ValueError, match="grammar Region"):
+        method._validate_exploration({"region_id": "mean", "direction": "d"}, catalog)
+    exploration = method._validate_exploration(
+        {"direction": "d", **{"new_region": mechanism_proposals()["proposals"][0]["new_region"]}},
+        catalog,
+    )
+    assert method.proposed_regions[exploration["region_id"]]["name"] == (
+        "Inventory pressure reversal"
+    )
+
+
+def test_mechanism_region_run_names_regions_on_the_map(project):
+    from test_v1 import V1Models, proposals
+
+    from alpha_atlas.checkpoint import read_json
+    from alpha_atlas.dashboard import views
+    from alpha_atlas.runner import run
+
+    enable_residual(project)
+    models = V1Models(
+        responses=[proposals(), mechanism_proposals()],
+        expressions=["$adj_close", "$volume"],
+    )
+    method = V2SyncSearch(
+        42,
+        V2SyncConfig(chat_model="m", candidates_per_plan=2, mechanism_regions=True),
+        models=models,
+    )
+    directory = run(project, "ashare", "fold1", "v2_sync", 42, 2, method_impl=method)
+    state = read_json(directory / "checkpoint.json")["method_state"]
+    region_ids = {r["region_id"] for r in state["factor_trial_records"]}
+    assert region_ids and all(r.startswith("explorer-") for r in region_ids)
+    names = {v["name"] for v in state["proposed_regions"].values()}
+    assert names <= {"Inventory pressure reversal", "Delayed discovery drift"} and names
+    explorer = [c for c in models.calls if "Atlas Explorer Agent" in c[0]]
+    regions = {r["id"]: r for r in explorer[0][1]["atlas"]["regions"]}
+    assert regions["mean"]["reference_only"] is True
+    index = views.RunIndex(project)
+    key = directory.name
+    mapped = {r["id"]: r for r in views.map_view(index, key)["regions"]}
+    assert {mapped[r]["name"] for r in region_ids} <= names
+    assert {views.plans(index, key)["regions"][r]["name"] for r in region_ids} <= names
 
 
 def enable_residual(project):
@@ -304,22 +503,33 @@ def test_dashboard_views_read_a_residual_run_without_writing(project, version, t
     )
     before = {p: p.stat().st_mtime_ns for p in directory.rglob("*") if p.is_file()}
     index = views.RunIndex(project)
+    assert views.run_list(views.RunIndex(project / "elsewhere")) == []
     listed = views.run_list(index)
     assert [r["id"] for r in listed] == [directory.name] and listed[0]["residual"] is True
+    # A comparison workspace created after the index exists is still discovered.
+    later = project / "artifacts/comparisons/later/workspace/artifacts/runs/later-run"
+    later.mkdir(parents=True)
+    (later / "run.json").write_text(json.dumps({"method": "random", "status": "running"}))
+    assert "later-run" in {r["id"] for r in views.run_list(index)}
+    shutil.rmtree(project / "artifacts/comparisons/later")
     summary = views.summary(index, directory.name)
     assert summary["completed"] == 2 and summary["initial_members"] == 1
     assert summary["curve"][-1]["information"] == pytest.approx(
-        sum(t["feedback"].get("residual_ic") or 0 for t in RunStore(directory).trials())
+        sum(
+            t["feedback"].get("residual_ic") or 0
+            for t in RunStore(directory).trials()
+            if t["feedback"]["accepted"]
+        )
     )
     mapped = views.map_view(index, directory.name)
     assert mapped["available"] is True
     kinds = sorted(p["kind"] for p in mapped["points"])
     assert kinds.count("initial") == 1
-    # The behavior duplicate lies on top of the initial landmark it duplicates.
+    # The behavior duplicate's group is pulled next to the initial member it duplicates.
     initial = next(p for p in mapped["points"] if p["kind"] == "initial")
     duplicate = next(p for p in mapped["points"] if p["trial"] == 2)
-    assert duplicate["offshore"] is False
-    assert math.hypot(initial["x"] - duplicate["x"], initial["y"] - duplicate["y"]) < 0.02
+    assert math.hypot(initial["x"] - duplicate["x"], initial["y"] - duplicate["y"]) < 0.2
+    assert 0 < mapped["spacing"] <= 0.84 / 14
     assert all(0 <= p["x"] <= 1 and 0 <= p["y"] <= 1 for p in mapped["points"])
     assert views.trial(index, directory.name, 2)["reason"] == "behavior_duplicate"
     with pytest.raises(KeyError):
@@ -328,23 +538,41 @@ def test_dashboard_views_read_a_residual_run_without_writing(project, version, t
     assert after == before
 
 
-def test_dashboard_map_is_unavailable_without_residual_and_layout_helpers():
-    import math as _math
+def test_region_layout_pulls_correlated_regions_together_and_packs_the_rest():
+    from alpha_atlas.dashboard.views import _layout_groups, _sunflower
 
-    from alpha_atlas.dashboard.views import _classical_mds, _place
+    sizes = np.array([1.0, 1.0, 1.0, 1.0])
+    affinity = np.zeros((4, 4))
+    affinity[0, 1] = affinity[1, 0] = 0.9
+    position = _layout_groups(sizes, affinity)
+    distance = np.linalg.norm(position[:, None] - position[None], axis=2)
+    assert distance[0, 1] < distance[0, 2] and distance[0, 1] < distance[2, 3]
+    unlinked = [distance[i, j] for i in range(4) for j in range(i + 1, 4) if (i, j) != (0, 1)]
+    assert min(unlinked) > 2.0  # Unrelated Regions never overlap.
+    assert np.array_equal(position, _layout_groups(sizes, affinity))  # Deterministic.
+    assert np.array_equal(_layout_groups(np.array([1.0]), np.zeros((1, 1))), [[0.0, 0.0]])
+    # A hub correlated with many Regions must not make the iteration diverge.
+    many = 60
+    hub = np.zeros((many, many))
+    hub[0, 1:] = hub[1:, 0] = 0.6
+    hub[1:20, 1:20] = 0.3
+    np.fill_diagonal(hub, 0)
+    spread = _layout_groups(np.full(many, 2.0), hub)
+    assert np.isfinite(spread).all() and np.abs(spread).max() < 200
+    from alpha_atlas.dashboard.views import _disc_radius
 
-    distance = np.array([[0, 1, 1], [1, 0, 1], [1, 1, 0]], dtype=float)
-    coordinates = _classical_mds(distance)
-    pairwise = [
-        np.linalg.norm(coordinates[i] - coordinates[j]) for i, j in ((0, 1), (0, 2), (1, 2))
-    ]
-    assert pairwise == pytest.approx([1, 1, 1], abs=1e-6)
-    landmarks = np.array([[0.0, 0.0], [1.0, 0.0]])
-    near_first, strongest = _place(landmarks, [0.99, 0.0])
-    assert strongest == 0.99 and np.linalg.norm(near_first - landmarks[0]) < 0.2
-    assert _place(landmarks, [0.1, None]) is None  # Offshore: no measured position.
-    assert _place(landmarks, []) is None
-    assert _math.isfinite(float(coordinates.sum()))
+    radii = [_disc_radius(n) for n in (1, 5, 20, 80, 320)]
+    assert radii == sorted(radii)
+    # Unit spacing up to 20 attempts; afterwards 16x the attempts only doubles the radius.
+    assert _disc_radius(20) == pytest.approx(0.62 * math.sqrt(20))
+    assert _disc_radius(320) == pytest.approx(2 * _disc_radius(20))
+    from alpha_atlas.dashboard.views import STRETCH
+
+    extent = np.linalg.norm(_sunflower(320, 0.7), axis=1).max()
+    assert _disc_radius(320) < extent <= _disc_radius(320) * STRETCH * 1.24
+    disc = _sunflower(5, 0.3)
+    assert np.array_equal(disc[0], [0.0, 0.0])
+    assert min(np.linalg.norm(disc[i] - disc[j]) for i in range(5) for j in range(i)) > 0.5
 
 
 def test_mechanism_regions_get_timelines_from_the_shared_status(project, monkeypatch):
@@ -375,8 +603,16 @@ def test_mechanism_regions_get_timelines_from_the_shared_status(project, monkeyp
     for region in mapped["regions"]:
         statuses = [step["status"] for step in region["timeline"]]
         assert statuses[0] == "probing" or len(region["timeline"]) >= 2
+    assert all(
+        set(step["by_scale"]) == {"up_to_1h", "1h_to_1d", "over_1d"}
+        for region in mapped["regions"]
+        for step in region["timeline"]
+    )
     assert sum(len(p["trials"]) for p in plans["plans"]) == 3
     assert all(p["explorer"] for p in plans["plans"])
+    # The page shows proposals only; cited sources stay in the checkpoint.
+    assert all("proposals" in p["explorer"] for p in plans["plans"])
+    assert not any("sources" in p["explorer"] for p in plans["plans"])
 
 
 def test_dashboard_http_serves_api_and_static_only(tmp_path):
@@ -402,3 +638,126 @@ def test_dashboard_http_serves_api_and_static_only(tmp_path):
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_v2_async_runs_concurrent_plans_with_v2_rules_and_resumes(project, monkeypatch):
+    from test_v1 import V1Models
+
+    from alpha_atlas.checkpoint import read_json
+    from alpha_atlas.methods.annealing import AnnealingLLMSearch
+    from alpha_atlas.methods.v2_sync import (
+        ASYNC_STATE_VERSION,
+        V2AsyncConfig,
+        V2AsyncSearch,
+    )
+    from alpha_atlas.runner import resume, run
+
+    def method(models):
+        return V2AsyncSearch(
+            42,
+            V2AsyncConfig(
+                chat_model="m",
+                candidates_per_plan=2,
+                parallel_plans=2,
+                probe_attempts=1,
+                scale_statistics=True,
+                mechanism_regions=True,
+            ),
+            models=models,
+        )
+
+    probe = method(V1Models())
+    assert probe.configuration["parallel_plans"] == 2
+    assert probe.explorer_prompt.endswith(MECHANISM_REGION_PROMPT)
+    state = probe.dump_state()
+    assert state["version"] == ASYNC_STATE_VERSION and "groups" in state
+    method(V1Models()).load_state(state)
+    for other in ("atlas_explorer_v1_async", STATE_VERSION):
+        with pytest.raises(ValueError, match="V2 Async requires its own checkpoint"):
+            method(V1Models()).load_state({**state, "version": other})
+
+    enable_residual(project)
+    expressions = ["$adj_close", "$volume", "$adj_close * $volume", "$adj_close / $volume"]
+    original = AnnealingLLMSearch.tell
+
+    def interrupt(self, feedback):
+        original(self, feedback)
+        if feedback[0].factor_trial_index == 2:
+            raise KeyboardInterrupt
+
+    with monkeypatch.context() as patch:
+        patch.setattr(AnnealingLLMSearch, "tell", interrupt)
+        with pytest.raises(KeyboardInterrupt):
+            run(
+                project,
+                "ashare",
+                "fold1",
+                "v2_async",
+                42,
+                4,
+                method_impl=method(
+                    V1Models(responses=[mechanism_proposals()], expressions=expressions)
+                ),
+            )
+    directory = next((project / "artifacts/runs").iterdir())
+    restored = method(V1Models(responses=[mechanism_proposals()], expressions=expressions[2:]))
+    resume(project, directory, method_impl=restored)
+    assert restored.completed_attempts == 4
+    saved = read_json(directory / "checkpoint.json")["method_state"]
+    assert saved["version"] == ASYNC_STATE_VERSION
+    regions = {r["region_id"] for r in saved["factor_trial_records"]}
+    assert len(regions) == 2 and all(r.startswith("explorer-") for r in regions)
+    assert {saved["proposed_regions"][r]["name"] for r in regions} == {
+        "Inventory pressure reversal",
+        "Delayed discovery drift",
+    }
+    trials = RunStore(directory).trials()
+    assert any("residual_ic" in t["feedback"] for t in trials)
+
+
+def test_adaptive_depth_and_region_budget_share():
+    from test_v1 import proposals
+
+    from alpha_atlas.contracts import SearchContext
+    from alpha_atlas.methods.v2_sync import FOCUS_PROMPT
+
+    plain = v2_sync()
+    assert "adaptive_depth" not in plain.configuration
+    assert "region_budget_share" not in plain.configuration
+    assert not plain.explorer_prompt.endswith(FOCUS_PROMPT)
+    for bad in ({"adaptive_depth": 1}, {"region_budget_share": 0}, {"region_budget_share": 1.5}):
+        with pytest.raises(ValueError):
+            V2SyncConfig(chat_model="m", **bad)
+
+    # Six attempts in "mean": saturated (best above sea, recent two below) and over 50% of 10.
+    method = method_with(
+        ["mean"] * 6,
+        [0.009, 0.006, 0.001, 0.0, 0.001, 0.002],
+        adaptive_depth=True,
+        region_budget_share=0.5,
+    )
+    assert method.configuration["region_budget_share"] == 0.5
+    assert method.explorer_prompt.endswith(FOCUS_PROMPT)
+    method.attempts_total = 10
+    method.completed_attempts = 9  # Late budget: the temperature alone would choose depth.
+    method.active_region_id = "mean"
+    method._catalog = lambda: ({"regions": []}, {})
+    context = SearchContext("ashare", "1d", None, "ic", 1)
+    state = method._new_round(context, 7)
+    assert state["mode"] == "breadth" and state["mode_reason"] == "active Region saturated"
+    assert method._closed("mean") and not method._closed("std")
+    catalog = {
+        op: {"id": op, "continent_ids": ["price_volume"], "source": "baseline_grammar"}
+        for op in ("mean", "std")
+    }
+    with pytest.raises(ValueError, match="mean is closed"):
+        method._validate_proposals(proposals(2), catalog, set())
+    with pytest.raises(ValueError, match="mean is closed"):
+        method._validate_exploration({"region_id": "mean", "direction": "d"}, catalog)
+    open_plan = method._validate_exploration({"region_id": "std", "direction": "d"}, catalog)
+    assert open_plan["region_id"] == "std"
+    without = method_with(["mean"] * 6, [0.009, 0.006, 0.001, 0.0, 0.001, 0.002])
+    without.attempts_total, without.completed_attempts = 10, 9
+    without.active_region_id = "mean"
+    without._catalog = method._catalog
+    assert without._new_round(context, 7)["mode"] == "depth"

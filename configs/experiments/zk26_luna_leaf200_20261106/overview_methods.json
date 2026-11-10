@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "id": "zk26_luna_leaf200_20261106_overview_methods",
+  "parent_plan": "configs/experiments/zk26_luna_leaf200_20261106/plan.json",
+  "experiment_version": "rq8_zk26_luna_leaf200_20261106",
+  "source_experiment_version": "rq8_zk26_seeded_fold2_overview_luna_v5",
+  "include_union": false,
+  "methods": [
+    "v1_async",
+    "alphaschema"
+  ],
+  "seeds": [
+    42
+  ],
+  "attempts_per_method": 300,
+  "evaluation_nodes": [
+    200,
+    300
+  ],
+  "runs": [
+    "artifacts/runs/futures_kernel_5m_full-all-fold2-v1_async-42-5f77947f20",
+    "artifacts/runs/futures_kernel_5m_full-all-fold2-alphaschema-42-3a4f640d02"
+  ],
+  "purpose": "复用冻结因子，按 leaf200 重训 B26 及各独立方法扩充库；保留 200/300 次节点。"
+}

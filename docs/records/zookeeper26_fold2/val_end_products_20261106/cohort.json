@@ -1,0 +1,648 @@
+{
+  "source_run": "artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-61c42b9f7c/run.json",
+  "source_snapshot": "23b2d89c314645925e14e99f9fbbe58763d042170763011e8a2507ce60cc044b",
+  "val_end": "2023-12-31",
+  "last_val_trading_day": "2023-12-29",
+  "rule": "All exchange/product identities with MarketData observations on the last observed trading day at or before Val end; no Test information or turnover threshold used.",
+  "observation_window": [
+    "2023-12-01",
+    "2023-12-31"
+  ],
+  "count": 79,
+  "products": [
+    "A",
+    "AG",
+    "AL",
+    "AO",
+    "AP",
+    "AU",
+    "B",
+    "BB",
+    "BC",
+    "BR",
+    "BU",
+    "C",
+    "CF",
+    "CJ",
+    "CS",
+    "CU",
+    "CY",
+    "EB",
+    "EC",
+    "EG",
+    "FB",
+    "FG",
+    "FU",
+    "HC",
+    "I",
+    "IC",
+    "IF",
+    "IH",
+    "IM",
+    "J",
+    "JD",
+    "JM",
+    "JR",
+    "L",
+    "LC",
+    "LH",
+    "LR",
+    "LU",
+    "M",
+    "MA",
+    "NI",
+    "NR",
+    "OI",
+    "P",
+    "PB",
+    "PF",
+    "PG",
+    "PK",
+    "PM",
+    "PP",
+    "PX",
+    "RB",
+    "RI",
+    "RM",
+    "RR",
+    "RS",
+    "RU",
+    "SA",
+    "SC",
+    "SF",
+    "SH",
+    "SI",
+    "SM",
+    "SN",
+    "SP",
+    "SR",
+    "SS",
+    "T",
+    "TA",
+    "TF",
+    "TL",
+    "TS",
+    "UR",
+    "V",
+    "WH",
+    "WR",
+    "Y",
+    "ZC",
+    "ZN"
+  ],
+  "per_product": [
+    {
+      "exchange": "CFFEX",
+      "product": "IC",
+      "bars": 48,
+      "eligible_bars": 48,
+      "amount": 50791828080.0
+    },
+    {
+      "exchange": "CFFEX",
+      "product": "IF",
+      "bars": 48,
+      "eligible_bars": 48,
+      "amount": 65807898900.0
+    },
+    {
+      "exchange": "CFFEX",
+      "product": "IH",
+      "bars": 48,
+      "eligible_bars": 48,
+      "amount": 25674750960.0
+    },
+    {
+      "exchange": "CFFEX",
+      "product": "IM",
+      "bars": 48,
+      "eligible_bars": 48,
+      "amount": 58056389880.0
+    },
+    {
+      "exchange": "CFFEX",
+      "product": "T",
+      "bars": 51,
+      "eligible_bars": 51,
+      "amount": 53945395350.0
+    },
+    {
+      "exchange": "CFFEX",
+      "product": "TF",
+      "bars": 51,
+      "eligible_bars": 51,
+      "amount": 42006151200.0
+    },
+    {
+      "exchange": "CFFEX",
+      "product": "TL",
+      "bars": 51,
+      "eligible_bars": 51,
+      "amount": 21685068500.0
+    },
+    {
+      "exchange": "CFFEX",
+      "product": "TS",
+      "bars": 51,
+      "eligible_bars": 51,
+      "amount": 58111417880.0
+    },
+    {
+      "exchange": "CZCE",
+      "product": "AP",
+      "bars": 45,
+      "eligible_bars": 45,
+      "amount": 9686171040.0
+    },
+    {
+      "exchange": "CZCE",
+      "product": "CF",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 26487947750.0
+    },
+    {
+      "exchange": "CZCE",
+      "product": "CJ",
+      "bars": 45,
+      "eligible_bars": 45,
+      "amount": 1907332525.0
+    },
+    {
+      "exchange": "CZCE",
+      "product": "CY",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 326777400.0
+    },
+    {
+      "exchange": "CZCE",
+      "product": "FG",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 35554009920.0
+    },
+    {
+      "exchange": "CZCE",
+      "product": "JR",
+      "bars": 45,
+      "eligible_bars": 45,
+      "amount": 0.0
+    },
+    {
+      "exchange": "CZCE",
+      "product": "LR",
+      "bars": 45,
+      "eligible_bars": 45,
+      "amount": 0.0
+    },
+    {
+      "exchange": "CZCE",
+      "product": "MA",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 21331093470.0
+    },
+    {
+      "exchange": "CZCE",
+      "product": "OI",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 48736701000.0
+    },
+    {
+      "exchange": "CZCE",
+      "product": "PF",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 4979715060.0
+    },
+    {
+      "exchange": "CZCE",
+      "product": "PK",
+      "bars": 45,
+      "eligible_bars": 45,
+      "amount": 7234025990.0
+    },
+    {
+      "exchange": "CZCE",
+      "product": "PM",
+      "bars": 45,
+      "eligible_bars": 45,
+      "amount": 0.0
+    },
+    {
+      "exchange": "CZCE",
+      "product": "PX",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 2308261850.0
+    },
+    {
+      "exchange": "CZCE",
+      "product": "RI",
+      "bars": 45,
+      "eligible_bars": 45,
+      "amount": 0.0
+    },
+    {
+      "exchange": "CZCE",
+      "product": "RM",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 23320220140.0
+    },
+    {
+      "exchange": "CZCE",
+      "product": "RS",
+      "bars": 45,
+      "eligible_bars": 45,
+      "amount": 60990.0
+    },
+    {
+      "exchange": "CZCE",
+      "product": "SA",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 19381665280.0
+    },
+    {
+      "exchange": "CZCE",
+      "product": "SF",
+      "bars": 45,
+      "eligible_bars": 45,
+      "amount": 4031923280.0
+    },
+    {
+      "exchange": "CZCE",
+      "product": "SH",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 10738582260.0
+    },
+    {
+      "exchange": "CZCE",
+      "product": "SM",
+      "bars": 45,
+      "eligible_bars": 45,
+      "amount": 3439077330.0
+    },
+    {
+      "exchange": "CZCE",
+      "product": "SR",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 30505837680.0
+    },
+    {
+      "exchange": "CZCE",
+      "product": "TA",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 29295771450.0
+    },
+    {
+      "exchange": "CZCE",
+      "product": "UR",
+      "bars": 45,
+      "eligible_bars": 45,
+      "amount": 5837389280.0
+    },
+    {
+      "exchange": "CZCE",
+      "product": "WH",
+      "bars": 45,
+      "eligible_bars": 45,
+      "amount": 0.0
+    },
+    {
+      "exchange": "CZCE",
+      "product": "ZC",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 0.0
+    },
+    {
+      "exchange": "DCE",
+      "product": "A",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 5799930070.0
+    },
+    {
+      "exchange": "DCE",
+      "product": "B",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 4449558580.0
+    },
+    {
+      "exchange": "DCE",
+      "product": "BB",
+      "bars": 45,
+      "eligible_bars": 45,
+      "amount": 0.0
+    },
+    {
+      "exchange": "DCE",
+      "product": "C",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 8412130730.0
+    },
+    {
+      "exchange": "DCE",
+      "product": "CS",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 3532943890.0
+    },
+    {
+      "exchange": "DCE",
+      "product": "EB",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 14897149840.0
+    },
+    {
+      "exchange": "DCE",
+      "product": "EG",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 16600646620.0
+    },
+    {
+      "exchange": "DCE",
+      "product": "FB",
+      "bars": 45,
+      "eligible_bars": 45,
+      "amount": 26088360.0
+    },
+    {
+      "exchange": "DCE",
+      "product": "I",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 21286232500.0
+    },
+    {
+      "exchange": "DCE",
+      "product": "J",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 6796281900.0
+    },
+    {
+      "exchange": "DCE",
+      "product": "JD",
+      "bars": 45,
+      "eligible_bars": 45,
+      "amount": 3490318220.0
+    },
+    {
+      "exchange": "DCE",
+      "product": "JM",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 11849679060.0
+    },
+    {
+      "exchange": "DCE",
+      "product": "L",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 11530146010.0
+    },
+    {
+      "exchange": "DCE",
+      "product": "LH",
+      "bars": 45,
+      "eligible_bars": 45,
+      "amount": 15384927200.0
+    },
+    {
+      "exchange": "DCE",
+      "product": "M",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 34326535230.0
+    },
+    {
+      "exchange": "DCE",
+      "product": "P",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 45825816580.0
+    },
+    {
+      "exchange": "DCE",
+      "product": "PG",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 17552028840.0
+    },
+    {
+      "exchange": "DCE",
+      "product": "PP",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 12361051945.0
+    },
+    {
+      "exchange": "DCE",
+      "product": "RR",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 258469910.0
+    },
+    {
+      "exchange": "DCE",
+      "product": "V",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 24003159980.0
+    },
+    {
+      "exchange": "DCE",
+      "product": "Y",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 42170975640.0
+    },
+    {
+      "exchange": "GFEX",
+      "product": "LC",
+      "bars": 45,
+      "eligible_bars": 45,
+      "amount": 21048485500.0
+    },
+    {
+      "exchange": "GFEX",
+      "product": "SI",
+      "bars": 45,
+      "eligible_bars": 45,
+      "amount": 1681861350.0
+    },
+    {
+      "exchange": "INE",
+      "product": "BC",
+      "bars": 93,
+      "eligible_bars": 93,
+      "amount": 2671154150.0
+    },
+    {
+      "exchange": "INE",
+      "product": "EC",
+      "bars": 45,
+      "eligible_bars": 45,
+      "amount": 13508962510.0
+    },
+    {
+      "exchange": "INE",
+      "product": "LU",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 6147610220.0
+    },
+    {
+      "exchange": "INE",
+      "product": "NR",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 13692431000.0
+    },
+    {
+      "exchange": "INE",
+      "product": "SC",
+      "bars": 111,
+      "eligible_bars": 111,
+      "amount": 118046185400.0
+    },
+    {
+      "exchange": "SHFE",
+      "product": "AG",
+      "bars": 111,
+      "eligible_bars": 111,
+      "amount": 42533085795.0
+    },
+    {
+      "exchange": "SHFE",
+      "product": "AL",
+      "bars": 93,
+      "eligible_bars": 93,
+      "amount": 14759353450.0
+    },
+    {
+      "exchange": "SHFE",
+      "product": "AO",
+      "bars": 93,
+      "eligible_bars": 93,
+      "amount": 2891156360.0
+    },
+    {
+      "exchange": "SHFE",
+      "product": "AU",
+      "bars": 111,
+      "eligible_bars": 111,
+      "amount": 54228751760.0
+    },
+    {
+      "exchange": "SHFE",
+      "product": "BR",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 1269734150.0
+    },
+    {
+      "exchange": "SHFE",
+      "product": "BU",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 9498841720.0
+    },
+    {
+      "exchange": "SHFE",
+      "product": "CU",
+      "bars": 93,
+      "eligible_bars": 93,
+      "amount": 19808752050.0
+    },
+    {
+      "exchange": "SHFE",
+      "product": "FU",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 27606766120.0
+    },
+    {
+      "exchange": "SHFE",
+      "product": "HC",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 16066271020.0
+    },
+    {
+      "exchange": "SHFE",
+      "product": "NI",
+      "bars": 93,
+      "eligible_bars": 93,
+      "amount": 30025705770.0
+    },
+    {
+      "exchange": "SHFE",
+      "product": "PB",
+      "bars": 93,
+      "eligible_bars": 93,
+      "amount": 2663398375.0
+    },
+    {
+      "exchange": "SHFE",
+      "product": "RB",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 48087734460.0
+    },
+    {
+      "exchange": "SHFE",
+      "product": "RU",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 42906347800.0
+    },
+    {
+      "exchange": "SHFE",
+      "product": "SN",
+      "bars": 93,
+      "eligible_bars": 93,
+      "amount": 12809363810.0
+    },
+    {
+      "exchange": "SHFE",
+      "product": "SP",
+      "bars": 69,
+      "eligible_bars": 69,
+      "amount": 27013833100.0
+    },
+    {
+      "exchange": "SHFE",
+      "product": "SS",
+      "bars": 93,
+      "eligible_bars": 93,
+      "amount": 13575831475.0
+    },
+    {
+      "exchange": "SHFE",
+      "product": "WR",
+      "bars": 45,
+      "eligible_bars": 45,
+      "amount": 8618620.0
+    },
+    {
+      "exchange": "SHFE",
+      "product": "ZN",
+      "bars": 93,
+      "eligible_bars": 93,
+      "amount": 8951654525.0
+    }
+  ]
+}

@@ -87,7 +87,9 @@ def test_paired_errors_refuse_missing_instead_of_silently_changing_sample(bad):
         paired_prediction_metrics(frame, pl.DataFrame({"product": ["A"], "weight": [1.0]}))
 
 
-def test_bootstrap_matches_independent_raw_row_resampling():
+@pytest.mark.parametrize("correlation", ["pearson", "spearman"])
+@pytest.mark.parametrize("ties", [False, True])
+def test_bootstrap_matches_independent_raw_row_resampling(correlation, ties):
     rng = np.random.default_rng(4)
     days = [date(year, 1, day) for year in (2024, 2025) for day in (2, 3, 4)]
     rows = []
@@ -105,9 +107,15 @@ def test_bootstrap_matches_independent_raw_row_resampling():
                         "prediction": target + 0.4 * rng.normal(),
                     }
                 )
+    if ties:
+        for row in rows:
+            for name in ("target", "baseline", "prediction"):
+                row[name] = float(round(row[name]))
     frame = pl.DataFrame(rows)
     weights = pl.DataFrame({"product": ["A", "B"], "weight": [1.0, 3.0]})
-    actual = paired_block_bootstrap(frame, weights, days=2, repeats=30, seed=91)
+    actual = paired_block_bootstrap(
+        frame, weights, days=2, repeats=30, seed=91, correlation=correlation
+    )
     # Independently reconstruct actual raw rows, preserving both products and complete days.
     rng = np.random.default_rng(91)
     samples = [[] for _ in range(30)]
@@ -128,27 +136,34 @@ def test_bootstrap_matches_independent_raw_row_resampling():
                     if r["product"] == product
                 ]
             )
+            errors.append(np.mean((values[:, 0, None] - values[:, 1:]) ** 2, axis=0))
+            if correlation == "spearman":
+                # Brute-force midranks of the duplicated sample, including all ties.
+                less = (values[:, None, :] > values[None, :, :]).sum(axis=1)
+                equal = (values[:, None, :] == values[None, :, :]).sum(axis=1)
+                values = 1 + less + (equal - 1) / 2
             correlations.append(
                 np.corrcoef(values[:, 0], values[:, 2])[0, 1]
                 - np.corrcoef(values[:, 0], values[:, 1])[0, 1]
             )
-            errors.append(np.mean((values[:, 0, None] - values[:, 1:]) ** 2, axis=0))
         delta.append(np.average(correlations, weights=[1, 3]))
         b, p = np.average(errors, weights=[1, 3], axis=0)
         reductions.append(1 - p / b)
-    assert actual["delta_weighted_pearson"]["interval_95"] == pytest.approx(
+    assert actual[f"delta_weighted_{correlation}"]["valid_replicates"] == 30
+    assert actual[f"delta_weighted_{correlation}"]["interval_95"] == pytest.approx(
         np.quantile(delta, [0.025, 0.975])
     )
     assert actual["relative_mse_reduction"]["interval_95"] == pytest.approx(
         np.quantile(reductions, [0.025, 0.975])
     )
     same = frame.with_columns(pl.col("baseline").alias("prediction"))
-    zero = paired_block_bootstrap(same, weights, days=20, repeats=8)
-    assert zero["delta_weighted_pearson"]["interval_95"] == pytest.approx([0, 0])
+    zero = paired_block_bootstrap(same, weights, days=20, repeats=8, correlation=correlation)
+    assert zero[f"delta_weighted_{correlation}"]["interval_95"] == pytest.approx([0, 0])
     assert zero["relative_mse_reduction"]["interval_95"] == pytest.approx([0, 0])
 
 
-def test_constant_predictions_keep_error_but_never_create_zero_ic():
+@pytest.mark.parametrize("correlation", ["pearson", "spearman"])
+def test_constant_predictions_keep_error_but_never_create_zero_ic(correlation):
     frame = pl.DataFrame(
         {
             "row_id": range(10),
@@ -163,9 +178,45 @@ def test_constant_predictions_keep_error_but_never_create_zero_ic():
     result = paired_prediction_metrics(frame, weights)
     assert result["metrics"]["weighted_pearson"]["delta"] is None
     assert result["relative_mse_reduction"] == 0
-    boot = paired_block_bootstrap(frame, weights, repeats=10)
-    assert boot["delta_weighted_pearson"]["valid_replicates"] == 0
-    assert boot["delta_weighted_pearson"]["interval_95"] is None
+    boot = paired_block_bootstrap(frame, weights, repeats=10, correlation=correlation)
+    assert boot[f"delta_weighted_{correlation}"]["valid_replicates"] == 0
+    assert boot[f"delta_weighted_{correlation}"]["interval_95"] is None
+
+
+def test_spearman_bootstrap_handles_absent_and_resampled_constant_products():
+    days = [date(2024, 1, 2), date(2024, 1, 3)]
+    rows = []
+    for day_index, day in enumerate(days):
+        for product in ("A", "B"):
+            if product == "B" and day_index == 0:
+                continue
+            for i in range(6):
+                rows.append(
+                    {
+                        "row_id": len(rows),
+                        "trading_day": day,
+                        "product": product,
+                        "target": float(i // 2),
+                        "baseline": float(day_index if product == "A" else i % 3),
+                        "prediction": float(i + day_index),
+                    }
+                )
+    weights = pl.DataFrame({"product": ["A", "B"], "weight": [1.0, 3.0]})
+    actual = paired_block_bootstrap(
+        pl.DataFrame(rows), weights, days=1, repeats=30, seed=19, correlation="spearman"
+    )["delta_weighted_spearman"]
+    rng = np.random.default_rng(19)
+    deltas = []
+    for _ in range(30):
+        picked = [days[i] for i in rng.integers(0, 2, size=2)]
+        sample = [row for day in picked for row in rows if row["trading_day"] == day]
+        frame = pl.DataFrame(sample).drop("row_id").with_row_index("row_id")
+        delta = paired_prediction_metrics(frame, weights)["metrics"]["weighted_spearman"]["delta"]
+        if delta is not None:
+            deltas.append(delta)
+    assert 0 < len(deltas) < 30
+    assert actual["valid_replicates"] == len(deltas)
+    assert actual["interval_95"] == pytest.approx(np.quantile(deltas, [0.025, 0.975]))
 
 
 @pytest.mark.parametrize("include_union", [True, False])

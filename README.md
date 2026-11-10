@@ -1,183 +1,102 @@
 # Alpha Atlas
 
-**A Quantitative Knowledge Map for Navigating and Expanding the Frontiers of Alpha Discovery**
-
 **面向 Alpha 发现的量化知识地图：导航、探索与拓展知识前沿**
 
-Alpha Atlas 的出发点是一个简单的想法：因子发现应当积累对市场的理解，让每一次实验都能
-帮助研究者判断下一步值得探索什么。
+Alpha Atlas 是因子搜索与研究评估平台。它把市场假说转化为可检验的因子表达式，记录搜索、
+评估和因子之间的关系，帮助研究者判断已经探索了什么，以及下一步值得研究什么。
+项目希望结合研究语义、表达式结构和实证行为，识别相似信号并组织研究证据。
 
-## 项目动机
-
-遗传编程、强化学习和 LLM Agent 等方法，让自动生成和评估因子表达式变得越来越容易。
-但候选公式数量的增长，并不必然带来新知识。搜索可能反复发现相似信号，在已有方向上
-不断微调，而一些有价值的市场假说仍未得到检验。
-
-因此，因子研究面临的问题不仅是如何提高搜索效率，还包括：**哪些方向已经探索过？
-不同因子之间有什么联系？下一步应该去哪里寻找？**
-
-Alpha Atlas 希望通过一张持续演化的量化知识地图，组织已有研究，并为后续探索提供依据。
-
-## 核心设想
-
-在这张地图中，每个因子都由三个相互关联的维度描述：
-
-- **语义：** 因子试图刻画的市场机制或研究假说，例如短期过度反应、流动性恢复和信息传播延迟。
-- **计算结构：** 将假说转化为可检验表达式的计算过程，包括所用字段、算子及其组合关系。
-- **实证行为：** 因子在数据中的预测能力、换手率、衰减特征、稳定性，以及与其他因子的关系。
-
-这三个维度共同构成因子的完整研究表示。相似的公式可能表现不同，不同的假说也可能产生
-高度重合的信号。连接这些信息，有助于识别重复探索、理解因子之间的差异，并发现尚未
-充分研究的方向。
-
-## 从因子搜索到知识探索
-
-Alpha Atlas 设想将**预测质量、新颖性与探索覆盖度**共同纳入搜索目标，让系统既关注
-有效信号，也关注实验是否带来了新的认识。
-
-知识地图将帮助研究者和搜索算法定位已有成果、寻找相关证据，并选择值得检验的新方向。
-地图中的空白只代表探索不足，是否存在有效信号，仍需通过实验判断。
-
-长期来看，我们希望形成一个持续迭代的研究循环：
-
-> 提出市场机制假说 → 在知识地图中定位 → 转化为因子表达式 → 实验验证 → 更新地图 → 选择下一步探索方向
-
-AI 在其中的作用，是结合已有知识提出假说、设计实验并解释结果。探索既可以发生在公式
-结构层面，也可以围绕市场机制和研究问题展开；成功与失败的实验，都应为后续研究提供信息。
-
-## 项目愿景与当前阶段
-
-Alpha Atlas 的定位是 **AI 辅助的开放式金融发现（Open-ended Financial Discovery）**。
-我们希望让因子研究成为一个持续积累知识的过程：每一次实验，都让我们更清楚地知道
-已经理解了什么、哪些问题仍不确定，以及下一步值得探索哪里。
-
-上述内容是项目的研究方向与设计愿景。目前以固定 train/val 区间内的因子搜索为基础，
-已提供统一数据接口、表达式 DSL、数值评估、因子库、运行恢复与冻结后的样本外评估。
-搜索方法包括 Random、GP、符号 MCTS、区域 UCB 原型，以及 AlphaPROBE、MCTS-LLM、
-三 Agent 区域退火搜索和 ReAct 的方法接入。三模态学习地图与自动开放式假说生成仍属后续研究，方法接入也不代表
-已复现原论文收益。具体边界见[方法目录](docs/methods/README.md)与[知识地图设计](docs/design.md)。
-
-## 项目安装
-
-需要 **Python 3.13** 和 **uv**。以下命令在仓库根目录执行，示例使用 PowerShell：
-
-```powershell
-uv sync
-uv run atlas --help
-uv run atlas config
-```
-
-`uv sync` 安装项目与开发依赖；依赖版本由 `uv.lock` 固定。如需自行获取 RiceQuant 数据，
-额外安装供应商依赖：
-
-```powershell
-uv sync --extra ricequant
-```
-
-LLM 方法还需要配置模型服务。使用前参阅各方法说明：
-[AlphaPROBE](docs/methods/alphaprobe.md)、[AlphaSchema](docs/methods/alphaschema.md)、
-[MCTS-LLM](docs/methods/mcts_llm.md)、
-[三 Agent 区域退火搜索](docs/methods/annealing.md)、
-[V1 Explorer 更新版](docs/methods/v1.md)、[V1 异步版](docs/methods/v1_async.md)、[V2 Sync](docs/methods/v2_sync.md)、[ReAct](docs/methods/react.md)。
-下方最小运行示例使用无需模型服务的 Random 基线。
-
-## 数据准备与校验
-
-数据独立保存在 `data/`，不随 Git 分发。当前研究支持 RiceQuant 原生 A 股日线和期货
-5 分钟数据；A 股股票池使用历史 HS300、ZZ500、ZZ1000 的逐日成员，期货使用真实合约，
-窗口和标签不跨合约。
-
-先查看本地数据状态：
-
-```powershell
-uv run atlas data-status
-```
-
-尚未获取数据时，配置供应商凭据后显式运行采集脚本。将示例路径替换为仓库外已有的
-凭据文件路径，不将凭据复制进项目：
-
-```powershell
-uv run python scripts/acquire_data.py futures --env-file C:\path\to\credentials.env
-uv run python scripts/acquire_data.py ashare --env-file C:\path\to\credentials.env
-```
-
-已有数据后，执行对应资产的完整性审计：
-
-```powershell
-uv run atlas audit-data --asset futures
-uv run atlas audit-data --asset ashare
-```
-
-`data-status` 读取采集状态；`audit-data` 检查分区完整性、主键、行情异常等，并保存
-`audit.json`。结合 `data/<asset>/manifest.json` 查看实际覆盖、缺失与来源；结构审计
-不能替代全面的金融数据质量审查，未完成的数据集默认不能用于正式实验。
-数据口径与已知例外见[研究协议](docs/research_protocol.md)和[数据验收记录](docs/records/data.md)。
+目前平台提供统一数据接口、表达式 DSL、因子评估与准入、研究地图、运行恢复和冻结后的
+样本外评估。它支持随机搜索、遗传规划、符号搜索及多种 LLM 方法。完整的开放式知识地图
+仍是研究方向，方法接入也不代表已经复现原论文收益。
 
 ## 架构
 
-依赖只向下：上层读取下层的结果，下层不感知上层。
-
 [![Alpha Atlas 共享研究架构](docs/figures/architecture.svg)](docs/figures/architecture.svg)
 
-| 层 | 位置 | 权威内容 |
-| --- | --- | --- |
-| 数据 | [assets/](src/alpha_atlas/assets/)、[configs/versions/](configs/versions/) | 快照、字段、fold、算子、评价规则与模型配置；冻结后不改，变更新建版本 |
-| 平台 | [expressions.py](src/alpha_atlas/expressions.py)、[evaluation.py](src/alpha_atlas/evaluation.py)、[library.py](src/alpha_atlas/library.py)、[session.py](src/alpha_atlas/session.py) | 数值、准入、预算与冻结，所有方法共用 |
-| 方法 | [methods/](src/alpha_atlas/methods/) | 搜索策略、奖励、提示词与方法状态 |
-| 实验 | [runner.py](src/alpha_atlas/runner.py)、[experiment.py](src/alpha_atlas/experiment.py)、[incremental.py](src/alpha_atlas/incremental.py)、[configs/experiments/](configs/experiments/) | 单次运行、冻结后 OOS／模型，以及预先声明的多方法比较 |
-| 结论 | 运行目录 `report.md`、[experiment_overview.md](experiment_overview.md)、[docs/records/](docs/records/experiments.md) | 自动报告与结果总表；结论和限制写入实验记录 |
+- **资产接入**：[assets/](src/alpha_atlas/assets/) 负责数据来源、证券身份、时间、成员和质量映射，
+  通过 `MarketData` 提供特征；评价层根据资产配置构造目标。不同资产的频率、标签和指标可不同；
+  新资产还须验证对应适配和评价口径。
+- **方法接入**：[methods/](src/alpha_atlas/methods/) 负责候选生成、搜索策略和奖励，复用
+  `SearchSession` 的研究工具；平台统一负责执行、评价、预算和准入。AlphaAtlas 方法由
+  Explorer 选方向、Analyst 制定计划、Miner 生成候选，其他方法沿用各自策略。
+  方法与实现边界见[方法目录](docs/methods/README.md)。
+- **实验执行**：[runner.py](src/alpha_atlas/runner.py) 负责单次运行、恢复和冻结；
+  [incremental.py](src/alpha_atlas/incremental.py) 负责预先声明的多方法配对比较。
+  每个资产、数据集、股票池、fold、方法、seed 和运行 ID 独立维护因子库与地图。
 
-一次研究的顺序：选定数据版本 → 在 `configs/experiments/` 写下问题、方法、预算与指标 →
-搜索并冻结 → 全部开发决策固定后打开 Test → 自动填写总表，人工在实验记录中写结论。
-train/val 用于开发反馈；test 不参与搜索、入库或因子选择。
+搜索只使用 Train / Val 反馈；研究决策冻结后才读取 Test。方法奖励不代替平台准入，
+共享框架也不意味着不同资产或不同搜索空间的结果可以直接比较。
 
-## 实验入口
+## 安装与数据
 
-以下命令在仓库根目录执行。数据不随 Git 分发，缺少或不匹配的快照会报错。
-
-| 用途 | 命令 |
-| --- | --- |
-| 查看数据状态／审计 | `uv run atlas data-status`、`uv run atlas audit-data --asset futures` |
-| 采集数据（显式发起） | `uv run python scripts/acquire_data.py futures --env-file <凭据文件>` |
-| 列出／查看冻结版本 | `uv run atlas versions`、`uv run atlas versions rq8_zk26_fold2_v2` |
-| 单次运行（含收尾） | `uv run atlas run --version <版本> --method <方法> --attempts 300` |
-| 只搜索并冻结 | 上述命令加 `--search-only` |
-| 中断后续跑 | `uv run atlas resume artifacts/runs/<run_id>`（可加 `--search-only`） |
-| 冻结后收尾 | `uv run atlas finish artifacts/runs/<run_id>`：单因子 OOS、Linear／LightGBM、库内相似度，并填总表 |
-| 单项评估 | `uv run atlas test <run_dir>`、`uv run atlas model <run_dir> [--test]` |
-| 重建／查看报告 | `uv run atlas report <run_dir>`、`uv run atlas report <run_dir> --oos` |
-| 多方法配对比较 | `uv run atlas experiment configs/experiments/<plan>/<scope>.json` |
-| 比较只搜索／打开 Test | 上述命令加 `--search-only`；全部 scope 拟合完成后加 `--test` |
-| 观测台（监控、地图回放、研究记录） | `uv run atlas ui`，浏览器打开 http://127.0.0.1:8780/ |
-| 参考因子库 | `uv run python scripts/evaluate_zookeeper.py --fold fold2`、`uv run python scripts/evaluate_reference.py --fold fold1 --bars-per-day 48` |
-
-方法名见[方法目录](docs/methods/README.md)；`random`、`gp`、`mcts`、`atlas` 无需模型服务。
-`atlas experiment` 的 scope 列出 `runs` 时复用已冻结运行，否则按方法 × seed 启动搜索；
-运行 ID 由 scope、方法和 seed 确定，重复同一命令即续跑。默认输出到
-`artifacts/experiments/<scope.id>/`，历史结果用 `--output` 指定原目录。
-
-最小示例（无需模型服务）：
+需要 Python 3.13 和 uv。在仓库根目录运行：
 
 ```bash
-uv run atlas run --version rq8_zk26_fold2_v2 --method random --attempts 10
+uv sync
+uv run atlas --help
+uv run atlas data-status
 ```
 
-运行结果保存在 `artifacts/runs/<run_id>/`，阅读入口为其中的 `report.md`。已保存的模型与
-评估结果会复用；失败不填表，同一运行不会重复新增行。正常收尾不请求模型服务。
-旧运行沿用 `--asset <资产> --fold <fold>` 入口恢复与评估；新实验使用 `--version`。
-`--fields` 只用于显式缩小字段；身份、成员、质量、复权元数据与标签不属于默认特征。
-开发与检查要求见[开发指南](docs/development.md)。
+数据保存在 `data/`，不随 Git 分发。当前支持 RiceQuant 原生 A 股日线和期货 5 分钟数据：
+A 股使用历史逐日股票池；期货使用真实合约，标签不跨合约或连续段，因子窗口按资产 profile 设置。
+美股演示材料为合成数据，正式资产适配和 PIT 尚未验证。数据口径与限制见[研究协议](docs/research_protocol.md)。
 
-## 文档导航
+如需自行采集数据，先安装 `uv sync --extra ricequant`，再显式执行对应命令，凭据文件放在仓库外：
 
-| 文档 | 用途 |
-| --- | --- |
-| [知识地图设计](docs/design.md) | 原理、研究设想与后续验收目标 |
-| [开发指南](docs/development.md) | 开发原则、模块职责、检查与文档维护 |
-| [Zookeeper 26/37](src/alpha_atlas/factor_libraries/zookeeper/README.md) | JSONL 定义、固定模型 baseline、RiceQuant 代理适配与 PIT 保证范围 |
-| [数据与实验规范](docs/research_protocol.md) | 数据边界、评价口径与实验流程 |
-| [方法接入规范](docs/method_reproduction.md) | 复现边界、预算、公平比较与恢复 |
-| [DSL](docs/dsl.md) / [算子目录](docs/operators.md) | 表达式、数值语义与算子开发 |
-| [研究工具](docs/research_tools.md) / [模型评估](docs/model.md) | 公共 session 与下游预测接口 |
-| [搜索方法](docs/methods/README.md) | 方法状态、算法、差异及配置 |
-| [实验记录](docs/records/experiments.md) / [数据记录](docs/records/data.md) | 历史证据与已知限制 |
+```bash
+uv run python scripts/acquire_data.py futures --env-file <凭据文件>
+uv run python scripts/acquire_data.py ashare --env-file <凭据文件>
+uv run atlas audit-data --asset futures
+```
+
+A 股审计将资产名换成 `ashare`。采集与审计结果见数据目录的 `manifest.json` 和 `audit.json`；
+正式运行默认要求数据完整。历史版本固定数据快照，必须准备版本指定的原快照，普通采集不会
+自动重建历史 Kernel 快照。LLM 方法还需要对应的模型服务配置。
+
+## 统一实验入口
+
+所有搜索方法通过同一个 `atlas run` 入口运行。下面的示例使用本地已审计的原生期货数据，
+以无需模型服务的 Random 方法搜索 10 次并冻结，不打开 Test：
+
+```bash
+uv run atlas run --asset futures --fold fold2 --method random --attempts 10 --search-only
+```
+
+使用冻结配置时，先查看配置，再启动同一个入口。下面是历史 fold2 的 V3 异步与残差准入配置：
+
+```bash
+uv run atlas versions
+uv run atlas versions rq8_fold2_v3async_luna_p8_pe8_px3_avail_nodepth_residual_v10
+uv run atlas run --config rq8_fold2_v3async_luna_p8_pe8_px3_avail_nodepth_residual_v10 --attempts 1000 --search-only
+```
+
+`--config` 读取 [configs/versions/](configs/versions/) 中的配置名，固定数据快照、资产、fold、
+字段、准入和方法参数。配置只包含一个方法时自动选择；包含多个方法时必须用 `--method` 指定。
+不同方法须在配置中声明，部分方法还有诊断或残差设置要求，见[方法目录](docs/methods/README.md)。
+使用 `--asset` 和 `--fold` 时，从资产配置及根目录 TOML 读取默认值。`--attempts` 可指定本次预算；
+不指定时使用配置中的预算。
+
+搜索返回的 `run_dir` 是后续操作的入口。确认全部开发决策已冻结后，再执行完整评估：
+
+```bash
+uv run atlas resume <run_dir> --search-only  # 仅在搜索中断时续跑
+uv run atlas finish <run_dir>                # 冻结后执行 OOS、模型与报告
+uv run atlas ui                              # 本地监控、研究记录与地图回放
+```
+
+不加 `--search-only` 时，`run` 和 `resume` 在搜索冻结后默认执行完整评估，会读取 Test。
+运行结果保存在 `artifacts/runs/<run_id>/`，从 `report.md` 阅读；关键进度日志保存在
+`logs/cli/`。运行不会自动改写[实验总表](experiment_overview.md)，研究者根据报告人工整理结论。
+
+重复单次实验可复用同一配置，每次 `atlas run` 产生独立运行 ID。多方法配对比较使用
+`atlas experiment <scope.json>`；同一 scope、方法和 seed 的重复调用用于恢复。历史配置和
+运行产物保留原身份；历史批次可能依赖 Git 忽略的数据和源码快照。详细流程见[研究协议](docs/research_protocol.md)。
+
+## 文档
+
+- [研究协议](docs/research_protocol.md)：数据、划分、评价、实验流程与 OOS。
+- [方法目录](docs/methods/README.md)和[方法复现规范](docs/method_reproduction.md)：方法机制、配置与公平比较。
+- [DSL 与算子](docs/dsl.md)、[研究工具](docs/research_tools.md)、[模型评估](docs/model.md)：公共接口和数值口径。
+- [实验记录](docs/records/experiments.md)和[数据记录](docs/records/data.md)：历史证据及限制。
+- [知识地图设计](docs/design.md)和[开发指南](docs/development.md)：研究设想、模块职责与开发检查。

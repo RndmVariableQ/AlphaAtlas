@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "id": "zk26_luna_l2zero_20261106_v3",
+  "parent_plan": "configs/experiments/zk26_luna_l2zero_20261106/plan.json",
+  "experiment_version": "rq8_zk26_luna_l2zero_20261106",
+  "include_union": false,
+  "methods": [
+    "v3_async"
+  ],
+  "seeds": [
+    42
+  ],
+  "attempts_per_method": 300,
+  "evaluation_nodes": [
+    200,
+    300
+  ],
+  "purpose": "复用原冻结因子；按 leaf200/L2=0 重训 B26 及独立扩充库。",
+  "source_experiment_version": "rq8_zk26_seeded_fold2_v3async_luna_20261106",
+  "runs": [
+    "artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-8142c2c849"
+  ]
+}

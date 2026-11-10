@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "id": "zk26_seeded_fold2_v3_luna_300_20261106",
+  "status": "protocol",
+  "question": "AlphaAtlas V3 从 B26 初始库搜索 300 次后，全部新增准入因子对 B26 组合的增益。",
+  "experiment_version": "rq8_zk26_seeded_fold2_v3async_luna_20261106",
+  "baseline_frozen_library": "docs/records/zookeeper26_fold2/frozen/library.json",
+  "baseline_model_config": "docs/records/zookeeper26_fold2/model_overview/fit.json#spec.config",
+  "baseline_factor_order": "docs/records/zookeeper26_fold2/model_overview/fit.json#factor_ids",
+  "search_policy": "使用冻结的 V3 Luna v9 方法参数、B26 初始化和 34 字段搜索 300 次；保留全部准入定义、方向与顺序，不按历史 Test 筛选。",
+  "arms": {
+    "B": "固定 B26，在共同 Train+Val 上按 v5 模型配置重新拟合。",
+    "B_plus_method": "B26 + 该运行在 200/300 次前缀的全部新增准入成员；每个运行独立拟合。",
+    "models": [
+      "linear",
+      "lightgbm"
+    ],
+    "ordering": "B26 保存顺序在先，然后按该运行实际准入 trial 顺序。",
+    "unusable_columns": "沿用训练预处理删除全缺失或常量列，报告总成员和保留列数。"
+  },
+  "budget": {
+    "attempts_per_search": 300,
+    "primary_node": 300,
+    "secondary_nodes": [
+      200
+    ],
+    "search_seed": 42,
+    "model_seed": 42,
+    "new_search_attempts": 300
+  },
+  "paired_fit": {
+    "training_cohort": "固定 B26 可用的同一 Train+Val row_id 集合，预处理仅在该集合拟合。",
+    "prediction_cohort": "Test 使用 B26 可预测且标签有效的相同 row_id；指标使用公共有效品种。",
+    "model_configuration": "全部使用 v5.model；Linear OLS，LightGBM 50 轮、leaf2000、depth5。",
+    "source_version": "搜索与评估使用同一新增版本；数据、B26 及下游模型与原表 v5 保持一致。"
+  },
+  "metrics": {
+    "primary": "delta_time_series_weighted_pearson_ic",
+    "mse": "1 - weighted_MSE(B26 + new) / weighted_MSE(B26)",
+    "weights": "完整 Test eligible 行的品种 sqrt(sum(amount))，两组固定同权重。"
+  },
+  "uncertainty": {
+    "kind": "paired_moving_trading_day_blocks",
+    "block_length_days": 20,
+    "replicates": 2000,
+    "seed": 20261102,
+    "fixed_predictions": true,
+    "resampling": "按年分层、全市场同步交易日块。"
+  },
+  "sequence": [
+    "完成 V3 的 300 次 Train/Val 搜索并冻结全部定义、方向与依赖。",
+    "按同一条轨迹的 200/300 次前缀完成 B26 及两个扩充组的 Train+Val 配对拟合并保存全部模型。",
+    "统一评估历史 Test，导出两个节点结果；不回传搜索或据此改选成员。"
+  ],
+  "limitations": [
+    "2024–2025 已查看，属于历史诊断留出集。",
+    "相同 seed 和评估预算不等于相同 token 或时间成本。",
+    "供应商 vintage PIT 尚未认证，原数据来源和缺失限制沿用版本。",
+    "V3 的库残差反馈、当前提示词与并发参数不同于原表其他方法；属于相同数据和候选预算下的系统比较。"
+  ]
+}

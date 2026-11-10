@@ -66,7 +66,7 @@ class ParqMarketData:
     def load_features(
         self, *, fields: list[str], end: date, start: date | None = None
     ) -> pl.DataFrame:
-        if any(f.startswith("label_") or f.startswith("target") for f in fields):
+        if any(f.startswith(("label", "target")) for f in fields):
             raise ValueError("targets are not feature fields")
         missing = set(fields) - self.columns
         if missing:

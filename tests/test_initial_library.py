@@ -13,6 +13,7 @@ from alpha_atlas.evaluation import EvaluationService
 from alpha_atlas.expressions import compile_factor
 from alpha_atlas.incremental import assemble_arms
 from alpha_atlas.library import FactorLibrary, LibraryEntry, LibraryView
+from alpha_atlas.methods.react import ReactSearch
 from alpha_atlas.runner import resume, run
 from alpha_atlas.session import SearchSession
 from alpha_atlas.storage import RunStore
@@ -113,6 +114,34 @@ def test_initial_library_is_queryable_and_blocks_exact_and_numeric_duplicates(
     report = (directory / "report.md").read_text()
     assert "| 初始成员 | 1 |" in report and "| 新增入库 | 0 |" in report
     assert "冻结因子库为空" not in report
+
+
+def test_react_can_start_with_initial_library_and_preserves_candidate_budget(project, version):
+    from test_react import ScriptedModel, command
+
+    seed_version(project, version)
+    models = ScriptedModel([command(expression="$close")])
+    method = ReactSearch(42, models=models)
+    directory = run(
+        project,
+        "ashare",
+        "fold1",
+        "random",
+        42,
+        attempts=1,
+        version=version,
+        method_impl=method,
+    )
+    assert read_json(directory / "run.json")["status"] == "frozen"
+    assert len(models.calls) == 1
+    prompt = models.calls[0][0]["content"]
+    assert "| initial_library.members | 1 |" in prompt
+    assert "### 3.1 Initial baseline library" in prompt
+    assert "Initial membership does not consume search attempts" in prompt
+    assert "its metrics use train/validation only" in prompt
+    trials = RunStore(directory).trials()
+    assert len(trials) == 1 and trials[0]["feedback"]["reason"] == "expression_duplicate"
+    assert read_json(directory / "checkpoint.json")["completed"] == 1
 
 
 @pytest.mark.parametrize("boundary", ["initial_measurement", "initial_checkpoint", "trial_commit"])

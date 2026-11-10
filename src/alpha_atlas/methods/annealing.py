@@ -661,6 +661,13 @@ class AnnealingLLMSearch:
         blocked = self._blocked_reason(raw)
         if blocked is not None:
             return {"blocked": blocked}
+        if "done" in raw:
+            reason = raw["done"]
+            if set(raw) != {"done"} or not isinstance(reason, str) or not reason.strip():
+                raise ValueError('return only {"done":"the plan rule that ended it"}')
+            if not self.research_plan_state["outcomes"]:
+                raise ValueError("done needs an evaluated candidate in this plan")
+            return {"done": reason.strip()}
         expression = raw.get("expression")
         if not isinstance(expression, str) or not expression.strip():
             raise ValueError("Miner must provide a nonempty Atlas DSL expression")
@@ -714,6 +721,16 @@ class AnnealingLLMSearch:
         if not state["outcomes"]:
             self.completed_research_plan_count += 1
         self._finish_round(update_region=False)
+        self.work = None
+        self._checkpoint()
+
+    def _finish_done_plan(self, reason):
+        """The plan's own stop rule ended it: a normal completion, not a missing capability."""
+        terminal_progress(
+            f"[计划 #{self.research_plan_state['research_plan_index']} · Miner] 计划完成",
+            原因=reason,
+        )
+        self._finish_round()
         self.work = None
         self._checkpoint()
 
@@ -878,8 +895,10 @@ class AnnealingLLMSearch:
             "that evidence to propose a materially distinct next candidate; never repeat an "
             "earlier expression. Return JSON with expression and optional name. If the planned "
             "test cannot be implemented, return only "
-            '{"blocked":"specific missing capability"}. Keep the planned test; do not replace '
-            "it with a different question."
+            '{"blocked":"specific missing capability"}. When the plan\'s own stop rule has '
+            "ended it after an evaluated candidate, return only "
+            '{"done":"the rule that ended the plan"}; blocked is only for a missing capability. '
+            "Keep the planned test; do not replace it with a different question."
         )
         system += "\n\n" + READ_ONLY_QUERY_PROMPT
         system += "\n\n" + render_factor_examples(
@@ -1036,6 +1055,9 @@ class AnnealingLLMSearch:
             if "blocked" in miner:
                 self._finish_blocked_plan(miner["blocked"])
                 return None
+            if "done" in miner:
+                self._finish_done_plan(miner["done"])
+                return None
             candidate = Candidate(
                 miner["expression"],
                 (plan["region_id"],),
@@ -1123,7 +1145,8 @@ class AnnealingLLMSearch:
                             "instruction": (
                                 "Use this evaluation in the ongoing Miner session. If the plan "
                                 "continues, propose a materially distinct next candidate without "
-                                "repeating any expression already in this conversation."
+                                "repeating any expression already in this conversation; if its "
+                                "stop rule has ended it, return done."
                             ),
                         },
                         ensure_ascii=False,

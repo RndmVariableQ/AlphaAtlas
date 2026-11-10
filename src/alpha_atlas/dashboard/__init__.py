@@ -1,4 +1,7 @@
-"""Local read-only dashboard: run monitoring, research history and the residual map."""
+"""Local dashboard: run monitoring, research history and the residual map.
+
+It only reads run files, except one action: stopping a live run, which the run records itself.
+"""
 
 from __future__ import annotations
 
@@ -54,6 +57,17 @@ def make_handler(index: views.RunIndex):
             if kind.startswith("text/") or kind.endswith("javascript"):
                 kind += "; charset=utf-8"
             return self._send(200, path.read_bytes(), kind)
+
+        def do_POST(self):  # noqa: N802 - http.server API
+            url = urlparse(self.path)
+            query = {k: v[0] for k, v in parse_qs(url.query).items()}
+            # A cross-site page cannot add this header without a CORS preflight, never granted.
+            if url.path != "/api/stop" or self.headers.get("X-Atlas-Action") != "stop":
+                return self._json({"error": "unsupported action"}, 400)
+            try:
+                return self._json(views.stop_run(index, query["id"]))
+            except (KeyError, ValueError) as error:
+                return self._json({"error": str(error)}, 409)
 
     return Handler
 

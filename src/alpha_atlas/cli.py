@@ -3,10 +3,23 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
+from datetime import datetime
 from pathlib import Path
 
 
 def main() -> None:
+    logger = logging.getLogger("alpha_atlas.progress")
+    try:
+        _main()
+    finally:
+        for handler in logger.handlers[:]:
+            if getattr(handler, "_atlas_cli_file", False):
+                logger.removeHandler(handler)
+                handler.close()
+
+
+def _main() -> None:
     parser = argparse.ArgumentParser(description="Alpha Atlas reproducible factor research")
     parser.add_argument("--root", type=Path, default=Path.cwd())
     commands = parser.add_subparsers(dest="command", required=True)
@@ -18,7 +31,13 @@ def main() -> None:
     audit = commands.add_parser("audit-data")
     audit.add_argument("--asset", required=True)
     run = commands.add_parser("run")
-    run.add_argument("--version", help="Named experiment version under configs/versions")
+    run.add_argument(
+        "--config",
+        "--version",
+        dest="version",
+        metavar="NAME",
+        help="Named frozen experiment configuration under configs/versions",
+    )
     run.add_argument("--asset")
     run.add_argument("--fold", choices=["fold1", "fold2"])
     run.add_argument(
@@ -36,8 +55,10 @@ def main() -> None:
             "v1",
             "v1_async",
             "v2_sync",
+            "v2_async",
+            "v3_async",
         ],
-        default="random",
+        help="Search method; inferred when the configuration contains exactly one method",
     )
     run.add_argument("--seed", type=int, default=42)
     run.add_argument("--attempts", type=int)
@@ -53,7 +74,7 @@ def main() -> None:
     resume = commands.add_parser("resume", help="Continue a checkpointed ask/tell run")
     resume.add_argument("run_dir", type=Path)
     finish = commands.add_parser(
-        "finish", help="Evaluate a frozen experiment and update its tables"
+        "finish", help="Evaluate a frozen experiment and write its reports"
     )
     finish.add_argument("run_dir", type=Path)
     experiment = commands.add_parser(
@@ -89,12 +110,21 @@ def main() -> None:
     ui.add_argument("--port", type=int, default=8780)
     ui.add_argument("--runs", type=Path, nargs="*", default=[], help="Extra run roots")
     args = parser.parse_args()
+    root = args.root.resolve()
     if args.command in {"run", "resume", "test", "model", "finish", "experiment"}:
         logger = logging.getLogger("alpha_atlas.progress")
         logger.setLevel(logging.CRITICAL + 1 if args.quiet else logging.INFO)
         logger.propagate = False
         logger.handlers = [logging.StreamHandler()]
-    root = args.root.resolve()
+        if not args.quiet:
+            log_dir = root / "logs" / "cli"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+            handler = logging.FileHandler(
+                log_dir / f"{args.command}-{timestamp}-{os.getpid()}.log", encoding="utf-8"
+            )
+            handler._atlas_cli_file = True
+            logger.addHandler(handler)
     if args.command == "ui":
         from alpha_atlas.dashboard import serve
 
@@ -150,8 +180,15 @@ def main() -> None:
             version = load_version(root, args.version)
             args.asset = args.asset or version["asset"]
             args.fold = args.fold or version["fold"]["id"]
+            if args.method is None:
+                methods = version["method_configs"]
+                if len(methods) != 1:
+                    parser.error("configuration must contain one method or specify --method")
+                args.method = next(iter(methods))
         elif not args.asset or not args.fold:
-            parser.error("run requires --version, or both --asset and --fold")
+            parser.error("run requires --config, or both --asset and --fold")
+        if args.method is None:
+            args.method = "random"
         path = run(
             root,
             args.asset,

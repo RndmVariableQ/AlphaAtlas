@@ -67,8 +67,10 @@ class FactorLibrary:
         if disk_cache is not None and (directory is None or rebuild is None):
             raise ValueError("bounded member cache requires a directory and rebuild callback")
         self._disk_cache, self._rebuild = disk_cache, rebuild
-        # Optional library_residual measurement; it never changes the admission decision.
+        # Optional library_residual measurement; it decides admission only via min_residual_ic.
         self._residual = residual
+        if self._rules.get("min_residual_ic") is not None and residual is None:
+            raise ValueError("min_residual_ic requires library_residual")
         if directory:
             directory.mkdir(parents=True, exist_ok=True)
         self._members: dict[str, LibraryEntry] = {}
@@ -245,6 +247,15 @@ class FactorLibrary:
                 [(factor_id, self._load(factor_id)) for factor_id in self._members],
                 report.direction,
             )
+        minimum = self._rules.get("min_residual_ic")
+        if (
+            reason == "accepted"
+            and minimum is not None
+            and not (
+                residual_ic is not None and math.isfinite(residual_ic) and residual_ic > minimum
+            )
+        ):
+            reason = "residual_threshold"
         accepted = reason == "accepted"
         version = len(self._members) + int(accepted)
         feedback = TrialFeedback(

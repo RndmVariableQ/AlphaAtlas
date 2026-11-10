@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import threading
 import time
 from collections import OrderedDict
 from dataclasses import asdict, replace
@@ -11,6 +12,7 @@ from pathlib import Path
 
 import numpy as np
 import polars as pl
+from numba import njit, prange
 from numpy.typing import ArrayLike
 
 from alpha_atlas.contracts import (
@@ -354,10 +356,81 @@ def paired_prediction_metrics(frame, weights):
     return result
 
 
-def paired_block_bootstrap(frame, weights, *, days=20, repeats=2000, seed=20261102):
+@njit(nogil=True, parallel=True)
+def _resampled_rank_correlations(day_indices, orders, tie_ends, multiplicity):
+    """Exact average ranks of duplicated rows, without materializing each resample."""
+    repeats = multiplicity.shape[0]
+    size = len(day_indices)
+    result = np.full((repeats, 2), np.nan)
+    for repeat in prange(repeats):
+        counts = multiplicity[repeat, day_indices]
+        total = counts.sum()
+        if total < 5:
+            continue
+        ranks = np.empty((3, size))
+        for column in range(3):
+            before = 0.0
+            start = 0
+            while start < size:
+                end = tie_ends[column, start]
+                count = 0.0
+                for position in range(start, end):
+                    count += counts[orders[column, position]]
+                # Subtract the common mean rank; the omitted +0.5 cancels exactly.
+                rank = before + count / 2 - total / 2
+                for position in range(start, end):
+                    ranks[column, orders[column, position]] = rank
+                before += count
+                start = end
+        yy = bb = pp = by = py = 0.0
+        for i in range(size):
+            y, b, p = ranks[:, i]
+            weight = counts[i]
+            yy += weight * y * y
+            bb += weight * b * b
+            pp += weight * p * p
+            by += weight * b * y
+            py += weight * p * y
+        if yy > 0 and bb > 0 and pp > 0:
+            result[repeat, 0] = min(1.0, max(-1.0, by / math.sqrt(bb * yy)))
+            result[repeat, 1] = min(1.0, max(-1.0, py / math.sqrt(pp * yy)))
+    return result
+
+
+def _spearman_bootstrap_deltas(frame, weights, date_index, multiplicity):
+    numerator = np.zeros(len(multiplicity))
+    denominator = np.zeros(len(multiplicity))
+    product_weights = dict(weights.select("product", "weight").iter_rows())
+    for (product,), part in frame.partition_by("product", as_dict=True).items():
+        if product not in product_weights:
+            continue
+        values = part.select("target", "baseline", "prediction").to_numpy().T
+        orders = np.argsort(values, axis=1)
+        tie_ends = np.zeros_like(orders)
+        for column in range(3):
+            sorted_values = values[column, orders[column]]
+            ends = np.r_[np.flatnonzero(np.diff(sorted_values) != 0) + 1, len(part)]
+            tie_ends[column, np.r_[0, ends[:-1]]] = ends
+        day_indices = np.array([date_index[day] for day in part["trading_day"].to_list()])
+        correlations = _resampled_rank_correlations(day_indices, orders, tie_ends, multiplicity)
+        valid = np.isfinite(correlations).all(axis=1)
+        numerator[valid] += (correlations[valid, 1] - correlations[valid, 0]) * product_weights[
+            product
+        ]
+        denominator[valid] += product_weights[product]
+    return np.divide(
+        numerator, denominator, out=np.full(len(multiplicity), np.nan), where=denominator > 0
+    )
+
+
+def paired_block_bootstrap(
+    frame, weights, *, days=20, repeats=2000, seed=20261102, correlation="pearson"
+):
     """Year-stratified market-wide moving day blocks; pooled IC, never mean daily IC."""
     if type(days) is not int or days < 1 or type(repeats) is not int or repeats < 1:
         raise ValueError("bootstrap days and repeats must be positive integers")
+    if correlation not in {"pearson", "spearman"}:
+        raise ValueError("bootstrap correlation must be pearson or spearman")
     paired_prediction_metrics(frame, weights)  # Fail instead of silently dropping bad rows.
     if frame["trading_day"].null_count():
         raise ValueError("bootstrap requires trading days")
@@ -420,8 +493,13 @@ def paired_block_bootstrap(frame, weights, *, days=20, repeats=2000, seed=202611
         bmse = np.sum(np.where(n > 0, be / n, 0) * w, axis=1)
         pmse = np.sum(np.where(n > 0, pe / n, 0) * w, axis=1)
         reduction = 1 - pmse / bmse
+    if correlation == "spearman":
+        delta = _spearman_bootstrap_deltas(frame, weights, date_index, multiplicity)
     output = {"block_days": days, "repeats": repeats, "seed": seed}
-    for name, values in (("delta_weighted_pearson", delta), ("relative_mse_reduction", reduction)):
+    for name, values in (
+        (f"delta_weighted_{correlation}", delta),
+        ("relative_mse_reduction", reduction),
+    ):
         values = values[np.isfinite(values)]
         output[name] = {
             "valid_replicates": len(values),
@@ -757,6 +835,8 @@ class EvaluationService:
         self._training: OrderedDict[str, pl.DataFrame] = OrderedDict()
         self._residual_targets = None
         self._residual_library = None
+        # Concurrent evaluations share only these caches; computation runs outside the lock.
+        self._lock = threading.RLock()
 
     def _fit_clipping(self, train):
         if self.clip_quantiles is None:
@@ -773,28 +853,33 @@ class EvaluationService:
         keys = ["row_id", "trading_day", "exchange", "instrument_id", "value"]
         if "product" in frame.columns:
             keys.append("product")
-        self._training[identity] = frame.select(keys).sort("row_id")
-        self._training.move_to_end(identity)
-        while len(self._training) > self._training_cache_factors:
-            self._training.popitem(last=False)
+        frame = frame.select(keys).sort("row_id")
+        with self._lock:
+            self._training[identity] = frame
+            self._training.move_to_end(identity)
+            while len(self._training) > self._training_cache_factors:
+                self._training.popitem(last=False)
+        return frame
 
     def _training_values(self, identity, candidate):
-        if identity not in self._training:
-            compiled = compile_factor(
-                candidate.expression, self.fields, self.registry, **self.compile_options
-            )
-            if compiled.factor_id != identity:
-                raise ValueError("training statistic factor identity mismatch")
-            # Rebuild only requested missing values, using the existing MarketData panel.
-            features = self.features.filter(pl.col("trading_day") <= self.fold.train.end)
-            values = execute(compiled, features, self.fields, self.registry, panel=self.panel)
-            panel = features.join(self.targets, on="row_id", validate="1:1").join(
-                values, on="row_id", validate="1:1"
-            )
-            train = split_panel(panel, self.fold.train)
-            self._remember_training(identity, apply_clipping(train, self._fit_clipping(train)))
-        self._training.move_to_end(identity)
-        return self._training[identity]
+        with self._lock:
+            cached = self._training.get(identity)
+            if cached is not None:
+                self._training.move_to_end(identity)
+                return cached
+        compiled = compile_factor(
+            candidate.expression, self.fields, self.registry, **self.compile_options
+        )
+        if compiled.factor_id != identity:
+            raise ValueError("training statistic factor identity mismatch")
+        # Rebuild only requested missing values, using the existing MarketData panel.
+        features = self.features.filter(pl.col("trading_day") <= self.fold.train.end)
+        values = execute(compiled, features, self.fields, self.registry, panel=self.panel)
+        panel = features.join(self.targets, on="row_id", validate="1:1").join(
+            values, on="row_id", validate="1:1"
+        )
+        train = split_panel(panel, self.fold.train)
+        return self._remember_training(identity, apply_clipping(train, self._fit_clipping(train)))
 
     def factor_correlations(self, pairs, candidates, min_overlap):
         """Aggregate training-only Pearson statistics; no values or labels leave this service."""
@@ -822,32 +907,36 @@ class EvaluationService:
         return tuple(results)
 
     def observation(self, reference: str) -> FactorValues:
-        if reference in self._cache:
-            values = self._cache[reference][1]
+        with self._lock:
+            cached = self._cache.get(reference)
+            stored = self._disk.get(reference)
+        if cached is not None:
+            values = cached[1]
             return replace(values, frame=values.frame.clone())
-        if self.cache_dir and reference in self._disk:
+        if self.cache_dir and stored is not None:
             path = self.cache_dir / f"{reference}.arrow"
             if path in self.disk_cache and path.exists():
                 data = self.disk_cache.read(path)
-                return FactorValues(self._disk[reference], self.snapshot_id, data, self.context_id)
+                return FactorValues(stored, self.snapshot_id, data, self.context_id)
         raise ValueError("observation reference is not available in this run")
 
     def _remember(self, reference, report, observation):
-        if self.cache_dir:
-            path = self.cache_dir / f"{reference}.arrow"
-            self.disk_cache.write(path, observation.frame)
-            self._disk[reference] = observation.expression_id
-            self._disk = {
-                ref: identity
-                for ref, identity in self._disk.items()
-                if self.cache_dir / f"{ref}.arrow" in self.disk_cache
-            }
-        self._cache[reference] = (report, observation)
-        while (
-            sum(v.frame.estimated_size() for _, v in self._cache.values()) > self.cache_bytes
-            and len(self._cache) > 1
-        ):
-            self._cache.popitem(last=False)
+        with self._lock:
+            if self.cache_dir:
+                path = self.cache_dir / f"{reference}.arrow"
+                self.disk_cache.write(path, observation.frame)
+                self._disk[reference] = observation.expression_id
+                self._disk = {
+                    ref: identity
+                    for ref, identity in self._disk.items()
+                    if self.cache_dir / f"{ref}.arrow" in self.disk_cache
+                }
+            self._cache[reference] = (report, observation)
+            while (
+                sum(v.frame.estimated_size() for _, v in self._cache.values()) > self.cache_bytes
+                and len(self._cache) > 1
+            ):
+                self._cache.popitem(last=False)
 
     def _validation_targets(self) -> pl.DataFrame:
         if self._residual_targets is None:
@@ -917,6 +1006,13 @@ class EvaluationService:
         return result * math.sqrt(max(0.0, 1.0 - explained)), explained, similarity
 
     def evaluate(self, candidate: Candidate) -> EvaluationReport:
+        return self.measure(candidate)[0]
+
+    def measure(self, candidate: Candidate) -> tuple[EvaluationReport, FactorValues | None]:
+        """The report with its Valid observation, held by the caller rather than by the cache.
+
+        Concurrent evaluations admit later; by then the bounded caches may have evicted it.
+        """
         started = time.perf_counter()
         try:
             compiled = compile_factor(
@@ -925,15 +1021,19 @@ class EvaluationService:
         except (ValueError, TypeError) as exc:
             return EvaluationReport(
                 None, (), None, None, time.perf_counter() - started, "compile_error", str(exc)
-            )
+            ), None
         observation_id = fingerprint((compiled.factor_id, self.snapshot_id, self.context_id))
         evaluation_id = fingerprint(
             (observation_id, asdict(self.fold), self.profile, "ic-v5", self.diagnostics)
         )
-        if evaluation_id in self._cache:
-            report, _ = self._cache[evaluation_id]
-            self._cache.move_to_end(evaluation_id)
-            return replace(report, cache_hit=True, elapsed_seconds=time.perf_counter() - started)
+        with self._lock:
+            cached = self._cache.get(evaluation_id)
+            if cached is not None:
+                self._cache.move_to_end(evaluation_id)
+        if cached is not None:
+            report, observation = cached
+            elapsed = time.perf_counter() - started
+            return replace(report, cache_hit=True, elapsed_seconds=elapsed), observation
         try:
             values = execute(compiled, self.features, self.fields, self.registry, panel=self.panel)
             keys = ["row_id", "trading_day", "exchange", "instrument_id", "eligible"]
@@ -1021,7 +1121,7 @@ class EvaluationService:
                 self.context_id,
             )
             self._remember(evaluation_id, report, observation)
-            return report
+            return report, observation
         except (
             ValueError,
             RuntimeError,
@@ -1037,4 +1137,4 @@ class EvaluationService:
                 "compute_error",
                 str(exc),
                 evaluation_id=evaluation_id,
-            )
+            ), None

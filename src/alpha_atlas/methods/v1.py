@@ -180,9 +180,17 @@ class V1Search(AnnealingLLMSearch):
     """Explorer proposals share one selector; absent policy retains legacy Region annealing."""
 
     explorer_prompt = EXPLORER_PROMPT
+    explorer_reminder = EXPLORER_REMINDER
+    min_proposals = 2
+    # Methods whose map is never exhausted refuse unresolved with this instruction.
+    unresolved_refusal = None
 
     def __init__(self, seed, config=None, *, models=None):
         super().__init__(seed, config or V1Config(), models=models)
+
+    @property
+    def _proposal_count(self):
+        return f"{'one' if self.min_proposals == 1 else 'two'} to four"
 
     @property
     def configuration(self):
@@ -375,8 +383,8 @@ class V1Search(AnnealingLLMSearch):
     def _validate_proposals(self, raw, catalog, available_refs):
         summary = _text(raw.get("summary"), "summary")
         proposals = raw.get("proposals")
-        if not isinstance(proposals, list) or not 2 <= len(proposals) <= 4:
-            raise ValueError("Explorer must submit two to four distinct proposals")
+        if not isinstance(proposals, list) or not self.min_proposals <= len(proposals) <= 4:
+            raise ValueError(f"Explorer must submit {self._proposal_count} distinct proposals")
         validated = []
         known_continents = {c for region in catalog.values() for c in region["continent_ids"]}
         for proposal in proposals:
@@ -514,6 +522,8 @@ class V1Search(AnnealingLLMSearch):
                     if "tool" in raw:
                         record.update(self._query(raw, records))
                     elif "unresolved" in raw:
+                        if self.unresolved_refusal:
+                            raise ValueError(self.unresolved_refusal)
                         record["unresolved"] = _text(raw["unresolved"], "unresolved")
                         record["summary"] = _text(raw.get("summary"), "summary")
                     else:
@@ -591,15 +601,16 @@ class V1Search(AnnealingLLMSearch):
                 if "error" not in records[-1]:
                     records[-1]["error"] = (
                         "Reassess the closest completed plans for a missing control, condition or "
-                        "interaction. Submit two to four directions with a discriminating prediction, "
-                        "scores and references, or return summary and unresolved with the evidence gap."
+                        f"interaction. Submit {self._proposal_count} directions with a "
+                        "discriminating prediction, scores and references, or return summary and "
+                        "unresolved with the evidence gap."
                     )
                     self._checkpoint()
             if len(records) >= self.config.max_dialogue_rounds:
                 raise ExplorerDialogueLimitError(
                     f"V1 Explorer dialogue limit exhausted ({len(records)} replies)"
                 )
-            reminder = EXPLORER_REMINDER if len(records) >= 20 else ""
+            reminder = self.explorer_reminder if len(records) >= 20 else ""
             self._request_progress(
                 "Explorer",
                 计划=state["research_plan_index"],

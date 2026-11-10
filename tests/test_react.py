@@ -3,6 +3,7 @@ import io
 import json
 from dataclasses import asdict, replace
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from urllib.error import HTTPError
 
 import polars as pl
@@ -19,7 +20,7 @@ from alpha_atlas.evaluation import EvaluationService
 from alpha_atlas.library import FactorLibrary
 from alpha_atlas.methods.models import ContextLimitError, HTTPModels
 from alpha_atlas.methods.react import SUMMARY, ReactConfig, ReactSearch
-from alpha_atlas.operators import OperatorDefinition
+from alpha_atlas.operators import OperatorDefinition, OperatorRegistry
 from alpha_atlas.runner import resume, run
 from alpha_atlas.runner import test_frozen as evaluate_frozen
 from alpha_atlas.session import SearchSession
@@ -665,6 +666,42 @@ def test_prompt_explains_only_permitted_fields_and_their_timeframes(tmp_path, fr
     assert rows[-1].endswith(f"| {suffixes} |")
     assert next(row for row in rows if row.startswith("| `$x` |")).endswith("| none |")
     assert "timeframes.fields |" not in prompt
+
+
+def test_seeded_prepared_field_prompt_covers_the_complete_b26_context(tmp_path):
+    from alpha_atlas.versions import load_version
+
+    version = load_version(Path(__file__).parents[1], "rq8_zk26_seeded_fold2_overview_luna_v5")
+    service = evaluator(registry=OperatorRegistry(versions=version["operator_versions"]))
+    service.profile = version["profile"]
+    current = SearchSession(
+        service,
+        FactorLibrary(RULES),
+        RunStore(tmp_path),
+        300,
+        run_spec={
+            "asset": version["asset"],
+            "experiment_version": version,
+            "fields": version["fields"],
+            "initial_library": {
+                "members": [item["factor_id"] for item in version["initial_library"]["factors"]]
+            },
+        },
+    )
+    method = search(current, [])
+    method._initialize()
+    prompt = method.system_prompt
+    assert "| initial_library.members | 26 |" in prompt
+    prepared = current.get_expression_rules()["prepared_fields"]
+    assert len(prepared["fields"]) == 26
+    for field, properties in prepared["fields"].items():
+        for key, value in properties.items():
+            assert f"| prepared_fields.fields.{field}.{key} | {value} |" in prompt
+    assert "Their calculation expressions describe preparation, not allowed raw fields" in prompt
+    assert "still count base-frequency rows, not calendar months; @1mo is not supported." in prompt
+    assert current.remaining_budget() == 300 and method.models.calls == []
+    for forbidden in (version["id"], "fold2", "2019-01-01", "2024-01-01", "data/futures"):
+        assert forbidden not in prompt
 
 
 @pytest.mark.parametrize(

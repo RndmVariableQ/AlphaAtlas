@@ -178,6 +178,27 @@ def test_miner_block_after_trial_keeps_evidence_and_ends_plan(tmp_path):
     assert method.active_region_id is None
 
 
+def test_miner_done_ends_plan_as_a_normal_completion(tmp_path):
+    class DoneModels(BlockedModels):
+        def _response(self, system, payload):
+            if "Factor Miner Agent" in system:
+                self.stage_calls += 1
+                if self.stage_calls in (1, 3):  # Before any trial it is refused; after, accepted.
+                    return json.dumps({"done": "A failed the train gate; the plan stops"}), {}
+            return AgentModels._response(self, system, payload)
+
+    models = DoneModels("miner")
+    method, current = setup_method(tmp_path, models=models)
+    method.ask(current.base.get_context())
+    tell(method, current, False, 1)
+    assert method.ask(current.base.get_context())[0].region_ids == ("std",)
+    assert method.blocked_plans == [] and method.completed_research_plan_count == 1
+    assert method.region_scores["mean"] == {"attempts": 1, "accepted": 0}
+    assert method.active_region_id == "mean"  # Normal completion updates the annealing state.
+    miner = [p for s, p, _ in models.calls if "Factor Miner Agent" in s][1]["messages"]
+    assert "done needs an evaluated candidate" in miner[-1]["content"]
+
+
 @pytest.mark.parametrize("cut", ["response", "plan", "archived"])
 def test_blocked_plan_recovery_reuses_reply_and_does_not_archive_twice(tmp_path, cut):
     models = BlockedModels()

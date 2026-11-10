@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "id": "zk26_seeded_fold2_v3_repeat2_20261106",
+  "status": "protocol",
+  "question": "按用户要求，B26 Haiku 5.5 与 Luna 的 AlphaAtlas V3 各独立重复一次，沿用当前模型及 Val 末品种评分口径。",
+  "experiment_version": "rq8_zk26_lgbm_defaults_20261106",
+  "baseline_frozen_library": "docs/records/zookeeper26_fold2/frozen/library.json",
+  "baseline_model_config": "artifacts/comparisons/zk26_lgbm_defaults_20261106/baseline_workspace/baseline/model/fit.json#spec.config",
+  "baseline_factor_order": "artifacts/comparisons/zk26_lgbm_defaults_20261106/baseline_workspace/baseline/model/fit.json#factor_ids",
+  "search_policy": "两个全新 Run ID，沿用各自原搜索版本和保存源码、seed 42、300 次预算；从 B26 重新搜索，不导入旧运行新增因子或 Test 反馈。",
+  "arms": {
+    "B": "固定 B26，在共同 Train+Val 上按当前默认叶样本数、L2=0 的模型配置重新拟合。",
+    "B_plus_method": "B26 + 该运行在 200/300 次前缀的全部新增准入成员；每个运行独立拟合。",
+    "models": [
+      "linear",
+      "lightgbm"
+    ],
+    "ordering": "B26 保存顺序在先，然后按该运行实际准入 trial 顺序。",
+    "unusable_columns": "沿用训练预处理删除全缺失或常量列，报告总成员和保留列数。"
+  },
+  "budget": {
+    "attempts_per_search": 300,
+    "primary_node": 300,
+    "secondary_nodes": [
+      200
+    ],
+    "search_seed": 42,
+    "model_seed": 42,
+    "new_search_attempts": 600
+  },
+  "paired_fit": {
+    "training_cohort": "固定 B26 可用的同一 Train+Val row_id 集合，预处理仅在该集合拟合。",
+    "prediction_cohort": "Test 使用 B26 可预测且标签有效的相同 row_id；指标使用公共有效品种。",
+    "model_configuration": "min_data_in_leaf 不传入 LightGBM（本机默认 20）；lambda_l2=0、50 轮、learning_rate=0.05、num_leaves=15、max_depth=5、seed=42、4 线程。",
+    "source_version": "scope.source_experiment_version 保留真实搜索来源，数据/字段/算子/目标/B26 必须与评估版本一致。"
+  },
+  "metrics": {
+    "primary": "delta_time_series_weighted_pearson_ic",
+    "mse": "1 - weighted_MSE(B26 + new) / weighted_MSE(B26)",
+    "weights": "完整 Test eligible 行的品种 sqrt(sum(amount))，两组固定同权重。",
+    "supplementary": "delta_time_series_weighted_spearman_ic"
+  },
+  "uncertainty": {
+    "kind": "paired_moving_trading_day_blocks",
+    "block_length_days": 20,
+    "replicates": 2000,
+    "seed": 20261102,
+    "fixed_predictions": true,
+    "resampling": "按年分层、全市场同步交易日块。"
+  },
+  "sequence": [
+    "同时执行两个独立 Train/Val 搜索，全部冻结后才进行后续评估。",
+    "使用默认叶样本数 20、L2=0 的现有配对版本分别拟合两组的 B26 和 200/300 次全部新增成员；两组全部模型保存后才读取 Test。",
+    "复用 Val 末名单和冻结训练期标签变换，计算两模型的 73 品种 Pearson/Spearman ΔIC、95% 区间，以及 74 品种两种 WMSE。",
+    "归档全部结果，向 B26 Luna、Haiku 各追加一行，保留原运行。"
+  ],
+  "limitations": [
+    "用户指定的两次单方法重复；保持原 seed 42，不是全方法多 seed 稳定性实验。",
+    "2024–2025 历史 Test 已查看；本次结果为历史诊断，不反馈搜索。",
+    "两个在线模型重复调用不保证相同输出，异步顺序也可能不同。",
+    "沿用已有数据来源、vintage PIT 与曲线缺失限制。",
+    "Haiku 的 Claude CLI 桥接未映射 temperature 和输出 token 上限，沿用原后端行为。",
+    "区块区间只描述冻结预测在测试期的波动，不包含搜索随机性。"
+  ],
+  "baseline_reporting": {
+    "ic": "固定 Val 末名单中的共同 73 品种；分别报告加权 Pearson 和 Spearman。",
+    "wmse": "名单中的 74 个正权重品种；Luna 主表原始目标，Haiku 主表变换后目标，完整保存两者。",
+    "comparison": "所有增量相对新参数下同样本重新拟合的配对 B26。"
+  },
+  "cohort": "docs/records/zookeeper26_fold2/val_end_products_20261106/cohort.json"
+}

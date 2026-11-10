@@ -28,11 +28,26 @@ from alpha_atlas.terminal import terminal_progress
 @dataclass(frozen=True)
 class V1AsyncConfig(V1Config):
     parallel_plans: int = 3
+    # Candidates of different plans computed at once; admission stays serial in trial order.
+    parallel_evaluations: int = 1
+    # Explorer dialogues that may fill free plan slots at once; each opens at most four plans.
+    parallel_explorers: int = 1
 
     def __post_init__(self):
         super().__post_init__()
         if type(self.parallel_plans) is not int or self.parallel_plans < 1:
             raise ValueError("parallel_plans must be a positive integer")
+        if (
+            type(self.parallel_evaluations) is not int
+            or not 1 <= self.parallel_evaluations <= self.parallel_plans
+        ):
+            # Each plan waits for its own feedback, so it has at most one candidate in flight.
+            raise ValueError("parallel_evaluations must be between 1 and parallel_plans")
+        if (
+            type(self.parallel_explorers) is not int
+            or not 1 <= self.parallel_explorers <= self.parallel_plans
+        ):
+            raise ValueError("parallel_explorers must be between 1 and parallel_plans")
 
 
 class _AwaitingModel(Exception):
@@ -49,17 +64,14 @@ class _ConcurrentModels:
 
     def chat(self, system, payload, *, temperature=None):
         if "Atlas Explorer Agent" in system:
-            system = system.replace(
-                "The server selects one by 30/30/20/20 weighting and passes it to the original "
-                "Analyst",
-                "The server ranks by 30/30/20/20 and passes directions to Analysts concurrently "
-                "per available_slots",
+            system += (
+                "\navailable_slots is the number of plans the server can start now; it starts at "
+                "most that many of the submitted directions and drops the rest.\n"
             )
-            system += "\navailable_slots is the current number of free slots."
             payload = {
                 **payload,
                 "active_proposals": self.method.research_plan_state["active_proposals"],
-                "available_slots": len(self.method.explorer["quotas"]),
+                "available_slots": len(self.method._active[1]["quotas"]),
             }
         return self.chat_messages(
             [
@@ -82,9 +94,12 @@ class V1AsyncSearch(V1Search):
         self._transport = self.models
         self.models = _ConcurrentModels(self)
         self.groups = {}
-        self.explorer = None
+        # Running Explorer dialogues by request key; "explorer" is the first (and, serially, only).
+        self.explorers = {}
         self.next_research_plan_index = 1
         self.pending_group = None
+        # Plans whose candidate is being evaluated, in trial order (parallel_evaluations > 1).
+        self.evaluating = []
         self._active = None
         self._executor = None
         self._requests = {}
@@ -116,10 +131,41 @@ class V1AsyncSearch(V1Search):
             "groups": {
                 key: group for key, group in self.groups.items() if group["research_plan_state"]
             },
-            "explorer": self.explorer,
+            **(
+                {"explorers": self.explorers}
+                if self.explorer_slots > 1
+                else {"explorer": self.explorers.get("explorer")}
+            ),
             "next_research_plan_index": self.next_research_plan_index,
             "pending_group": self.pending_group if self.pending is not None else None,
+            **({"evaluating": self.evaluating} if self.evaluation_slots > 1 else {}),
         }
+
+    @property
+    def configuration(self):
+        config = super().configuration
+        for name in ("parallel_evaluations", "parallel_explorers"):
+            if config.get(name) == 1:
+                config.pop(name)  # Serial runs keep their recorded configuration.
+        return config
+
+    @property
+    def explorer(self):
+        # The serial checkpoint field; with parallel_explorers > 1 the state is "explorers".
+        return self.explorers.get("explorer")
+
+    @explorer.setter
+    def explorer(self, value):
+        self.explorers = {} if value is None else {"explorer": value}
+
+    @property
+    def explorer_slots(self):
+        return getattr(self.config, "parallel_explorers", 1)
+
+    @property
+    def evaluation_slots(self):
+        """How many candidates the runner may compute at once."""
+        return getattr(self.config, "parallel_evaluations", 1)
 
     def load_state(self, state):
         if (
@@ -138,7 +184,9 @@ class V1AsyncSearch(V1Search):
 
     @property
     def pending_research_plan_index(self):
-        group = self.groups.get(self.pending_group)
+        # With several candidates in flight, the next feedback belongs to the oldest one.
+        key = self.evaluating[0] if self.evaluating else self.pending_group
+        group = self.groups.get(key)
         return group["research_plan_state"]["research_plan_index"] if group is not None else None
 
     def _request_progress(self, title, **values):
@@ -216,6 +264,12 @@ class V1AsyncSearch(V1Search):
     def _validate_proposals(self, raw, catalog, available_refs):
         batch = super()._validate_proposals(raw, catalog, available_refs)
         active = self.research_plan_state["active_proposals"]
+        if self.explorer_slots > 1:
+            # Another Explorer may have opened plans since this dialogue's snapshot was taken.
+            active = active + [
+                group["research_plan_state"]["exploration"]["proposal"]
+                for group in self.groups.values()
+            ]
         if any(
             all(_normalize(item[k]) == _normalize(other[k]) for k in CONTENT_FIELDS[1:])
             for item in batch["proposals"]
@@ -224,8 +278,9 @@ class V1AsyncSearch(V1Search):
             raise ValueError("proposal duplicates an active research direction")
         return batch
 
-    def _explorer_waiting(self):
-        records = self.explorer["research_plan_state"]["responses"]["explorer"]
+    def _explorer_waiting(self, explorer=None):
+        explorer = self.explorer if explorer is None else explorer
+        records = explorer["research_plan_state"]["responses"]["explorer"]
         return _unresolved(records, self.config.max_dialogue_rounds) or bool(
             len(records) >= self.config.max_dialogue_rounds
             and records[-1].get("processed")
@@ -233,54 +288,66 @@ class V1AsyncSearch(V1Search):
         )
 
     def _retire_explorer(self):
-        if self.explorer is None or self.groups:
+        if not self.explorers or self.groups:
             return
-        state = self.explorer["research_plan_state"]
-        records = state["responses"]["explorer"]
-        if not state["active_proposals"] or not self._explorer_waiting():
-            return
-        # Keep the bounded dialogue in the existing research history, then use the new evidence.
-        history = self.factor_trial_records or self.blocked_plans
-        history[-1]["deferred_explorer"] = {
-            "research_plan_index": state["research_plan_index"],
-            "responses": records,
-        }
-        self.explorer = None
+        for key, explorer in list(self.explorers.items()):
+            state = explorer["research_plan_state"]
+            records = state["responses"]["explorer"]
+            if not state["active_proposals"] or not self._explorer_waiting(explorer):
+                continue
+            # Keep the bounded dialogue in the existing research history, then use new evidence.
+            history = self.factor_trial_records or self.blocked_plans
+            history[-1]["deferred_explorer"] = {
+                "research_plan_index": state["research_plan_index"],
+                "responses": records,
+            }
+            del self.explorers[key]
 
     def _start_explorer(self, context):
         self._retire_explorer()
-        if self.explorer is not None:
-            return
-        reserved = sum(
-            group["research_plan_state"]["candidate_limit"]
-            - len(group["research_plan_state"]["outcomes"])
-            for group in self.groups.values()
-        )
-        available = context.remaining_attempts - reserved
-        slots = min(4, self.config.parallel_plans - len(self.groups), available)
-        if slots <= 0:
-            return
-        quotas = []
-        for remaining_slots in range(slots, 0, -1):
-            quota = min(self.config.candidates_per_plan, math.ceil(available / remaining_slots))
-            quotas.append(quota)
-            available -= quota
-        state = self._new_round(context, self.next_research_plan_index)
-        self.next_research_plan_index += 1
-        state["active_proposals"] = [
-            group["research_plan_state"]["exploration"]["proposal"]
-            for group in self.groups.values()
-        ]
-        self.explorer = {"research_plan_state": state, "work": None, "quotas": quotas}
-        self._checkpoint()
+        while len(self.explorers) < self.explorer_slots:
+            # Running Explorers have already claimed their slots and attempt quotas.
+            claimed = [q for explorer in self.explorers.values() for q in explorer["quotas"]]
+            reserved = sum(
+                group["research_plan_state"]["candidate_limit"]
+                - len(group["research_plan_state"]["outcomes"])
+                for group in self.groups.values()
+            ) + sum(claimed)
+            available = context.remaining_attempts - reserved
+            slots = min(4, self.config.parallel_plans - len(self.groups) - len(claimed), available)
+            if slots <= 0:
+                return
+            quotas = []
+            for remaining_slots in range(slots, 0, -1):
+                quota = min(self.config.candidates_per_plan, math.ceil(available / remaining_slots))
+                quotas.append(quota)
+                available -= quota
+            state = self._new_round(context, self.next_research_plan_index)
+            self.next_research_plan_index += 1
+            state["active_proposals"] = [
+                group["research_plan_state"]["exploration"]["proposal"]
+                for group in self.groups.values()
+            ]
+            key = next(
+                k
+                for k in ("explorer", *(f"explorer-{n}" for n in range(2, self.explorer_slots + 1)))
+                if k not in self.explorers
+            )
+            self.explorers[key] = {"research_plan_state": state, "work": None, "quotas": quotas}
+            self._checkpoint()
 
     def _advance_explorer(self, context):
-        if self.explorer is None or not self._runnable("explorer"):
+        for key in list(self.explorers):
+            self._advance_one_explorer(context, key)
+
+    def _advance_one_explorer(self, context, key):
+        explorer = self.explorers[key]
+        if not self._runnable(key):
             return
-        with self._activate("explorer", self.explorer):
+        with self._activate(key, explorer):
             snapshot, catalog = self._catalog()
             state = self.research_plan_state
-            was_waiting = self._explorer_waiting()
+            was_waiting = self._explorer_waiting(explorer)
             if was_waiting and state["active_proposals"]:
                 return
             try:
@@ -300,11 +367,11 @@ class V1AsyncSearch(V1Search):
                 return
             batch = state["explorer_proposals"]
             order = self._select_proposals(
-                batch["proposals"], len(self.explorer["quotas"]), state["temperature"]
+                batch["proposals"], len(explorer["quotas"]), state["temperature"]
             )
             # The validated batch and group creation are committed together, before any Analyst.
             for offset, (selected, quota) in enumerate(
-                zip(order, self.explorer["quotas"], strict=False)
+                zip(order, explorer["quotas"], strict=False)
             ):
                 if offset == 0:
                     group_state = state
@@ -331,14 +398,19 @@ class V1AsyncSearch(V1Search):
                     f"[计划 #{group_state['research_plan_index']} · Explorer] 方向已提交",
                     方向=group_state["exploration"]["direction"],
                 )
-        self.explorer = None
+        del self.explorers[key]
         self._checkpoint()
 
-    def ask(self, context, count=1):
-        if count != 1:
-            raise ValueError("v1_async submits one candidate at a time")
+    def ask(self, context, count=1, *, block=True):
+        """Up to count ready candidates of distinct plans; with block=False, [] when none is ready.
+
+        Serial runs (parallel_evaluations = 1) hand out one candidate and expect its feedback first.
+        """
+        serial = self.evaluation_slots == 1
+        if count != 1 if serial else not 1 <= count <= self.evaluation_slots:
+            raise ValueError("ask count exceeds parallel_evaluations")
         # A checkpoint can precede runner's pending-trial checkpoint. Return its saved candidate.
-        if self.pending is not None:
+        if serial and self.pending is not None:
             return [candidate_from_dict(self.pending)]
         if context.remaining_attempts <= 0:
             raise ValueError("attempt budget exhausted")
@@ -359,12 +431,25 @@ class V1AsyncSearch(V1Search):
                 if group["research_plan_state"] is None:
                     del self.groups[key]
                     self._retire_explorer()
-            for key, group in self.groups.items():
-                candidate = (group["work"] or {}).get("candidate")
-                if candidate is not None:
-                    self.pending, self.pending_group = candidate, key
-                    self._checkpoint()
-                    return [candidate_from_dict(candidate)]
+            ready = [
+                key
+                for key, group in self.groups.items()
+                if key not in self.evaluating and "candidate" in (group["work"] or {})
+            ]
+            if ready and serial:
+                candidate = self.groups[ready[0]]["work"]["candidate"]
+                self.pending, self.pending_group = candidate, ready[0]
+                self._checkpoint()
+                return [candidate_from_dict(candidate)]
+            if ready:
+                # The runner checkpoints these together with its in-flight trials.
+                self.evaluating += ready[:count]
+                return [
+                    candidate_from_dict(self.groups[key]["work"]["candidate"])
+                    for key in ready[:count]
+                ]
+            if not block:
+                return []
             # Model completions wake this thread; it alone queries, validates and saves state.
             futures = [job["future"] for job in self._requests.values() if job["future"]]
             deadlines = [
@@ -377,6 +462,21 @@ class V1AsyncSearch(V1Search):
                 time.sleep(timeout)
 
     def tell(self, results):
+        if self.evaluation_slots > 1:
+            # Feedback arrives in trial order, which is the order candidates were handed out.
+            if len(results) > len(self.evaluating):
+                raise ValueError("v1_async received feedback without a candidate in flight")
+            for feedback in results:
+                key = self.evaluating.pop(0)
+                group = self.groups[key]
+                with self._activate(key, group):
+                    self.pending = group["work"]["candidate"]
+                    super().tell([feedback])
+                if group["research_plan_state"] is None:
+                    del self.groups[key]
+            self._retire_explorer()
+            self._checkpoint()
+            return
         if self.pending_group not in self.groups:
             raise ValueError("v1_async expects one pending feedback")
         key = self.pending_group

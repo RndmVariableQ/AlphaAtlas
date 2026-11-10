@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "id": "zk26_seeded_fold2_haiku55_all_300_20261106_alphaschema_ready",
+  "parent_plan": "configs/experiments/zk26_seeded_fold2_haiku55_all_300_20261106/methods_plan.json",
+  "experiment_version": "rq8_zk26_seeded_fold2_haiku55_20261106",
+  "include_union": false,
+  "methods": [
+    "alphaschema"
+  ],
+  "seeds": [
+    42
+  ],
+  "attempts_per_method": 300,
+  "evaluation_nodes": [
+    200,
+    300
+  ],
+  "runs": [
+    "artifacts/runs/futures_kernel_5m_full-all-fold2-alphaschema-42-8cc5576eb7"
+  ],
+  "purpose": "按用户要求补充已冻结的 AlphaSchema 配对评估；复用原搜索、200／300 次前缀及模型配置，全部模型保存后读取历史 Test。"
+}

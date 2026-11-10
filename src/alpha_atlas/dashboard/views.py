@@ -1,25 +1,42 @@
 """Read-only views of run artifacts for the dashboard; never writes, locks or recomputes factors.
 
 Every value comes from run.json, checkpoint.json and atomic factor trials. The map layout is a
-display derivation of recorded library similarities; map states use the method's own
-mechanism_status, so the dashboard holds no business facts of its own.
+display derivation of Regions and recorded library similarities; map states use the method's
+own status function (V2 mechanism_status or V3 region_status), so the dashboard holds no
+business facts of its own.
 """
 
 from __future__ import annotations
 
 import json
 import math
+import os
+import signal
 import time
 from collections import Counter
 from pathlib import Path
 
 import numpy as np
 
-from alpha_atlas.methods.v2_sync import V2SyncConfig, mechanism_status
+from alpha_atlas.checkpoint import Checkpoint, run_lock
+from alpha_atlas.methods.v2_sync import (
+    V2SyncConfig,
+    expression_band,
+    mechanism_status,
+    scale_status,
+)
+from alpha_atlas.methods.v3_async import (
+    LEGACY_SCHEME,
+    REGION_SCHEME,
+    SCHEMES,
+    V3AsyncConfig,
+    region_status,
+)
 from alpha_atlas.storage import RunStore
 from alpha_atlas.terminal import _expression
 
-OFFSHORE_SIMILARITY = 0.2  # Below this |corr| to every member there is no measured position.
+LINK_SIMILARITY = 0.2  # Regions attract only through a recorded |corr| at least this large.
+GOLDEN_ANGLE = math.pi * (3 - math.sqrt(5))
 
 
 def _read(path: Path):
@@ -34,18 +51,21 @@ class RunIndex:
 
     def __init__(self, root: Path, extra=()):
         self.root = root
-        self.patterns = [
-            root / "artifacts/runs",
-            *sorted(root.glob("artifacts/comparisons/*/workspace/artifacts/runs")),
-            *extra,
-        ]
+        self.extra = list(extra)
         self._trials: dict[Path, tuple[int, list]] = {}
         self._maps: dict[Path, tuple[tuple, dict]] = {}
         self._listing: dict[Path, tuple[float, dict]] = {}
+        self._checkpoints: dict[Path, tuple[int, dict]] = {}
 
     def directories(self) -> dict[str, Path]:
         found = {}
-        for base in self.patterns:
+        # Rescanned on every call so experiments started after the server appear.
+        bases = [
+            self.root / "artifacts/runs",
+            *sorted(self.root.glob("artifacts/comparisons/*/workspace/artifacts/runs")),
+            *self.extra,
+        ]
+        for base in bases:
             if not base.is_dir():
                 continue
             for directory in base.iterdir():
@@ -61,6 +81,20 @@ class RunIndex:
         if directory is None:
             raise KeyError(key)
         return directory
+
+    def checkpoint(self, directory: Path) -> dict:
+        """Parsed checkpoint.json, reused until the file changes (long runs reach tens of MB)."""
+        path = directory / "checkpoint.json"
+        try:
+            stamp = path.stat().st_mtime_ns
+        except FileNotFoundError:
+            return {}
+        cached = self._checkpoints.get(directory)
+        if cached and cached[0] == stamp:
+            return cached[1]
+        value = _read(path) or {}
+        self._checkpoints[directory] = (stamp, value)
+        return value
 
     def trials(self, directory: Path) -> list[dict]:
         store = RunStore(directory)
@@ -121,7 +155,7 @@ def run_list(index: RunIndex) -> list[dict]:
 
 def _thresholds(spec):
     config = spec.get("method_config") or {}
-    default = V2SyncConfig()
+    default = V3AsyncConfig() if spec.get("method") == "v3_async" else V2SyncConfig()
     return (
         config.get("sea_level", default.sea_level),
         config.get("probe_attempts", default.probe_attempts),
@@ -131,7 +165,7 @@ def _thresholds(spec):
 def summary(index: RunIndex, key: str) -> dict:
     directory = index.get(key)
     spec = _read(directory / "run.json") or {}
-    checkpoint = _read(directory / "checkpoint.json") or {}
+    checkpoint = index.checkpoint(directory)
     state = checkpoint.get("method_state") or {}
     trials = index.trials(directory)
     reasons = Counter(t["feedback"]["reason"] for t in trials)
@@ -139,7 +173,10 @@ def summary(index: RunIndex, key: str) -> dict:
     for trial in trials:
         feedback = trial["feedback"]
         admitted += int(feedback["accepted"])
-        information += feedback.get("residual_ic") or 0.0
+        # Only admitted factors add residual information to the library; rejected trials
+        # carry signed noise around zero.
+        if feedback["accepted"]:
+            information += feedback.get("residual_ic") or 0.0
         curve.append(
             {
                 "trial": trial["factor_trial_index"],
@@ -221,7 +258,7 @@ def _trial_row(trial):
 
 def plans(index: RunIndex, key: str) -> dict:
     directory = index.get(key)
-    state = (_read(directory / "checkpoint.json") or {}).get("method_state") or {}
+    state = index.checkpoint(directory).get("method_state") or {}
     trials = {t["factor_trial_index"]: t for t in index.trials(directory)}
     grouped: dict[int, dict] = {}
     for record in state.get("factor_trial_records", []):
@@ -240,7 +277,11 @@ def plans(index: RunIndex, key: str) -> dict:
             },
         )
         if record.get("explorer_proposals"):
-            plan["explorer"] = record["explorer_proposals"]
+            # Sources copy the cited evidence (hundreds of KB per batch, repeated for every plan
+            # the batch started); the page shows only the proposals.
+            plan["explorer"] = {
+                k: v for k, v in record["explorer_proposals"].items() if k != "sources"
+            }
         if record.get("annealing_result"):
             plan["annealing"] = record["annealing_result"]
         trial = trials.get(record["factor_trial_index"])
@@ -256,7 +297,7 @@ def plans(index: RunIndex, key: str) -> dict:
         for item in state.get("blocked_plans", [])
     ]
     regions = {
-        region: value.get("hypothesis")
+        region: {"name": value.get("name"), "hypothesis": value.get("hypothesis")}
         for region, value in (state.get("proposed_regions") or {}).items()
     }
     return {"plans": [grouped[k] for k in sorted(grouped)], "blocked": blocked, "regions": regions}
@@ -276,44 +317,73 @@ def trial(index: RunIndex, key: str, number: int) -> dict:
     return detail
 
 
-def _classical_mds(distance: np.ndarray) -> np.ndarray:
-    n = distance.shape[0]
-    if n == 1:
-        return np.zeros((1, 2))
-    if n == 2:
-        return np.array([[-distance[0, 1] / 2, 0.0], [distance[0, 1] / 2, 0.0]])
-    center = np.eye(n) - np.ones((n, n)) / n
-    gram = -0.5 * center @ (distance**2) @ center
-    values, vectors = np.linalg.eigh(gram)
-    order = np.argsort(values)[::-1][:2]
-    coordinates = vectors[:, order] * np.sqrt(np.clip(values[order], 0, None))
-    # Fix sign so repeated layouts of the same members do not mirror.
-    for axis in range(2):
-        if coordinates[np.argmax(np.abs(coordinates[:, axis])), axis] < 0:
-            coordinates[:, axis] *= -1
-    return coordinates
+def _layout_groups(sizes: np.ndarray, affinity: np.ndarray, iterations: int = 600):
+    """Deterministic force layout of Region discs (radius sizes).
+
+    Linked groups (affinity >= LINK_SIMILARITY) are pulled to a distance that shrinks with
+    affinity; unlinked groups only avoid overlap and are packed by a weak pull to the centre,
+    so their distance carries no meaning.
+    """
+    n = len(sizes)
+    if n < 2:
+        return np.zeros((n, 2))
+    k = np.arange(n)
+    spread = np.sqrt(k + 0.5) * 1.6 * float(np.mean(sizes))
+    position = np.c_[np.cos(k * GOLDEN_ANGLE), np.sin(k * GOLDEN_ANGLE)] * spread[:, None]
+    gap = sizes[:, None] + sizes[None, :]
+    linked = affinity >= LINK_SIMILARITY
+    np.fill_diagonal(linked, False)
+    target = gap * (0.7 + 1.1 * (1 - affinity))
+    minimum = np.where(linked, gap * 0.7, gap * 1.7)
+    # Averaging the pull over a group's links and capping each move keep the iteration stable
+    # when one Region correlates with many others.
+    degree = np.maximum(linked.sum(axis=1), 1)[:, None]
+    cap = 0.5 * sizes[:, None]
+    for step in range(iterations):
+        rate = 0.25 * (1 - step / iterations) + 0.02
+        delta = position[:, None, :] - position[None, :, :]
+        distance = np.linalg.norm(delta, axis=2)
+        np.fill_diagonal(distance, np.inf)
+        unit = delta / np.maximum(distance, 1e-9)[:, :, None]
+        pull = np.where(linked, distance - target, 0.0)
+        push = np.where(distance < minimum, minimum - distance, 0.0)
+        force = (push[:, :, None] * unit).sum(axis=1)
+        force -= (pull[:, :, None] * unit).sum(axis=1) / degree
+        force -= 0.04 * position
+        move = rate * force
+        length = np.maximum(np.linalg.norm(move, axis=1, keepdims=True), 1e-12)
+        position = position + move * np.minimum(1.0, cap / length)
+    return position
 
 
-def _place(landmarks: np.ndarray, similarity: list) -> tuple[np.ndarray, float] | None:
-    """Single-point stress minimisation against landmark distances sqrt(2(1-|c|))."""
-    pairs = [(i, abs(c)) for i, c in enumerate(similarity) if c is not None and i < len(landmarks)]
-    if not pairs:
-        return None
-    strongest = max(c for _, c in pairs)
-    if strongest < OFFSHORE_SIMILARITY:
-        return None
-    indices = np.array([i for i, _ in pairs])
-    weights = np.array([c for _, c in pairs]) ** 4
-    target = np.sqrt(np.clip(2 * (1 - np.array([c for _, c in pairs])), 0, None))
-    points = landmarks[indices]
-    position = (weights[:, None] * points).sum(axis=0) / weights.sum()
-    for _ in range(40):
-        delta = position - points
-        norms = np.maximum(np.linalg.norm(delta, axis=1), 1e-9)
-        position = (weights[:, None] * (points + target[:, None] * delta / norms[:, None])).sum(
-            axis=0
-        ) / weights.sum()
-    return position, strongest
+FULL_SPACING_ATTEMPTS = 20  # Beyond this a Region's disc grows slower and its points pack.
+STRETCH = 1.3  # Region outline aspect; the layout reserves the longer axis.
+
+
+def _disc_radius(count: int) -> float:
+    """Unit spacing up to FULL_SPACING_ATTEMPTS, then radius grows as count ** (1/4).
+
+    One Region with hundreds of attempts would otherwise cover the map by area alone.
+    """
+    full = 0.62 * math.sqrt(min(count, FULL_SPACING_ATTEMPTS))
+    return full * (max(count, FULL_SPACING_ATTEMPTS) / FULL_SPACING_ATTEMPTS) ** 0.25
+
+
+def _sunflower(count: int, phase: float) -> np.ndarray:
+    """Points of one Region within _disc_radius(count), first at the centre.
+
+    The disc is stretched, given a few lobes and rotated by phase so Regions do not all read as
+    circles; area and the centre-first order are kept.
+    """
+    k = np.arange(count)
+    radius = np.sqrt(k + 0.5) * (k > 0)
+    if count > 1:
+        radius *= _disc_radius(count) / math.sqrt(count - 0.5)
+    angle = k * GOLDEN_ANGLE + phase
+    radius = radius * (1 + 0.16 * np.sin(3 * angle + 2 * phase) + 0.08 * np.sin(5 * angle - phase))
+    x, y = radius * np.cos(angle) * STRETCH, radius * np.sin(angle) / STRETCH
+    turn = 1.7 * phase
+    return np.c_[x * math.cos(turn) - y * math.sin(turn), x * math.sin(turn) + y * math.cos(turn)]
 
 
 def _members(spec, trials):
@@ -355,7 +425,7 @@ def _members(spec, trials):
 def map_view(index: RunIndex, key: str) -> dict:
     directory = index.get(key)
     spec = _read(directory / "run.json") or {}
-    state = (_read(directory / "checkpoint.json") or {}).get("method_state") or {}
+    state = index.checkpoint(directory).get("method_state") or {}
     trials = index.trials(directory)
     cache_key = (len(trials), len(state.get("factor_trial_records", [])))
     cached = index._maps.get(directory)
@@ -369,109 +439,211 @@ def map_view(index: RunIndex, key: str) -> dict:
         for r in state.get("factor_trial_records", [])
     }
     members, matrix = _members(spec, trials)
-    # Landmarks without a recorded pair are treated as unrelated (maximum distance).
-    similarity = np.nan_to_num(np.abs(matrix), nan=0.0)
-    np.fill_diagonal(similarity, 1.0)
-    landmarks = (
-        _classical_mds(np.sqrt(np.clip(2 * (1 - similarity), 0, None)))
-        if members
-        else np.zeros((0, 2))
-    )
-    member_index = {m["trial"]: i for i, m in enumerate(members) if m["trial"]}
-    points = []
-    for i, member in enumerate(members):
-        if member["trial"] == 0:
-            points.append(
-                {
-                    "trial": 0,
-                    "kind": "initial",
-                    "name": member["name"],
-                    "x": float(landmarks[i, 0]),
-                    "y": float(landmarks[i, 1]),
-                    "residual": None,
-                    "region": None,
-                    "plan": None,
-                }
-            )
-    offshore = []
+    points = [
+        {
+            "trial": 0,
+            "kind": "initial",
+            "name": member["name"],
+            "residual": None,
+            "region": None,
+            "plan": None,
+            "group": f"initial:{i}",
+        }
+        for i, member in enumerate(members)
+        if member["trial"] == 0
+    ]
     for trial in trials:
         feedback = trial["feedback"]
+        if feedback.get("library_similarity") is None:
+            continue  # Not measured (compile/compute failures): nothing to show.
         number = trial["factor_trial_index"]
         region, plan = regions_by_trial.get(number, (None, None))
-        row = {
-            "trial": number,
-            "kind": "admitted" if feedback["accepted"] else "candidate",
-            "name": feedback["candidate"].get("name"),
-            "reason": feedback["reason"],
-            "residual": feedback.get("residual_ic"),
-            "library_r2": feedback.get("library_r2"),
-            "val": _val(feedback),
-            "region": region,
-            "plan": plan,
-        }
-        if number in member_index:
-            position = landmarks[member_index[number]]
-            row.update(x=float(position[0]), y=float(position[1]), offshore=False)
-            points.append(row)
-            continue
-        recorded = feedback.get("library_similarity")
-        if recorded is None:
-            continue  # Not measured (compile/compute failures): no position exists.
-        placed = _place(landmarks, recorded)
-        if placed is None:
-            offshore.append(row)
-            continue
-        row.update(x=float(placed[0][0]), y=float(placed[0][1]), offshore=False)
-        points.append(row)
-    # Offshore: no measured similarity, so group by mechanism on a ring; distance is not data.
-    radius = max([math.hypot(p["x"], p["y"]) for p in points] + [0.9])
-    region_order = sorted({str(r["region"]) for r in offshore})
-    for row in offshore:
-        group = region_order.index(str(row["region"]))
-        angle = 2 * math.pi * (group + 0.5) / max(1, len(region_order))
-        spread = ((row["trial"] * 2654435761) % 1000) / 1000 - 0.5
-        ring = radius * (1.35 + 0.12 * (((row["trial"] * 40503) % 997) / 997))
-        row.update(
-            x=ring * math.cos(angle + 0.35 * spread / max(1, len(region_order)) * 3),
-            y=ring * math.sin(angle + 0.35 * spread / max(1, len(region_order)) * 3),
-            offshore=True,
+        points.append(
+            {
+                "trial": number,
+                "kind": "admitted" if feedback["accepted"] else "candidate",
+                "name": feedback["candidate"].get("name"),
+                "reason": feedback["reason"],
+                "residual": feedback.get("residual_ic"),
+                "library_r2": feedback.get("library_r2"),
+                "val": _val(feedback),
+                "region": region,
+                "plan": plan,
+                "group": region or "unassigned",
+                "similarity": feedback["library_similarity"],
+            }
         )
-        points.append(row)
+    # Each Region is a disc of its attempts; Regions attract through recorded correlations
+    # between their attempts and members of other Regions (or initial members).
+    groups = list(dict.fromkeys(p["group"] for p in points))
+    slot = {group: i for i, group in enumerate(groups)}
+    by_trial = {p["trial"]: p["group"] for p in points if p["trial"]}
+    member_group = [
+        f"initial:{i}" if member["trial"] == 0 else by_trial.get(member["trial"], "unassigned")
+        for i, member in enumerate(members)
+    ]
+    affinity = np.zeros((len(groups), len(groups)))
+
+    def link(a, b, value):
+        if a != b and a in slot and b in slot and value is not None and math.isfinite(value):
+            i, j = slot[a], slot[b]
+            affinity[i, j] = affinity[j, i] = max(affinity[i, j], abs(value))
+
+    for i, j in zip(*np.nonzero(np.isfinite(matrix)), strict=True):
+        link(member_group[i], member_group[j], float(matrix[i, j]))
+    for p in points:
+        for j, value in enumerate(p.pop("similarity", None) or []):
+            if j < len(member_group):
+                link(p["group"], member_group[j], value)
+    members_of = {group: [] for group in groups}
+    for p in points:
+        members_of[p.pop("group")].append(p)
+    sizes = np.array([_disc_radius(len(members_of[g])) * STRETCH * 1.1 + 0.5 for g in groups])
+    centres = _layout_groups(sizes, affinity) if groups else np.zeros((0, 2))
+    for g, centre in zip(groups, centres, strict=True):
+        # Highest residual information at the core, so a Region reads as a peak or a shelf.
+        ordered = sorted(
+            members_of[g],
+            key=lambda p: (p["kind"] != "admitted", -(p["residual"] if p["residual"] else 0)),
+        )
+        phase = (sum(map(ord, g)) % 628) / 100
+        for p, offset in zip(ordered, _sunflower(len(ordered), phase), strict=True):
+            p["x"], p["y"] = float(centre[0] + offset[0]), float(centre[1] + offset[1])
+    spacing = 0.0
     if points:
         xs = np.array([p["x"] for p in points])
         ys = np.array([p["y"] for p in points])
-        # A floor on the span keeps a handful of early points from stretching across the map;
-        # sqrt(2) is the distance between unrelated factors.
-        span = max(xs.max() - xs.min(), ys.max() - ys.min(), 2.5 * math.sqrt(2))
+        # A floor on the span keeps a handful of early points from filling the whole map.
+        span = max(xs.max() - xs.min(), ys.max() - ys.min(), 14.0)
         cx, cy = (xs.max() + xs.min()) / 2, (ys.max() + ys.min()) / 2
         for p in points:
             p["x"] = 0.5 + 0.84 * (p["x"] - cx) / span
             p["y"] = 0.5 + 0.84 * (p["y"] - cy) / span
+        spacing = 0.84 / span
     timelines: dict[str, list] = {}
     values: dict[str, list] = {}
+    bands: dict[str, list] = {}
+    v3 = spec.get("method") == "v3_async"
+    # V3 runs without a recorded scheme used the V2 bands and the all-bands closing rule.
+    scheme = (spec.get("method_config") or {}).get("scale_bands", LEGACY_SCHEME) if v3 else None
+    frequency = (spec.get("profile") or {}).get("frequency")
     by_index = {t["factor_trial_index"]: t for t in trials}
     for record in state.get("factor_trial_records", []):
         region = record.get("region_id")
         trial_row = by_index.get(record["factor_trial_index"])
         if trial_row is None or region is None:
             continue
-        values.setdefault(region, []).append(trial_row["feedback"].get("residual_ic"))
-        status = mechanism_status(values[region], sea_level, probe)
-        timelines.setdefault(region, []).append({"trial": record["factor_trial_index"], **status})
-    hypotheses = {r: v.get("hypothesis") for r, v in (state.get("proposed_regions") or {}).items()}
+        feedback = trial_row["feedback"]
+        values.setdefault(region, []).append(feedback.get("residual_ic"))
+        expression = feedback["candidate"]["expression"]
+        if v3:
+            scales = SCHEMES[scheme]
+            band = expression_band(expression, frequency, scales) if frequency and scales else None
+            bands.setdefault(region, []).append(
+                (band, feedback.get("residual_ic"), feedback["accepted"])
+            )
+            step = region_status(bands[region], probe, scheme)
+        else:
+            band = expression_band(expression, frequency) if frequency else None
+            bands.setdefault(region, []).append((band, feedback.get("residual_ic")))
+            step = {
+                **mechanism_status(values[region], sea_level, probe),
+                "by_scale": scale_status(bands[region], sea_level, probe),
+            }
+        timelines.setdefault(region, []).append({"trial": record["factor_trial_index"], **step})
+    proposed = state.get("proposed_regions") or {}
     result = {
         "available": True,
         "sea_level": sea_level,
         "probe_attempts": probe,
+        "rule": {LEGACY_SCHEME: "v3_legacy", REGION_SCHEME: "v3_region"}.get(scheme, "v3")
+        if v3
+        else "v2",
         "points": points,
         "regions": [
-            {"id": region, "hypothesis": hypotheses.get(region), "timeline": timeline}
+            {
+                "id": region,
+                "name": proposed.get(region, {}).get("name"),
+                "hypothesis": proposed.get(region, {}).get("hypothesis"),
+                "timeline": timeline,
+            }
             for region, timeline in timelines.items()
         ],
         "last_trial": trials[-1]["factor_trial_index"] if trials else 0,
         "unplaced": sum(1 for t in trials if t["feedback"].get("library_similarity") is None),
-        "note": "地标为库成员（经典 MDS），候选按与地标的相关性定位；外海点与全库相关性低于 "
-        f"{OFFSHORE_SIMILARITY}，按机制分组排在外围，距离不代表相关性。",
+        "spacing": spacing,
+        "note": "每个区域（机制）是一座岛或海台，中心是残差信息最高的尝试；区域间当记录到 |corr| ≥ "
+        f"{LINK_SIMILARITY} 时相互靠近，越相关越近；无相关的区域只紧凑排布，距离不表示相关性。",
     }
     index._maps[directory] = (cache_key, result)
     return result
+
+
+def _writer_pids(directory: Path) -> list[int]:
+    """Processes holding the run's writer lock, found from /proc instead of stored PIDs."""
+    target = os.path.realpath(directory / ".run.lock")
+    holders = set()
+    for fds in Path("/proc").glob("[0-9]*/fd"):
+        try:
+            if any(os.readlink(fd) == target for fd in fds.iterdir()):
+                holders.add(int(fds.parent.name))
+        except OSError:  # The process exited or belongs to another user.
+            continue
+
+    def parent(pid):
+        try:
+            return int(Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[1])
+        except (OSError, ValueError, IndexError):
+            return None
+
+    # Child processes inherit the descriptor; only the topmost holder is the search.
+    return sorted(pid for pid in holders if parent(pid) not in holders)
+
+
+def stop_run(index: RunIndex, key: str, *, grace: float = 20.0) -> dict:
+    """Stop a live search: SIGINT like Ctrl+C, then SIGTERM if the process is still running.
+
+    A run that exits on SIGINT records "interrupted" itself. After SIGTERM nothing records it,
+    so once the writer lock is free the dashboard records "interrupted" under that lock.
+    """
+    directory = index.get(key)
+    if os.name == "nt":
+        raise ValueError("stopping a run from the dashboard needs Linux /proc")
+    pids = _writer_pids(directory)
+    if not pids:
+        raise ValueError("no live process holds this run")
+    sent = []
+    for number in (signal.SIGINT, signal.SIGTERM):
+        for pid in _writer_pids(directory):
+            try:
+                os.kill(pid, number)
+            except ProcessLookupError:
+                pass
+        sent.append(number.name)
+        deadline = time.monotonic() + grace
+        while _writer_pids(directory) and time.monotonic() < deadline:
+            time.sleep(1.0)
+        if not _writer_pids(directory):
+            break
+    else:
+        raise ValueError("the run process did not exit after SIGINT and SIGTERM")
+    # /proc may lose the exiting process's fd before the kernel releases its lock.
+    deadline = time.monotonic() + grace
+    while True:
+        try:
+            with run_lock(directory):
+                spec = _read(directory / "run.json") or {}
+                if spec.get("status") == "running":
+                    Checkpoint(directory, spec).status("interrupted")
+            break
+        except RuntimeError as exc:
+            if str(exc) != "run is already open by another writer":
+                raise
+            if time.monotonic() >= deadline:
+                raise ValueError("the run writer lock did not become available") from exc
+            time.sleep(0.05)
+    return {
+        "id": key,
+        "signals": sent,
+        "status": (_read(directory / "run.json") or {}).get("status"),
+    }

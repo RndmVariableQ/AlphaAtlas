@@ -38,6 +38,7 @@ input { font: inherit; }
 .run:hover { background: var(--panel-2); }
 .run.active { background: var(--panel-2); border-color: #3a4b5e; }
 .run .row1 { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.run .row1 .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .run .row2 { color: var(--muted); font-size: 11.5px; margin: 3px 0 6px 16px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .run .bar { height: 3px; background: var(--line); border-radius: 2px; margin-left: 16px; }
@@ -61,6 +62,10 @@ h1 { font-size: 17px; margin: 0; font-weight: 650; }
 .pill.frozen { color: #8fb3d9; }
 .pill.failed { color: var(--bad); border-color: #5a2c2c; }
 .pill.interrupted, .pill.stalled { color: var(--warn); }
+.stop { margin-left: auto; padding: 3px 12px; border-radius: 8px; cursor: pointer; font-size: 12px;
+  color: var(--bad); background: none; border: 1px solid #5a2c2c; }
+.stop:hover:not(:disabled) { background: rgba(220, 90, 90, .12); }
+.stop:disabled { opacity: .6; cursor: default; }
 .meta { color: var(--muted); margin-top: 4px; display: flex; gap: 14px; flex-wrap: wrap; }
 .stats { display: flex; gap: 26px; margin: 10px 0 8px; flex-wrap: wrap; }
 .stat b { font-size: 18px; display: block; font-variant-numeric: tabular-nums; }
@@ -91,11 +96,11 @@ h1 { font-size: 17px; margin: 0; font-weight: 650; }
 .legend.folded .legend-title::after { content: " ▸"; }
 .sw { display: inline-block; width: 14px; height: 10px; border-radius: 3px; margin-right: 8px;
   vertical-align: -1px; border: 1px solid rgba(255,255,255,.15); }
-.sw.land { background: linear-gradient(90deg, #7c9b56, #8b7a55); }
-.sw.saturated { background: #b59a6a; }
-.sw.seabed { background: linear-gradient(90deg, #2c7da0, #123b63); }
-.sw.fog { background: #cfd6dc; opacity: .8; }
-.sw.probing { background: none; border: 1.5px dashed var(--probing); }
+.sw.land { background: linear-gradient(90deg, #5d7440, #7f7350); }
+.sw.saturated { background: #a88f62; }
+.sw.seabed { background: linear-gradient(90deg, #6e9c94, #3e7480); }
+.sw.fog { background: linear-gradient(90deg, #0b2440, #12304e); }
+.sw.probing { background: none; border: 1.5px dashed rgba(240,246,250,.6); }
 .legend-marks { margin-top: 2px; color: var(--muted); }
 .mk { margin: 0 2px 0 6px; } .mk.admitted { color: var(--accent); } .mk.initial { color: #e9eef3; font-size: 10px; }
 .mk.cand { color: #9fb2c4; font-size: 9px; }
@@ -110,6 +115,10 @@ h1 { font-size: 17px; margin: 0; font-weight: 650; }
 .tooltip { position: absolute; pointer-events: none; background: rgba(10,15,22,.94); border: 1px solid #34465a;
   border-radius: 8px; padding: 8px 10px; max-width: 340px; font-size: 12px; line-height: 1.6;
   box-shadow: 0 6px 24px rgba(0,0,0,.4); }
+.tooltip table.scales { margin-top: 4px; width: 100%; }
+.tooltip table.scales td, .tooltip table.scales th { padding: 1px 6px 1px 0; font-size: 11.5px; }
+.census { margin-top: 6px; padding-top: 6px; border-top: 1px solid #2c3b4b; line-height: 1.9; }
+.census .chip { cursor: help; }
 .tooltip code { color: #e9d9a6; word-break: break-all; }
 
 #timeline { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-top: 1px solid var(--line);
@@ -172,3 +181,6 @@ table.trials td, table.trials th { padding: 4px 6px; border-bottom: 1px solid va
 table.trials th { color: var(--muted); font-weight: 500; }
 table.trials tr { cursor: pointer; } table.trials tr:hover td { background: var(--panel-2); }
 .pos { color: #9fd07a; } .neg { color: #e88b84; }
+table.scales { width: 100%; border-collapse: collapse; font-size: 12px; }
+table.scales td, table.scales th { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: left; }
+table.scales th { color: var(--muted); font-weight: 500; }

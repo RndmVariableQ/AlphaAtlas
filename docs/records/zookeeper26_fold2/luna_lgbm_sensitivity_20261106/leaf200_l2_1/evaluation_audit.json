@@ -1,0 +1,86 @@
+{
+  "groups": [
+    {
+      "group": "earlier_methods",
+      "factor_ids_and_arms_equal": true,
+      "only_min_data_in_leaf_changed": true,
+      "preprocessing_and_linear_models_equal": true,
+      "row_ids_dates_products_targets_equal": true,
+      "linear_predictions_equal": true,
+      "training_rows": 5296605,
+      "test_rows": 2549205,
+      "eligible_rows": 2558829,
+      "coverage": 0.9962389045926867,
+      "ic_products": 80,
+      "ic_rows": 2401248,
+      "wmse_products": 86,
+      "wmse_rows": 2429676,
+      "bootstrap_replicates_valid": 2000
+    },
+    {
+      "group": "overview_methods",
+      "factor_ids_and_arms_equal": true,
+      "only_min_data_in_leaf_changed": true,
+      "preprocessing_and_linear_models_equal": true,
+      "row_ids_dates_products_targets_equal": true,
+      "linear_predictions_equal": true,
+      "training_rows": 5296605,
+      "test_rows": 2549205,
+      "eligible_rows": 2558829,
+      "coverage": 0.9962389045926867,
+      "ic_products": 80,
+      "ic_rows": 2401248,
+      "wmse_products": 86,
+      "wmse_rows": 2429676,
+      "bootstrap_replicates_valid": 2000
+    },
+    {
+      "group": "v3",
+      "factor_ids_and_arms_equal": true,
+      "only_min_data_in_leaf_changed": true,
+      "preprocessing_and_linear_models_equal": true,
+      "row_ids_dates_products_targets_equal": true,
+      "linear_predictions_equal": true,
+      "training_rows": 5296605,
+      "test_rows": 2549205,
+      "eligible_rows": 2558829,
+      "coverage": 0.9962389045926867,
+      "ic_products": 80,
+      "ic_rows": 2401248,
+      "wmse_products": 86,
+      "wmse_rows": 2429676,
+      "bootstrap_replicates_valid": 2000
+    }
+  ],
+  "baseline_fits_and_predictions_equal_across_groups": true,
+  "fits_unchanged_during_test": true,
+  "fit_validation": {
+    "validated_before_test_at": "2026-11-06T15:31:20.427814+08:00",
+    "only_min_data_in_leaf_changed": true,
+    "all_preprocessing_and_linear_equal": true,
+    "baseline_fits_equal": true,
+    "groups": [
+      {
+        "group": "earlier_methods",
+        "path": "artifacts/comparisons/zk26_luna_leaf200_20261106/earlier_methods/fit.json",
+        "fit_sha256": "cea02a1efd196d9239986031983c4dd93398da3afb719662c3af176c591a354f",
+        "training_rows": 5296605,
+        "paired_models": 14
+      },
+      {
+        "group": "overview_methods",
+        "path": "artifacts/comparisons/zk26_luna_leaf200_20261106/overview_methods/fit.json",
+        "fit_sha256": "796ed6504265ce9b5147e4c7c6d2c7c8a4b1a47870d5e23d2c5d4be235c7c36b",
+        "training_rows": 5296605,
+        "paired_models": 10
+      },
+      {
+        "group": "v3",
+        "path": "artifacts/comparisons/zk26_luna_leaf200_20261106/v3/fit.json",
+        "fit_sha256": "66d6233cf8a2138642791464107e602320ddca36dd6927674301579fe3a532eb",
+        "training_rows": 5296605,
+        "paired_models": 6
+      }
+    ]
+  }
+}

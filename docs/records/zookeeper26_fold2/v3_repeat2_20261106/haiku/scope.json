@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "id": "zk26_seeded_fold2_v3_haiku55_repeat2_20261106",
+  "parent_plan": "configs/experiments/zk26_seeded_fold2_v3_repeat2_20261106/plan.json",
+  "experiment_version": "rq8_zk26_lgbm_defaults_20261106",
+  "source_experiment_version": "rq8_zk26_seeded_fold2_v3async_haiku55_20261106",
+  "include_union": false,
+  "methods": [
+    "v3_async"
+  ],
+  "seeds": [
+    42
+  ],
+  "attempts_per_method": 300,
+  "evaluation_nodes": [
+    200,
+    300
+  ],
+  "purpose": "用户指定 B26 haiku55 AlphaAtlas V3 独立重复；原来源版本重新搜索，默认参数配对评估，Val 末品种评分。"
+}

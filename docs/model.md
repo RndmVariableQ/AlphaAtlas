@@ -27,9 +27,31 @@ rounds。参数在首次训练前固定；重复命令复用保存结果，不�
 [Zookeeper 复现说明](../src/alpha_atlas/factor_libraries/zookeeper/README.md)。
 
 完整实验的 `atlas run`／`atlas resume` 默认在冻结后串联拟合、Test 和 Val 库内相似度，
-三项成功后自动填表；`atlas finish <run_dir>` 可补跑收尾。
+三项结果保存在运行目录；`atlas finish <run_dir>` 可补跑收尾，不自动改写实验总表。
 批量研究先用 `--search-only` 冻结全部运行，再统一执行 finish，见
-[自动评估与填表](research_protocol.md#自动评估与填表)。
+[自动评估](research_protocol.md#自动评估)。
+
+### 运行中截面的快捷预测评估
+
+用户明确要求查看运行中的截面时，可用
+[`scripts/evaluate_snapshot.py`](../scripts/evaluate_snapshot.py) 一次完成冻结、拟合和 Test：
+
+```bash
+uv run python scripts/evaluate_snapshot.py <运行ID或实验版本>
+uv run python scripts/evaluate_snapshot.py <运行ID或实验版本> --factors 9
+uv run python scripts/evaluate_snapshot.py <运行ID或实验版本> --attempts 500
+```
+
+也支持运行目录、短 ID 或 comparisons 下的实验目录名；匹配多个来源时拒绝猜选。
+默认截到检查点已提交的最新 trial；`--factors N` 取恰有 N 个成员的最后一个已提交截面，
+不包含第 N+1 个成员；`--attempts N` 取精确前 N 次。尚未达到指定数量时拒绝执行。
+当前快捷冻结支持从空库开始、只用 builtin 算子的运行；已冻结目录可直接评估。
+
+截面保存在来源运行旁的 `-prefix<N>` 目录，保留原子 trial、全部成员定义、顺序、训练方向
+和裁剪边界，不复制方法检查点；原搜索继续运行。预测复用公共 `run_model` 的配置、数据、
+因子身份、冻结库和模型缓存校验；重复评估同一截面复用已有拟合及 Test。
+结果写入截面的 `model/report.md` 并输出指标，不调用 LLM、不计算单因子 OOS 或配对相关性，
+不更新实验总表。Test 不回传搜索；运行中已查看的 Test 属于历史留出诊断，不能称为最终盲测。
 
 ## 模型和数据规则
 
@@ -39,7 +61,9 @@ rounds。参数在首次训练前固定；重复命令复用保存结果，不�
 - `lightgbm`：[LightGBM 回归](https://lightgbm.readthedocs.io/en/stable/pythonapi/lightgbm.train.html)，
   固定树数、叶数、学习率、最小叶样本数、L2、线程数和 seed。CPU deterministic 与
   force_col_wise 打开；可选 `max_depth` 限制树深，未配置或为 `-1` 时不限制，
-  正整数表示最大深度。版本固定在依赖锁中，不承诺跨版本或硬件逐位一致。
+  正整数表示最大深度。`min_data_in_leaf` 可省略，省略时直接使用锁定 LightGBM 的
+  默认值（当前为 20），不会补入项目其他配置；显式值必须为正整数。
+  版本固定在依赖锁中，不承诺跨版本或硬件逐位一致。
 - 监督目标沿用资产配置的未来对数收益；在真实合约／连续段内生成，目标终点不能跨 split。
   PIT eligibility、字段、高周期特征、预热和缺失规则复用公共 MarketData／DSL。
 - 因子列顺序采用冻结库顺序；每列乘原训练方向。通过 row_id 对齐计算结果，不按数组位置拼接。
@@ -87,6 +111,14 @@ rounds。参数在首次训练前固定；重复命令复用保存结果，不�
 不平均各品种的误差下降率，也不额外按目标方差标准化。均值偏差和预测幅度仍影响 MSE。
 时间区块重采样保持完整 Test 品种权重固定，各次按抽中的品种行数重算 MSE；
 无观测的品种从该次模型与基线同时排除，再归一化其余品种权重。
+
+若另行评估模型学习的变换后目标，须显式标为「变换后目标 WMSE」，与原始收益误差分开。
+先用模型拟合区间 Train+Val 保存的标签边界裁剪 Test 标签，再减去同一训练样本内各品种
+裁剪后标签的均值；不使用 Test 的分位点或均值。已有模型未保存这些标签均值时，从原
+共同训练样本恢复，并核对样本数、预处理和标签裁剪边界。`product_offsets` 是特征均值
+投影，不能代替标签均值。预测值、共同评分行与品种权重保持不变；原始标签的 IC 不跟随
+这个误差诊断改变。训练期未见品种须单列并明确中心规则，本轮 Haiku 补充诊断对其采用
+零中心，只做冻结边界裁剪。结果和区间另存，不覆盖原始标签评分或模型。
 
 从空库开始的历史诊断可以使用 Train+Val 原始目标的全局均值作为无因子预测基线，
 在 Test 上保持不变；同时可明确报告零预测基线的敏感性。已有库则比较相同预测流程下
@@ -140,8 +172,13 @@ v4 的搜索库本身包含初始 B26。冻结记录将这些成员标为 initia
 
 `evaluation.paired_prediction_metrics` 在共同有效品种上计算两组 IC，在共同有权重品种上
 计算 MSE。恒定预测的 IC 未定义，不填零；MSE 仍可计算。年度结果沿用完整 Test 的固定
-品种权重。`paired_block_bootstrap` 按年分层并同步重抽市场交易日块，使用每日充分统计量
-恢复重抽后全期相关性与误差，不平均每日 IC。点估计和重采样都保留共同品种及有效样本数。
+品种权重。`paired_block_bootstrap` 按年分层并同步重抽市场交易日块；默认使用每日充分
+统计量恢复重抽后全期 Pearson 相关性与误差，不平均每日 IC。显式指定
+`correlation="spearman"` 时，每次重采样在品种内重新计算全期平均秩，再计算两组
+Spearman IC 之差；按抽中次数累计秩，等价于展开重复样本后重新排名，包含并列值校正。
+两种区间均固定原 Test 品种权重，并在每次重采样中共同排除样本不足或相关性未定义的
+品种。Spearman 不复用原样本的固定秩或 Pearson 区间。
+点估计和重采样都保留共同品种及有效样本数。
 横向方法表另外给出同模型、同预算节点、所有可评分方法的共同有效品种结果。
 
 输出目录保存 `fit.json`、`test.json`、`factors.jsonl` 和 `results.jsonl`；因子包含公式、

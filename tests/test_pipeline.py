@@ -90,6 +90,9 @@ def test_market_field_catalog_uses_numeric_schema_and_excludes_metadata(project)
             "funda_missing",
             "custom_indicator",
         )
+        for name in ("labelfuture", "target_future"):
+            with pytest.raises(ValueError, match="targets are not feature fields"):
+                market.load_features(fields=[name], end=date(2020, 12, 31))
 
 
 @pytest.mark.parametrize("field_names", [None, ["volume"]])

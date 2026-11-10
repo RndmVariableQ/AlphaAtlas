@@ -16,6 +16,8 @@
 | [V1](v1.md) (`v1`) | 同步 ChaoticTrader_Future 的 Explorer 选题、查证与三方向评分 | 保留原三 Agent 退火执行；仅更新 Explorer |
 | [V1 异步](v1_async.md) (`v1_async`) | 多组 Analyst/Miner 并发，完成即补位 | V1 本地异步适配；平台评估、原子提交和退火裁决串行 |
 | [V2 Sync](v2_sync.md) (`v2_sync`) | 串行 V1 流程；Region 视为机制，按每次尝试的库残差信息退火 | 需开启 `library_residual` 的版本；与已删除的旧 `v2` 无关 |
+| [V2 Async](v2_sync.md#v2-async) (`v2_async`) | V2 Sync 的机制奖励、地图与区域规则，跑在 V1 Async 的并发计划上 | 需开启 `library_residual`；`parallel_plans` 控制并发计划数 |
+| [V3 Async](v3_async.md) (`v3_async`) | V2 Async 流程；入库残差/尝试为得分，Region 以准入判定状态，支持回看分档，可提交单一方向 | 需开启 `library_residual`；版本可设置残差准入 |
 | [react](react.md) | 单 Agent 工具循环与上下文压缩 | 自建 LLM 基线，需支持 tools 的 Chat 服务 |
 
 前四项共享有限文法；LLM 方法可使用更广 DSL，比较时必须披露搜索空间、初始化、

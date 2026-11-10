@@ -27,14 +27,14 @@ def validate_config(config):
             "num_boost_round",
             "learning_rate",
             "num_leaves",
-            "min_data_in_leaf",
             "lambda_l2",
             "num_threads",
         },
     }
     if set(config) - {"preprocessing"} != set(expected) or any(
         not isinstance(config[k], dict)
-        or set(config[k]) - ({"max_depth"} if k == "lightgbm" else set()) != keys
+        or set(config[k]) - ({"max_depth", "min_data_in_leaf"} if k == "lightgbm" else set())
+        != keys
         for k, keys in expected.items()
         if keys is not None
     ):
@@ -63,6 +63,7 @@ def validate_config(config):
         *[
             (k, config["lightgbm"][k], 2 if k == "num_leaves" else 1)
             for k in ("num_boost_round", "num_leaves", "min_data_in_leaf", "num_threads")
+            if k in config["lightgbm"]
         ],
     ]:
         if type(value) is not int or value < minimum:

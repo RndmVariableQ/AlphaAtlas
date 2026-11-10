@@ -310,6 +310,11 @@ class SearchSession:
                 {"train_and_val_ic_gt": minimum}
                 if minimum is not None
                 else {"val_ic_gte": rules["min_abs_val_ic"]}
+            )
+            | (
+                {"library_residual_ic_gt": rules["min_residual_ic"]}
+                if rules.get("min_residual_ic") is not None
+                else {}
             ),
             "min_coverage": rules["min_coverage"],
             "search_diagnostics": {
@@ -569,9 +574,12 @@ class SearchSession:
         *,
         generation_seconds: float = 0,
         research_plan_index: int | None = None,
+        measured: tuple | None = None,
     ):
+        """Admit one candidate as the next trial; measured is its earlier measure() result."""
         self._trial += 1
-        started = time.perf_counter()
+        report, values = measured or (None, None)
+        started = time.perf_counter() - (report.elapsed_seconds if report is not None else 0.0)
         terminal_evaluation(
             candidate,
             index=self._trial,
@@ -582,11 +590,12 @@ class SearchSession:
             report = EvaluationReport(
                 None, (), None, None, 0.0, "budget_rejected", "attempt budget exhausted"
             )
+            values = None
         else:
             self._attempts += 1
-            report = self._evaluator.evaluate(candidate)
-        values = None
-        if report.observation_ref:
+            if report is None:
+                report = self._evaluator.evaluate(candidate)
+        if report.observation_ref and values is None:
             values = self._evaluator.observation(report.observation_ref)
         compiled = None
         if report.expression_id:
@@ -625,6 +634,10 @@ class SearchSession:
             initial_count=self._initial_count,
         )
         return feedback
+
+    def measure(self, candidate: Candidate):
+        """Train/Valid computation only; safe to run concurrently, admitted later in trial order."""
+        return self._evaluator.measure(candidate)
 
     def evaluate_many(self, candidates: list[Candidate]):
         return [self.evaluate(candidate) for candidate in candidates]

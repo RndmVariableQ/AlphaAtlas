@@ -18,6 +18,7 @@
     <div class="title-row">
       <h1 id="run-title">选择一个运行</h1>
       <span id="run-status" class="pill"></span>
+      <button id="run-stop" class="stop" hidden>停止运行</button>
     </div>
     <div id="run-meta" class="meta"></div>
     <div class="stats" id="run-stats"></div>
@@ -37,12 +38,13 @@
       <div id="tooltip" class="tooltip hidden"></div>
       <div class="legend">
         <div class="legend-title">图例</div>
-        <div><i class="sw land"></i>陆地：残差信息高于海平面</div>
-        <div><i class="sw saturated"></i>饱和：近期尝试不再浮出水面</div>
-        <div><i class="sw seabed"></i>海底：已探索、无新信息</div>
-        <div><i class="sw fog"></i>迷雾：尚未探索</div>
-        <div><i class="sw probing"></i>勘探中：尝试次数不足</div>
-        <div class="legend-marks"><span class="mk admitted">◆</span>入库 <span class="mk initial">■</span>初始库 <span class="mk cand">●</span>候选</div>
+        <div><i class="sw land"></i>陆地：<span data-rule="land">残差信息高于海平面</span></div>
+        <div><i class="sw saturated"></i>饱和：<span data-rule="saturated">近期尝试不再浮出水面</span></div>
+        <div><i class="sw seabed"></i>海底：<span data-rule="seabed">已探索、无新信息（可见海床）</span></div>
+        <div><i class="sw fog"></i>迷雾：尚未探索的深海</div>
+        <div><i class="sw probing"></i>勘探中：<span data-rule="probing">尝试次数不足（见标签）</span></div>
+        <div id="map-census" class="census"></div>
+        <div class="legend-marks"><span class="mk admitted">●</span>入库 <span class="mk initial">■</span>初始库 · 其余尝试只体现在地形中，放大后显示，悬停可查看</div>
         <div id="map-note" class="note"></div>
       </div>
       <div class="map-tools">

@@ -1,8 +1,10 @@
 import copy
+import io
 import json
 import math
 from dataclasses import replace
 from datetime import date
+from urllib.error import HTTPError
 
 import numpy as np
 import polars as pl
@@ -27,6 +29,7 @@ from alpha_atlas.methods.alphaschema import (
     realization_reward,
     select_batch,
 )
+from alpha_atlas.methods.models import HTTPModels
 from alpha_atlas.runner import resume, run
 from alpha_atlas.runner import test_frozen as evaluate_frozen
 from alpha_atlas.session import SearchSession
@@ -422,6 +425,63 @@ def test_runner_resume_reuses_saved_stages_trials_and_preserves_frozen_oos(
     before = (directory / "checkpoint.json").read_bytes()
     evaluate_frozen(project, directory)
     assert (directory / "checkpoint.json").read_bytes() == before
+
+
+def test_runner_resumes_exhausted_503_at_same_plan_without_replaying_trials(project, monkeypatch):
+    options = config(
+        chat_model="synthetic",
+        chat_base_url="http://synthetic.invalid/v1",
+        chat_key_env="ATLAS_TEST_MODEL_KEY",
+    )
+    requests, waits = [], []
+    replies = FakeModels(("$adj_close", "$volume"))
+
+    def request(req, **kwargs):
+        body = json.loads(req.data)
+        requests.append(body)
+        if 2 <= len(requests) <= 5:
+            raise HTTPError("private-url", 503, "private-body", {}, io.BytesIO(b"private"))
+        text, usage = replies.chat("synthetic", json.loads(body["messages"][-1]["content"]))
+        response = {"choices": [{"delta": {"content": text}}], "usage": usage}
+        return io.BytesIO(f"data: {json.dumps(response)}\n\ndata: [DONE]\n\n".encode())
+
+    monkeypatch.setenv("ATLAS_TEST_MODEL_KEY", "synthetic-key")
+    monkeypatch.setattr("alpha_atlas.methods.models.urlopen", request)
+    monkeypatch.setattr("alpha_atlas.methods.models.time.sleep", waits.append)
+    with pytest.raises(RuntimeError, match=r"HTTP 503.*failed after 4 requests"):
+        run(
+            project,
+            "ashare",
+            "fold1",
+            "alphaschema",
+            42,
+            4,
+            method_impl=AlphaSchemaSearch(42, options, models=HTTPModels(options)),
+        )
+    directory = next((project / "artifacts/runs").iterdir())
+    checkpoint = read_json(directory / "checkpoint.json")
+    committed = logical_trials(directory)
+    assert read_json(directory / "run.json")["status"] == "failed"
+    assert checkpoint["completed"] == checkpoint["attempts"] == len(committed) == 2
+    assert checkpoint["pending"] is None
+    assert checkpoint["method_state"]["work"]["responses"] == {"0": []}
+    assert checkpoint["method_state"]["usage"]["chat_requests"] == 5
+    assert checkpoint["method_state"]["usage"]["unknown_usage_requests"] == 4
+    assert waits == [30, 60, 120]
+
+    restored = AlphaSchemaSearch(42, options, models=HTTPModels(options))
+    resume(project, directory, method_impl=restored)
+    assert read_json(directory / "run.json")["status"] == "frozen"
+    assert logical_trials(directory)[:2] == committed
+    checkpoint = read_json(directory / "checkpoint.json")
+    assert checkpoint["completed"] == checkpoint["attempts"] == 4
+    assert restored.usage == {
+        "chat_requests": 6,
+        "unknown_usage_requests": 4,
+        "prompt_tokens": 10,
+        "completion_tokens": 6,
+    }
+    assert len(requests) == 6 and all(body == requests[1] for body in requests[2:])
 
 
 def test_unknown_usage_network_failure_and_json_pending_state(tmp_path):

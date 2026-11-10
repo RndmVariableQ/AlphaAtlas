@@ -4650,6 +4650,19 @@ P1–P99 和品种去均值。Test 不回传搜索，独立版本避免主工作
 评估状态为 success，均因统一 IC 门槛拒绝；核对时为 2/1000 次、入库 0，第 3 次正在生成。
 运行已脱离终端并继续搜索，尚无 OOS 结果。
 
+同日 17:02（北京时间），运行在完成 378/1000 次候选尝试、入库 20 个因子后，
+因下一计划的 Chat 请求连续四次返回 HTTP 503 而停止。失败发生在 `ask` 阶段；
+检查点保存 189 个已完成计划及当前待实现计划，没有待提交候选，下一次编号为 379。
+运行配置及检查点指纹匹配，末项原子 trial 的库版本与检查点均为 20。
+公共客户端的 503／明确过载退避已调整，规则见[方法复现规范](../method_reproduction.md)；
+恢复沿用原模型、搜索与评估配置，以及原因子库和方法状态。
+本次完整离线检查通过，1,317 项测试通过（128.75 秒）；新增模拟 HTTP 503 耗尽后的
+续跑回归，验证原计划、已提交 trial、候选预算和未知请求用量均保留。
+检查日志为 [503 恢复检查](../../artifacts/comparisons/alphaschema_deepseek_fold2_20261103/recovery-503-checks.log)。
+同日 17:25（北京时间）经用户授权，通过原启动／恢复脚本在后台续跑，PID 4063572，
+输出追加至原日志。运行通过恢复检查并加载 6,189,366 行行情，状态为 `running`，
+从第 379 次候选的原待实现计划继续请求模型；服务端有效回复及新增 trial 尚待确认。
+
 [启动／恢复脚本](../../artifacts/comparisons/alphaschema_deepseek_fold2_20261103/run.py)、
 [固定版本](../../artifacts/comparisons/alphaschema_deepseek_fold2_20261103/workspace/configs/versions/rq8_fold2_alphaschema_deepseek_v1.json)、
 [运行配置](../../artifacts/comparisons/alphaschema_deepseek_fold2_20261103/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-alphaschema-42-69020461a6/run.json)、
@@ -5053,3 +5066,3353 @@ fold 和初始 B26 一致；原搜索仍按保存版本与库身份校验，不�
 [因子定义 JSONL](zookeeper26_fold2/single_methods_v5/factors.jsonl)、
 [五次搜索与成本](zookeeper26_fold2/single_methods_v5/search_runs.jsonl)、
 [拟合冻结与配对核验](zookeeper26_fold2/single_methods_v5/evaluation_audit.json)。
+
+## 2026-11-03 AlphaSchema DeepSeek：前500次截面评估
+
+按用户预定的 500 次节点，运行 `futures_kernel_5m_full-all-fold2-alphaschema-42-69020461a6`
+于北京时间 22:10 提交第 500 次候选后，建立独立、不可恢复的 `69020461a6-prefix500`
+冻结截面，保留当时已入库的全部 23 个因子。原 `deepseek-flash` 搜索继续执行 1000 次预算，
+截面评估不调用模型服务，不向搜索回传 Test。22:18 完成单因子、组合模型及 Val 相似度评估。
+
+前 500 次结果为入库 23、质量阈值拒绝 432、常数因子 21、覆盖不足 12、行为重复 9、
+编译失败 3。500 个原子 trial 逐字节复制并核对；冻结原定义、顺序、训练方向和裁剪边界。
+第 500 次的精确方法状态及模型用量不可得，因此不复制后续检查点，也不报告截面模型成本。
+
+沿用 `rq8_fold2_alphaschema_deepseek_v1` 的数据快照、八字段、60 个算子、fold2、seed 42、
+规则及模型配置。全部 23 列有效，Train+Val 拟合使用 5,308,104 行；模型保存后才加载 Test。
+LightGBM 为 50 轮、15 叶、min_data_in_leaf=2000、max_depth=5，预处理沿用 P1–P99
+和品种去均值。两个组合模型均预测 2,558,829 / 2,558,829 行，Test 覆盖率为 100%。
+
+| 指标 | 前 500 次截面结果 |
+| --- | ---: |
+| 入库因子数 | 23 |
+| Test 单因子加权 Pearson 均值 / 中位数 | 0.006462 / 0.006366 |
+| Test 正 Pearson IC 因子 | 23 / 23 |
+| Test 单因子加权 Spearman 均值 | 0.003874 |
+| Linear Test 加权 Pearson | 0.012882 |
+| LightGBM Test 加权 Pearson | 0.014689 |
+| Val 有效 / 总配对数 | 253 / 253 |
+| Val 绝对 Spearman 均值 / 中位数 | 0.167630 / 0.095491 |
+| Val 绝对 Spearman P90 / 最大值 | 0.459133 / 0.695945 |
+| Val 绝对 Spearman ≥ 0.7 的配对 | 0 |
+
+冻结库、单因子 OOS、组合模型与相似度的因子身份和顺序一致，模型参数与保存版本一致。
+拟合如实记录 `source_matches_search=false`，未改写搜索来源或绕过配置、数据和冻结校验。
+结果及相似度已填入总表 Fold2 的 DeepSeek 分组；沿用原运行已披露的 Kernel 聚合数据、
+历史留出集和 AlphaSchema 共享诊断差异，不作为新的盲测证据。
+
+准备脚本通过 Ruff 和格式检查；完整 `pwsh -File scripts/check.ps1` 通过，
+1,330 项离线测试全部通过（138.78 秒）。
+
+[截面准备脚本](../../artifacts/comparisons/alphaschema_deepseek_fold2_20261103/prepare_prefix500.py)、
+[运行报告](../../artifacts/comparisons/alphaschema_deepseek_fold2_20261103/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-alphaschema-42-69020461a6-prefix500/report.md)、
+[组合模型报告](../../artifacts/comparisons/alphaschema_deepseek_fold2_20261103/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-alphaschema-42-69020461a6-prefix500/model/report.md)、
+[评估日志](../../artifacts/comparisons/alphaschema_deepseek_fold2_20261103/prefix500.log)、
+[完整检查](../../artifacts/comparisons/alphaschema_deepseek_fold2_20261103/prefix500-checks.log)。
+
+## 2026-11-04 AlphaSchema DeepSeek：1000次完整评估
+
+运行 `futures_kernel_5m_full-all-fold2-alphaschema-42-69020461a6` 已提交完整 1000 次，
+冻结 34 个因子；单因子 Test、Linear／LightGBM Test 和 Val 全库相似度全部完成，
+收尾报告于北京时间 08:06 保存。完整结果与前 500 次截面在总表 DeepSeek 分组相邻列出。
+
+沿用 `rq8_fold2_alphaschema_deepseek_v1`、原数据快照、八字段、60 个算子、fold2 和
+seed 42。组合模型按保存版本拟合，LightGBM 为 50 轮、15 叶、leaf2000/depth5；
+Train+Val 为 5,308,104 行，Test 为 2,558,829 / 2,558,829 行，覆盖率均为 100%。
+搜索、冻结库、OOS、模型和相似度记录的因子身份、顺序及配置来源已核对一致。
+
+| 指标 | 前 500 次 | 完整 1000 次 |
+| --- | ---: | ---: |
+| 入库因子数 | 23 | 34 |
+| Test 单因子加权 Pearson 均值 / 中位数 | 0.006462 / 0.006366 | 0.006122 / 0.006035 |
+| Test 正 Pearson IC 因子 | 23 / 23 | 34 / 34 |
+| Test 单因子加权 Spearman 均值 | 0.003874 | 0.002672 |
+| Linear Test 加权 Pearson | 0.012882 | 0.013154 |
+| LightGBM Test 加权 Pearson | 0.014689 | 0.015982 |
+| Val 有效 / 总配对数 | 253 / 253 | 561 / 561 |
+| Val 绝对 Spearman 均值 / 中位数 | 0.167630 / 0.095491 | 0.188888 / 0.118472 |
+| Val 绝对 Spearman P90 / 最大值 | 0.459133 / 0.695945 | 0.487110 / 0.695945 |
+| Val 绝对 Spearman ≥ 0.7 的配对 | 0 | 0 |
+
+后 500 次新增 11 个成员。相较前 500 次，Linear 和 LightGBM 的 Test 加权 Pearson
+点估计分别提高 0.000272 和 0.001292，单因子均值略降。前 23 项冻结定义及单因子 Test
+结果与截面完全一致，其 253 对 Val 相似度也完全一致；未重算或改写已有产物。
+完整模型如实保留 `source_matches_search=false` 的来源记录，因子身份和配置校验未绕过。
+两节点均保留，不根据 Test 改选；沿用原运行的 Kernel 聚合数据、历史留出集与共享诊断限制。
+
+[完整运行报告](../../artifacts/comparisons/alphaschema_deepseek_fold2_20261103/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-alphaschema-42-69020461a6/report.md)、
+[组合模型报告](../../artifacts/comparisons/alphaschema_deepseek_fold2_20261103/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-alphaschema-42-69020461a6/model/report.md)、
+[Val 配对结果](../../artifacts/comparisons/alphaschema_deepseek_fold2_20261103/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-alphaschema-42-69020461a6/library_similarity.json)、
+[运行与评估日志](../../artifacts/comparisons/alphaschema_deepseek_fold2_20261103/run.log)。
+
+## 2026-11-04 V2 Sync Haiku：尺度统计版前500次截面评估
+
+按用户指定的 `rq8_fold2_v2sync_haiku_v2` 和运行
+`futures_kernel_5m_full-all-fold2-v2_sync-42-630b551ad5`，从前 500 个已提交原子 trial
+建立独立、不可恢复的 `630b551ad5-prefix500` 截面，冻结全部 35 个已入库因子。
+主运行继续原 1000 次预算；本次不调用 Haiku，不向搜索回传 Test。
+截面于北京时间 11:09 保存，11:15 完成单因子、组合模型与 Val 相似度评估。
+
+500 次提交为入库 35、质量阈值拒绝 350、行为重复 60、覆盖不足 41、常数因子 11、
+表达式重复 3。原子 trial 逐字节复制并核对，因子定义、顺序、训练方向及裁剪边界保留。
+第 500 次的精确方法状态和模型用量不可得，没有复制后续检查点或报告截面模型调用成本。
+
+保留原版本的 Kernel 八字段、60 个算子、空初始库、fold2、seed 42、数据快照和评估规则。
+该版本启用 `library_residual=residual_ic_v1` 与 `scale_statistics=true`，搜索反馈包含
+按特征跨度分档的残差信息，与既有 V1 的搜索协议不同，不能把差异单独归因于 LLM。
+下游模型读取保存版本的配置：Linear OLS；LightGBM 50 轮、15 叶、leaf2000/depth5；
+预处理为 Train+Val 全局 P1–P99 和品种去均值。没有采用工作区当前 TOML 的 leaf100 默认值。
+
+35 个输入因子全部可用，拟合使用 5,307,829 行 Train+Val 数据。模型保存后才计算 Test；
+两个模型均预测 2,558,697 / 2,558,829 行，覆盖率为 99.994841%，按统一规则排除
+132 条全因子缺失行。
+
+| 指标 | 前 500 次截面结果 |
+| --- | ---: |
+| 入库因子数 | 35 |
+| Test 单因子加权 Pearson 均值 / 中位数 | 0.004042 / 0.003891 |
+| Test 正 Pearson IC 因子 | 31 / 35（88.57%） |
+| Test 单因子加权 Spearman 均值 | 0.001888 |
+| Linear Test 加权 Pearson | 0.011080 |
+| LightGBM Test 加权 Pearson | 0.013874 |
+| Val 有效 / 总配对数 | 595 / 595 |
+| Val 绝对 Spearman 均值 / 中位数 | 0.105328 / 0.025537 |
+| Val 绝对 Spearman P90 / 最大值 | 0.375251 / 0.690604 |
+| Val 绝对 Spearman ≥ 0.7 的配对 | 0 |
+
+冻结库、OOS、模型和相似度中的 35 项身份及顺序一致，模型参数与保存版本一致。
+拟合如实记录 `source_matches_search=false`，配置、数据和冻结校验保留。
+结果与相似度已写入总表 Haiku 分组，以“尺度统计，630b551ad5”标识此次运行。
+沿用原版本披露的 Kernel 聚合数据和历史留出限制，不作为新的盲测证据。
+
+本次未修改搜索或评估源码。截面准备脚本通过 Ruff 和格式检查；
+`pwsh -File scripts/check.ps1` 完整通过，1,330 项离线测试通过（133.87 秒）。
+
+[截面准备脚本](../../artifacts/comparisons/v2sync_scales_haiku_fold2_20261103/prepare_prefix500.py)、
+[固定版本](../../artifacts/comparisons/v2sync_scales_haiku_fold2_20261103/workspace/configs/versions/rq8_fold2_v2sync_haiku_v2.json)、
+[运行报告](../../artifacts/comparisons/v2sync_scales_haiku_fold2_20261103/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v2_sync-42-630b551ad5-prefix500/report.md)、
+[组合模型报告](../../artifacts/comparisons/v2sync_scales_haiku_fold2_20261103/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v2_sync-42-630b551ad5-prefix500/model/report.md)、
+[评估日志](../../artifacts/comparisons/v2sync_scales_haiku_fold2_20261103/prefix500.log)、
+[完整检查](../../artifacts/comparisons/v2sync_scales_haiku_fold2_20261103/prefix500-checks.log)。
+
+## 2026-11-04 V2 Sync Haiku：命名机制版前500次截面评估
+
+按用户指定的 `rq8_fold2_v2sync_haiku_v3` 和运行
+`futures_kernel_5m_full-all-fold2-v2_sync-42-a95ded14a5`，从前 500 个原子 trial 建立
+独立、不可恢复的 `a95ded14a5-prefix500` 截面，冻结当时全部 33 个已入库因子。
+北京时间 15:53 保存截面，15:59 完成单因子 Test、组合模型和 Val 相似度评估。
+主运行继续原 1000 次预算，本次不调用 Haiku，不向搜索回传 Test。
+
+500 次提交为入库 33、质量阈值拒绝 410、行为重复 24、覆盖不足 17、常数因子 14、
+表达式重复 2。原子 trial 逐字节复制并核对，保留原定义、顺序、训练方向和裁剪边界。
+截面不复制方法检查点，也不将主运行的实时状态或用量归入前 500 次成本。
+
+保存版本为 Kernel 八字段、60 个算子、空初始库、fold2、seed 42；开启
+`library_residual=residual_ic_v1`、`scale_statistics=true` 和 `mechanism_regions=true`。
+v3 只允许命名的机制区域，区别于此前 v2 的尺度统计版，搜索反馈和研究区域约束均须披露。
+下游模型使用保存版本中的 Linear OLS 与 LightGBM 50 轮、15 叶、leaf2000/depth5，
+预处理沿用 Train+Val 全局 P1–P99 与品种去均值。
+
+33 个输入因子全部可用，模型在 5,308,073 行 Train+Val 数据上拟合并保存后计算 Test。
+两个组合模型均预测 2,558,825 / 2,558,829 行，覆盖率为 99.999844%，排除 4 条
+全因子缺失行。
+
+| 指标 | 前 500 次截面结果 |
+| --- | ---: |
+| 入库因子数 | 33 |
+| Test 单因子加权 Pearson 均值 / 中位数 | 0.003766 / 0.003772 |
+| Test 正 Pearson IC 因子 | 30 / 33（90.91%） |
+| Test 单因子加权 Spearman 均值 | 0.005095 |
+| Linear Test 加权 Pearson | 0.013271 |
+| LightGBM Test 加权 Pearson | 0.008715 |
+| Val 有效 / 总配对数 | 528 / 528 |
+| Val 绝对 Spearman 均值 / 中位数 | 0.118200 / 0.017427 |
+| Val 绝对 Spearman P90 / 最大值 | 0.446327 / 0.695408 |
+| Val 绝对 Spearman ≥ 0.7 的配对 | 0 |
+
+相较原 `a95ded14a5-early336` 临时截面新增 17 个成员；原 16 个因子的冻结定义、
+单因子 Test 结果及 120 对 Val 相似度均完全一致。组合模型使用全部 33 列独立拟合，
+保留原 336 次产物，不按 Test 改选成员、参数或预算节点。
+冻结库、OOS、模型和相似度的身份、顺序及配置已核对一致，拟合如实记录
+`source_matches_search=false`。沿用 Kernel 聚合数据及历史留出限制，不作为新的盲测证据。
+
+按用户要求，前 500 次结果、相似度及对应说明已从总表撤下；完整评估产物与本记录保留。
+本次未修改搜索或评估源码；准备脚本通过 Ruff 和格式检查，
+完整 `pwsh -File scripts/check.ps1` 通过，1,330 项离线测试通过（182.58 秒）。
+
+[截面准备脚本](../../artifacts/comparisons/v2sync_mechanism_haiku_fold2_20261103/prepare_prefix500.py)、
+[固定版本](../../artifacts/comparisons/v2sync_mechanism_haiku_fold2_20261103/workspace/configs/versions/rq8_fold2_v2sync_haiku_v3.json)、
+[运行报告](../../artifacts/comparisons/v2sync_mechanism_haiku_fold2_20261103/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v2_sync-42-a95ded14a5-prefix500/report.md)、
+[组合模型报告](../../artifacts/comparisons/v2sync_mechanism_haiku_fold2_20261103/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v2_sync-42-a95ded14a5-prefix500/model/report.md)、
+[评估日志](../../artifacts/comparisons/v2sync_mechanism_haiku_fold2_20261103/prefix500.log)、
+[完整检查](../../artifacts/comparisons/v2sync_mechanism_haiku_fold2_20261103/prefix500-checks.log)。
+
+## 2026-11-04 V2 Sync Luna v4：前500次截面评估
+
+按用户指定的 `rq8_fold2_v2sync_luna_v4` 和运行
+`futures_kernel_5m_full-all-fold2-v2_sync-42-57ed99c496`，沿用此前比较的 500 次节点，
+从原 1000 次预算搜索的前 500 个原子 trial 建立独立、不可恢复的
+`57ed99c496-prefix500` 截面，冻结全部 14 个已入库因子。北京时间 16:14 保存截面，
+16:17 完成单因子 Test、组合模型和 Val 相似度评估。主搜索继续原预算；
+本次不调用模型服务，不回传 Test，也没有重新运行一个 500 次预算的搜索。
+
+500 次提交为入库 14、质量阈值拒绝 458、行为重复 17、常数因子 6、表达式重复 4、
+覆盖不足 1。原子记录逐字节复制并核对，保留原定义、顺序、训练方向及裁剪边界。
+截面不复制方法检查点，也不将主运行的实时状态或用量归入前 500 次成本。
+
+保存版本使用 `gpt-6-luna`、Kernel 八字段、60 个算子、空初始库、fold2、seed 42，
+开启库残差、尺度统计和命名机制区域。v4 将退火温度设为 0.45→0.08，启用
+`adaptive_depth=true`，单区域预算占比为 0.15；这些搜索设置保持原样。
+下游模型沿用保存版本中的 Linear OLS 与 LightGBM 50 轮、15 叶、leaf2000/depth5，
+预处理为 Train+Val 全局 P1–P99 和品种去均值。
+
+14 列全部可用，Train+Val 拟合使用 5,308,104 行。模型保存后才加载 Test，
+两个组合模型均预测 2,558,829 / 2,558,829 行，覆盖率为 100%。
+
+| 指标 | 前 500 次截面结果 |
+| --- | ---: |
+| 入库因子数 | 14 |
+| Test 单因子加权 Pearson 均值 / 中位数 | 0.004687 / 0.003730 |
+| Test 正 Pearson IC 因子 | 14 / 14 |
+| Test 单因子加权 Spearman 均值 | 0.001691 |
+| Linear Test 加权 Pearson | 0.010182 |
+| LightGBM Test 加权 Pearson | 0.008575 |
+| Val 有效 / 总配对数 | 91 / 91 |
+| Val 绝对 Spearman 均值 / 中位数 | 0.126699 / 0.022577 |
+| Val 绝对 Spearman P90 / 最大值 | 0.435124 / 0.672502 |
+| Val 绝对 Spearman ≥ 0.7 的配对 | 0 |
+
+冻结库、OOS、模型和相似度的身份与顺序一致，模型配置与保存版本一致。
+拟合如实记录 `source_matches_search=false`，数据、配置及冻结校验保留。
+结果保存在独立运行产物和本记录中，未发布到仓库根目录的实验总表。
+沿用原版本披露的 Kernel 聚合数据、供应商历史版本及历史留出限制，不作为新的盲测证据。
+
+本次未修改搜索或评估源码；准备与评估脚本通过 Ruff 和格式检查，完整
+`pwsh -File scripts/check.ps1` 通过，1,330 项离线测试通过（136.10 秒）。
+
+[截面准备脚本](../../artifacts/comparisons/v2sync_luna_v4_fold2_20261104/prepare_prefix500.py)、
+[独立评估入口](../../artifacts/comparisons/v2sync_luna_v4_fold2_20261104/evaluate_prefix500.py)、
+[固定版本](../../artifacts/comparisons/v2sync_luna_v4_fold2_20261104/workspace/configs/versions/rq8_fold2_v2sync_luna_v4.json)、
+[运行报告](../../artifacts/comparisons/v2sync_luna_v4_fold2_20261104/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v2_sync-42-57ed99c496-prefix500/report.md)、
+[组合模型报告](../../artifacts/comparisons/v2sync_luna_v4_fold2_20261104/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v2_sync-42-57ed99c496-prefix500/model/report.md)、
+[评估日志](../../artifacts/comparisons/v2sync_luna_v4_fold2_20261104/prefix500.log)、
+[完整检查](../../artifacts/comparisons/v2sync_luna_v4_fold2_20261104/prefix500-checks.log)。
+
+## 2026-11-04 V2 Sync DeepSeek v3：前500次截面评估
+
+按用户指定的 `rq8_fold2_v2sync_deepseek_v3` 和运行
+`futures_kernel_5m_full-all-fold2-v2_sync-42-482d8fe0a1`，沿用此前的 500 次节点，
+从原 1000 次预算搜索的前 500 个原子 trial 建立独立、不可恢复的
+`482d8fe0a1-prefix500` 截面，冻结全部 33 个已入库因子。北京时间 16:27 保存截面，
+16:33 完成单因子 Test、组合模型与 Val 相似度评估。主搜索继续原预算；
+本次不调用模型服务，不回传 Test，也没有重新运行一个 500 次预算的搜索。
+
+500 次提交为入库 33、质量阈值拒绝 421、行为重复 41、覆盖不足 2、常数因子 2、
+训练指标未定义 1。原子记录逐字节复制并核对，保留原定义、顺序、训练方向及裁剪边界。
+截面不复制方法检查点，也不将主运行的实时状态或用量归入前 500 次成本。
+
+保存版本使用 `deepseek-flash`、Kernel 八字段、60 个算子、空初始库、fold2、seed 42，
+开启库残差、尺度统计和命名机制区域；除模型连接外，版本配置与 Haiku v3 一致。
+退火温度沿用 0.25→0.02，下游模型沿用保存版本中的 Linear OLS 与 LightGBM
+50 轮、15 叶、leaf2000/depth5，预处理为 Train+Val 全局 P1–P99 和品种去均值。
+
+33 列全部可用，Train+Val 拟合使用 5,308,097 行。模型保存后才加载 Test，
+两个组合模型均预测 2,558,825 / 2,558,829 行，覆盖率为 99.999844%，排除 4 条
+全因子缺失行。
+
+| 指标 | 前 500 次截面结果 |
+| --- | ---: |
+| 入库因子数 | 33 |
+| Test 单因子加权 Pearson 均值 / 中位数 | 0.004736 / 0.005335 |
+| Test 正 Pearson IC 因子 | 30 / 33（90.91%） |
+| Test 单因子加权 Spearman 均值 | 0.003105 |
+| Linear Test 加权 Pearson | 0.016330 |
+| LightGBM Test 加权 Pearson | 0.010640 |
+| Val 有效 / 总配对数 | 528 / 528 |
+| Val 绝对 Spearman 均值 / 中位数 | 0.074472 / 0.008281 |
+| Val 绝对 Spearman P90 / 最大值 | 0.281889 / 0.671051 |
+| Val 绝对 Spearman ≥ 0.7 的配对 | 0 |
+
+冻结库、OOS、模型和相似度的身份与顺序一致，模型配置与保存版本一致。
+拟合如实记录 `source_matches_search=false`，数据、配置及冻结校验保留。
+结果保存在独立运行产物和本记录中，未发布到仓库根目录的实验总表。
+沿用原版本披露的 Kernel 聚合数据、供应商历史版本及历史留出限制，不作为新的盲测证据。
+
+本次未修改搜索或评估源码；准备与评估脚本通过 Ruff 和格式检查，完整
+`pwsh -File scripts/check.ps1` 通过，1,330 项离线测试通过（168.49 秒）。
+
+[截面准备脚本](../../artifacts/comparisons/v2sync_deepseek_fold2_20261103/prepare_prefix500.py)、
+[独立评估入口](../../artifacts/comparisons/v2sync_deepseek_fold2_20261103/evaluate_prefix500.py)、
+[固定版本](../../artifacts/comparisons/v2sync_deepseek_fold2_20261103/workspace/configs/versions/rq8_fold2_v2sync_deepseek_v3.json)、
+[运行报告](../../artifacts/comparisons/v2sync_deepseek_fold2_20261103/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v2_sync-42-482d8fe0a1-prefix500/report.md)、
+[组合模型报告](../../artifacts/comparisons/v2sync_deepseek_fold2_20261103/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v2_sync-42-482d8fe0a1-prefix500/model/report.md)、
+[评估日志](../../artifacts/comparisons/v2sync_deepseek_fold2_20261103/prefix500.log)、
+[完整检查](../../artifacts/comparisons/v2sync_deepseek_fold2_20261103/prefix500-checks.log)。
+
+## 2026-11-04 V2 Async Haiku v4：当前359次截面评估
+
+按用户要求评估 `rq8_fold2_v2async_haiku_v4` 的当前情况，不写入结果总表。检查时运行
+`futures_kernel_5m_full-all-fold2-v2_async-42-315881ff68` 已提交 359 次候选评估，
+入库 7 个因子；据此固定 `315881ff68-prefix359` 独立、不可恢复的截面。北京时间
+17:21 保存截面，17:25 完成评估。这是原 1000 次预算搜索的中途截面，非 500 次节点，
+也没有重新进行 359 次预算的搜索。主搜索继续原预算，Test 不回传方法。
+
+359 次提交包括质量阈值拒绝 275、覆盖不足 59、常数因子 9、行为重复 8、入库 7、
+表达式重复 1。7 次准入分别位于第 84、136、216、240、266、289、345 次评估。
+截面保留原子 trial、因子定义、顺序、训练方向和裁剪边界，逐字节核对复制记录；
+不复制方法检查点，也不将实时并行请求状态或模型用量归入截面成本。
+
+保存版本使用 `claude-haiku-5-5`、`v2_async`、5 个并行计划、Kernel 八字段、
+60 个算子、空初始库、fold2、seed 42。库残差、尺度统计和命名机制区域开启，
+退火温度为 0.45→0.08，开启 `adaptive_depth`，`region_budget_share=0.15`。
+下游沿用 Linear OLS 与 LightGBM 50 轮、15 叶、leaf2000/depth5；预处理为
+Train+Val 全局 P1–P99 与品种去均值，不按 Test 筛选因子或调整参数。
+
+7 列全部可用，在 5,076,427 行 Train+Val 数据上拟合并保存后才加载 Test。
+单因子 Test 加权 Pearson 均值为 0.002989、中位数为 0.000305，5 / 7 为正
+（71.43%）；加权 Spearman 均值为 0.005358，6 / 7 为正。
+单因子覆盖率范围为 86.770394%–91.474811%。
+
+Linear 与 LightGBM 的 Test 加权 Pearson IC 分别为 0.008336、0.011564；
+这里的 IC 使用期货 √成交额权重。两个模型均预测 2,403,290 / 2,558,829 行，
+覆盖率为 93.921477%，155,539 条全因子缺失行不预测。
+Val 的 21 / 21 对相似度均有效，绝对 Spearman 均值 / 中位数为
+0.165671 / 0.008147，P90 / 最大值为 0.670958 / 0.699624，没有 ≥ 0.7 的配对。
+
+冻结库、OOS、模型及相似度的身份、顺序、数据快照与配置一致，拟合来源记录为
+`source_matches_search=false`，保留全部既有校验。本次通过公共单因子和组合模型入口
+以及既有 Val 相似度计算函数评估，不调用自动填表入口；仓库总表逐字节未变，
+工作区总表也未创建。结果仅保存在独立运行产物与本记录。
+沿用原版本披露的 Kernel 聚合数据、供应商历史版本及历史留出限制，不作为新的盲测证据。
+
+本次未修改搜索或评估源码，也未发起模型服务请求。准备与评估脚本通过 Ruff 和格式检查，
+完整 `pwsh -File scripts/check.ps1` 通过，1,330 项离线测试通过（152.11 秒）。
+
+[截面准备脚本](../../artifacts/comparisons/v2async_haiku_v4_fold2_20261104/prepare_prefix359.py)、
+[独立评估入口](../../artifacts/comparisons/v2async_haiku_v4_fold2_20261104/evaluate_prefix359.py)、
+[固定版本](../../artifacts/comparisons/v2async_haiku_v4_fold2_20261104/workspace/configs/versions/rq8_fold2_v2async_haiku_v4.json)、
+[运行报告](../../artifacts/comparisons/v2async_haiku_v4_fold2_20261104/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v2_async-42-315881ff68-prefix359/report.md)、
+[组合模型报告](../../artifacts/comparisons/v2async_haiku_v4_fold2_20261104/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v2_async-42-315881ff68-prefix359/model/report.md)、
+[评估日志](../../artifacts/comparisons/v2async_haiku_v4_fold2_20261104/prefix359.log)、
+[完整检查](../../artifacts/comparisons/v2async_haiku_v4_fold2_20261104/prefix359-checks.log)。
+
+## 2026-11-04 V2 Sync DeepSeek v3：最新546次截面的模型预测
+
+按用户要求再次评估 `rq8_fold2_v2sync_deepseek_v3`，检查时运行
+`futures_kernel_5m_full-all-fold2-v2_sync-42-482d8fe0a1` 已提交 546 次候选评估，
+入库 36 个因子。北京时间 17:32 保存独立、不可恢复的 `482d8fe0a1-prefix546`，
+17:41 保存组合模型 Test 结果。原 1000 次预算搜索继续运行，Test 不回传方法；
+保留此前 500 次截面的完整产物。
+
+相较前 500 次新增 3 个因子，分别在第 509、537、541 次评估入库；原 33 个成员的
+定义、顺序、训练方向及裁剪边界完全相同。546 次提交包括质量阈值拒绝 456、入库 36、
+行为重复 47、覆盖不足 4、常数因子 2、训练指标未定义 1。截面保留原子 trial，
+不复制方法检查点，不将实时方法状态或模型用量归入截面成本。
+
+数据快照、方法配置、fold2、seed 42 和下游模型配置均与 500 次截面一致。模型使用全部
+36 列，Train+Val 可用行从 5,308,097 增至 5,308,104。继续使用 Linear OLS、LightGBM
+50 轮、15 叶、leaf2000/depth5，以及 Train+Val 全局 P1–P99 和品种去均值。
+模型在加载 Test 前已保存，不按 Test 筛选因子或调参。
+
+Test 的 √成交额加权 Pearson IC：Linear 从 0.016330 变为 0.016279，差值为
+−0.000051；LightGBM 从 0.010640 变为 0.012949，差值为 +0.002309。
+本次两个模型的加权 Spearman IC 分别为 0.012306、0.007433。
+两个模型均预测 2,558,829 / 2,558,829 行，覆盖率为 100%；500 次截面为
+2,558,825 / 2,558,829 行，因此本次额外覆盖 4 行，以上是各自实际覆盖样本上的结果。
+
+本次以模型预测结果为报告范围，已生成的单因子及 Val 相似度产物保留。
+原 33 个单因子的 Test 覆盖与指标元数据一致，指标数值在绝对误差 `1e-12` 内一致。
+模型、冻结库及配置的身份和顺序核对一致，拟合如实记录 `source_matches_search=false`。
+仓库根目录及工作区的结果总表逐字节未变，未加入本次 546 次截面。
+沿用原版本披露的 Kernel 聚合数据、供应商历史版本及历史留出限制，不作为新的盲测证据。
+
+本次未修改搜索或评估源码，也未发起模型服务请求。准备与评估脚本通过 Ruff 和格式检查，
+完整 `pwsh -File scripts/check.ps1` 通过，1,330 项离线测试通过（145.74 秒）。
+
+[截面准备脚本](../../artifacts/comparisons/v2sync_deepseek_fold2_20261103/prepare_prefix546.py)、
+[独立评估入口](../../artifacts/comparisons/v2sync_deepseek_fold2_20261103/evaluate_prefix546.py)、
+[固定版本](../../artifacts/comparisons/v2sync_deepseek_fold2_20261103/workspace/configs/versions/rq8_fold2_v2sync_deepseek_v3.json)、
+[运行报告](../../artifacts/comparisons/v2sync_deepseek_fold2_20261103/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v2_sync-42-482d8fe0a1-prefix546/report.md)、
+[组合模型报告](../../artifacts/comparisons/v2sync_deepseek_fold2_20261103/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v2_sync-42-482d8fe0a1-prefix546/model/report.md)、
+[评估日志](../../artifacts/comparisons/v2sync_deepseek_fold2_20261103/prefix546.log)、
+[完整检查](../../artifacts/comparisons/v2sync_deepseek_fold2_20261103/prefix546-checks.log)。
+
+## 2026-11-04 V2 Async Haiku v4：最新463次截面的模型预测
+
+按用户要求评估 `rq8_fold2_v2async_haiku_v4` 的最新模型结果，检查时运行
+`futures_kernel_5m_full-all-fold2-v2_async-42-315881ff68` 已提交 463 次候选评估，
+入库 10 个因子。北京时间 17:57 保存独立、不可恢复的 `315881ff68-prefix463`，
+17:59 完成两个组合模型的 Test 评估。只调用公共 `run_model` 拟合和 Test 入口，
+没有计算单因子 OOS 或 Val 配对相关性，也没有调用自动填表流程。
+主搜索继续原 1000 次预算，Test 不回传方法，保留此前 359 次截面的完整产物。
+
+新增 3 个因子分别在第 401、440、459 次评估入库，原 7 个因子的定义、顺序、训练方向
+及裁剪边界完全相同。463 次提交包括质量阈值拒绝 338、覆盖不足 88、行为重复 17、
+入库 10、常数因子 9、表达式重复 1。原子 trial 逐字节复制并核对；不复制方法检查点，
+不将实时并行请求状态或模型用量归入截面成本。
+
+数据快照、方法配置、fold2、seed 42 和下游模型配置与 359 次截面一致。10 列全部可用，
+Train+Val 可用样本仍为 5,076,427 行。模型沿用 Linear OLS、LightGBM 50 轮、15 叶、
+leaf2000/depth5，以及 Train+Val 全局 P1–P99 和品种去均值；保存模型后才加载 Test，
+不按 Test 筛选因子或调整参数。
+
+Test 的 √成交额加权 Pearson IC：Linear 从 0.008336 降至 0.007717，差值为
+−0.000619；LightGBM 从 0.011564 降至 0.009666，差值为 −0.001898。
+本次加权 Spearman IC 分别为 0.015021、0.017633。
+两个模型仍预测 2,403,290 / 2,558,829 行，覆盖率为 93.921477%，
+155,539 条全因子缺失行不预测；训练和预测样本数均与上次相同。
+
+模型与冻结库的身份、顺序、数据快照及配置核对一致，拟合如实记录
+`source_matches_search=false`，保留全部既有校验。本截面没有 `oos.json` 或
+`library_similarity.json`，符合仅评估模型预测的范围。仓库总表逐字节未变，
+工作区总表也未创建；结果仅保存在独立产物与本记录。
+沿用原版本披露的 Kernel 聚合数据、供应商历史版本及历史留出限制，不作为新的盲测证据。
+
+本次未修改搜索或评估源码，也未发起模型服务请求。准备与评估脚本通过 Ruff 和格式检查，
+完整 `pwsh -File scripts/check.ps1` 通过，1,330 项离线测试通过（135.02 秒）。
+
+[截面准备脚本](../../artifacts/comparisons/v2async_haiku_v4_fold2_20261104/prepare_prefix463.py)、
+[模型评估入口](../../artifacts/comparisons/v2async_haiku_v4_fold2_20261104/evaluate_models_prefix463.py)、
+[固定版本](../../artifacts/comparisons/v2async_haiku_v4_fold2_20261104/workspace/configs/versions/rq8_fold2_v2async_haiku_v4.json)、
+[运行报告](../../artifacts/comparisons/v2async_haiku_v4_fold2_20261104/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v2_async-42-315881ff68-prefix463/report.md)、
+[组合模型报告](../../artifacts/comparisons/v2async_haiku_v4_fold2_20261104/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v2_async-42-315881ff68-prefix463/model/report.md)、
+[评估日志](../../artifacts/comparisons/v2async_haiku_v4_fold2_20261104/prefix463-models.log)、
+[完整检查](../../artifacts/comparisons/v2async_haiku_v4_fold2_20261104/prefix463-checks.log)。
+
+## 2026-11-04 V2 Async Haiku v4：前500次截面的模型预测
+
+按用户指定的 500 次节点评估 `rq8_fold2_v2async_haiku_v4`，从运行
+`futures_kernel_5m_full-all-fold2-v2_async-42-315881ff68` 的前 500 个原子 trial 建立
+独立、不可恢复的 `315881ff68-prefix500`，冻结全部 11 个入库因子。北京时间 18:25
+保存截面，18:28 完成两个组合模型的 Test 评估。只评估模型预测，没有计算单因子 OOS
+或 Val 配对相关性，也没有写入结果总表。主搜索继续原 1000 次预算，Test 不回传方法。
+
+相较 463 次截面新增第 497 次入库的 `stop_sweep_range_position_36_control`；
+原 10 个成员的定义、顺序、训练方向和裁剪边界完全相同。500 次提交包括质量阈值
+拒绝 365、覆盖不足 97、行为重复 17、入库 11、常数因子 9、表达式重复 1。
+原子 trial 逐字节复制并核对，不复制方法检查点或实时模型用量，保留此前截面产物。
+
+数据快照、方法配置、fold2、seed 42 和下游模型配置与 463 次截面一致。11 列全部可用，
+Train+Val 样本从 5,076,427 增至 5,115,130 行，增加 38,703 行。继续使用 Linear OLS、
+LightGBM 50 轮、15 叶、leaf2000/depth5，以及 Train+Val 全局 P1–P99 和品种去均值。
+模型保存后才加载 Test，不按 Test 筛选因子或调整参数。
+
+Test 的 √成交额加权 Pearson IC：Linear 从 0.007717 变为 0.007729，差值为
++0.000011；LightGBM 从 0.009666 降至 0.006626，差值为 −0.003040。
+本次加权 Spearman IC 分别为 0.014970、0.016480。
+两个模型均预测 2,411,365 / 2,558,829 行，覆盖率为 94.237051%，
+147,464 条全因子缺失行不预测。相较 463 次截面增加 8,075 条预测行，原覆盖率为
+93.921477%；以上是各自实际覆盖样本上的指标，不是共同样本上的增量对照。
+
+模型与冻结库的身份、顺序、数据快照及配置核对一致，拟合如实记录
+`source_matches_search=false`，保留全部既有校验。本截面没有 `oos.json` 或
+`library_similarity.json`，仓库总表逐字节未变，工作区总表也未创建。
+沿用原版本披露的 Kernel 聚合数据、供应商历史版本及历史留出限制，不作为新的盲测证据。
+
+本次未修改搜索或评估源码，也未发起模型服务请求。准备与评估脚本通过 Ruff 和格式检查，
+完整 `pwsh -File scripts/check.ps1` 通过，1,330 项离线测试通过（255.38 秒）。
+
+[截面准备脚本](../../artifacts/comparisons/v2async_haiku_v4_fold2_20261104/prepare_prefix500.py)、
+[模型评估入口](../../artifacts/comparisons/v2async_haiku_v4_fold2_20261104/evaluate_models_prefix500.py)、
+[固定版本](../../artifacts/comparisons/v2async_haiku_v4_fold2_20261104/workspace/configs/versions/rq8_fold2_v2async_haiku_v4.json)、
+[运行报告](../../artifacts/comparisons/v2async_haiku_v4_fold2_20261104/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v2_async-42-315881ff68-prefix500/report.md)、
+[组合模型报告](../../artifacts/comparisons/v2async_haiku_v4_fold2_20261104/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v2_async-42-315881ff68-prefix500/model/report.md)、
+[评估日志](../../artifacts/comparisons/v2async_haiku_v4_fold2_20261104/prefix500-models.log)、
+[完整检查](../../artifacts/comparisons/v2async_haiku_v4_fold2_20261104/prefix500-checks.log)。
+
+## 2026-11-04 V2 Sync Luna v4：完整1000次的模型预测
+
+`rq8_fold2_v2sync_luna_v4` 的运行
+`futures_kernel_5m_full-all-fold2-v2_sync-42-57ed99c496` 已完成全部 1000 次尝试，
+冻结 17 个入库因子。原启动脚本于北京时间 20:56 完成模型 Test 评估，并已自动将
+完整运行填入仓库和工作区总表。本次通过公共 `run_model` 入口核验并复用已有拟合与
+Test 缓存，没有重新训练、计算单因子 OOS 或配对相关性，也没有改写两份总表。
+
+相较前 500 次截面的 14 个因子新增 3 个成员；原 14 个成员的定义、顺序、训练方向和
+裁剪边界完全相同。数据快照、fold2、seed 42、方法配置与下游模型配置均相同。
+17 列全部可用，没有移除列；Train+Val 训练行数仍为 5,308,104。
+沿用 Linear OLS、LightGBM 50 轮、15 叶、leaf2000/depth5，以及 Train+Val 全局
+P1–P99 和品种去均值，不根据 Test 重新选因子或调参。
+
+Test 的 √成交额加权 Pearson IC：Linear 从 0.010182 升至 0.015134，差值为
++0.004952；LightGBM 从 0.008575 升至 0.010102，差值为 +0.001528。
+本次加权 Spearman IC 分别为 0.016597、0.016273。
+两模型均预测 2,558,829 / 2,558,829 行，覆盖率均为 100%，与 500 次截面一致。
+
+公共入口的冻结库、配置、数据快照及依赖校验通过；拟合与 Test 的规格相同，
+17 个模型因子的身份和顺序与冻结库一致。完整运行保存的
+`source_matches_search=true`，沿用原拟合来源记录；500 次截面保留原来的 false。
+核验前后，运行与冻结库、模型拟合与 Test、模型及运行报告、两份总表均逐字节未变。
+本次未修改搜索或评估源码，也未发起模型服务请求。沿用原版本披露的 Kernel 聚合数据、
+供应商历史版本及历史留出限制，不作为新的盲测证据。
+
+完整 `pwsh -File scripts/check.ps1` 通过，1,330 项离线测试通过（119.51 秒）。
+
+[固定版本](../../artifacts/comparisons/v2sync_luna_v4_fold2_20261104/workspace/configs/versions/rq8_fold2_v2sync_luna_v4.json)、
+[1000次模型报告](../../artifacts/comparisons/v2sync_luna_v4_fold2_20261104/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v2_sync-42-57ed99c496/model/report.md)、
+[500次模型报告](../../artifacts/comparisons/v2sync_luna_v4_fold2_20261104/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v2_sync-42-57ed99c496-prefix500/model/report.md)、
+[原运行日志](../../artifacts/comparisons/v2sync_luna_v4_fold2_20261104/run.log)、
+[模型核验日志](../../artifacts/comparisons/v2sync_luna_v4_fold2_20261104/verify_full1000_models.log)、
+[完整检查](../../artifacts/comparisons/v2sync_luna_v4_fold2_20261104/full1000-checks.log)。
+
+## 2026-11-04 V3 Async：三模型 fold2 后台运行
+
+V2 的诊断见本日此前各节：每次尝试的平均 Val 残差由噪声主导（Luna v4 的 733 个有测量
+trial 正负各半），入库因子的 `residual_ic`、Val IC 与 Test 的相关均约 −0.06；地图状态
+“5 次内最佳残差低于 0.005 即海床”使 V2 Async Haiku v4 停机时 90 个已测 Region 中 57 个
+已关闭（尝试数中位数 5），且 24 个 Region 在 Region 层关闭时仍有未测完分档；该运行在
+第 851 次因 Explorer 只剩一个方向、提案下限为二而以 unresolved 提前结束。这些诊断部分
+使用了已观察的 Test 结果，因此 V3 不是对 Test 的盲测设计。
+
+新方法 `v3_async`（[方法说明](../methods/v3_async.md)）在 `feature/v3-async` 分支实现，
+未提交，运行均从该工作树启动（基础提交 9786b6c）。相对 V2 Async：Region 得分改为入库因子残差
+之和／尝试；地图状态按 Region×特征跨度分档以准入判定，`probe_attempts=10`（按档计）；
+Region 状态由分档推导，活动 Region 有开放档时继续深挖；Explorer 可提交一至四个方向；
+提示词写明 5m 每小时 12 根、每交易日 48 根 bar。退火温度回到 0.25→0.02，不设
+`region_budget_share`。V1、V1 Async、V2 的提案下限仍为二。完整 `pwsh -File scripts/check.ps1`
+通过，1,345 项离线测试通过（396.79 秒）；新增 7 项 V3 测试覆盖分档边界、得分、按档深挖、
+固定配置、单方向批次和中断恢复。
+
+三组共用主表 fold2 设置（Kernel 八字段、all、1%–99% 裁剪、seed 42、空初始库、
+`library_residual=residual_ic_v1`、统一下游模型），`parallel_plans=5`，预算 1000，
+仅模型连接不同：
+
+| 模型 | 版本 | 运行 | PID |
+| --- | --- | --- | ---: |
+| claude-haiku-5-5 | `rq8_fold2_v3async_haiku_v1` | `futures_kernel_5m_full-all-fold2-v3_async-42-600bd5bbd1` | 370303 |
+| gpt-6-luna | `rq8_fold2_v3async_luna_v1` | `futures_kernel_5m_full-all-fold2-v3_async-42-8d95766cb7` | 370302 |
+| deepseek-flash | `rq8_fold2_v3async_deepseek_v1` | `futures_kernel_5m_full-all-fold2-v3_async-42-4e2a92c781` | 377799 |
+
+DeepSeek 首次启动时 API 密钥误带引号，首个 Explorer 请求返回 HTTP 401，运行在提交任何
+trial 前失败；去掉引号后以原脚本恢复同一运行，失败日志保留为 `run-401.log`。三组均已
+提交首批候选，运行结束后由原脚本冻结、评估 Test 并填表。
+
+[Haiku 日志](../../artifacts/comparisons/v3async_haiku_fold2_20261104/run.log)、
+[Luna 日志](../../artifacts/comparisons/v3async_luna_fold2_20261104/run.log)、
+[DeepSeek 日志](../../artifacts/comparisons/v3async_deepseek_fold2_20261104/run.log)、
+[检查日志](../../artifacts/comparisons/v3async_haiku_fold2_20261104/checks.log)。
+
+## 2026-11-04 V2 Sync DeepSeek v3：按用户要求停止
+
+按用户要求，V3 Async 三组启动后停止 `futures_kernel_5m_full-all-fold2-v2_sync-42-482d8fe0a1`
+（PID 2235504）。以 SIGINT 中断，运行状态为 `interrupted`，已提交 698 个原子 trial；
+未冻结，未评估完整 Test。此前的 500、546 次截面及其评估保留不变。
+
+## 2026-11-04 V3 Async：Luna／Haiku／DeepSeek 最新截面的模型预测
+
+按用户要求评估新启动的 `rq8_fold2_v3async_{luna,haiku,deepseek}_v1`。
+北京时间 23:48:52 固定三组当时已提交的前缀，分别从 `8d95766cb7`、`600bd5bbd1`、
+`4e2a92c781` 建立独立、不可恢复的 `prefix317`、`prefix183`、`prefix110`；
+23:51 至 23:52 完成模型 Test。原搜索继续 1000 次预算，Test 不回传方法。
+只通过公共 `run_model` 拟合与评估 Linear、LightGBM，不计算单因子 OOS 或配对相关性。
+
+三组数据快照、Kernel 八字段、fold2、seed 42、评价规则与下游模型配置相同。
+使用全部冻结因子，没有按 Test 筛选；三组的 7、7、9 列均可用，没有移除列。
+Train+Val 训练行数依次为 5,293,626、5,307,576、5,307,801。沿用 Linear OLS、
+LightGBM 50 轮、15 叶、leaf2000/depth5，以及 Train+Val 全局 P1–P99 和品种去均值。
+
+以下为 Test 的 √成交额加权 Pearson IC，覆盖率对每组的两个模型均相同：
+
+| 生成模型 | 尝试次数 | 入库因子 | Linear | LightGBM | 预测覆盖率 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| gpt-6-luna | 317 | 7 | 0.018719 | 0.016601 | 99.938292% |
+| claude-haiku-5-5 | 183 | 7 | 0.005619 | 0.009691 | 99.988745% |
+| deepseek-flash | 110 | 9 | 0.014673 | 0.017910 | 99.991637% |
+
+三组均有 2,558,829 条可评估行，实际预测行数依次为 2,557,250、2,558,541、2,558,615；
+分别有 1,579、288、214 条全因子缺失行不预测。加权 Spearman IC（Linear／LightGBM）
+依次为 0.018531／0.016923、0.007437／0.008757、0.005288／0.011240。
+目前 Linear 以 Luna 截面较高，LightGBM 以 DeepSeek 截面较高；三组尝试次数不同，
+以上指标采用各自实际覆盖样本，不能视为相同预算、共同样本上的最终方法对照。
+
+原子 trial 逐字节复制并核对，保留准入时的定义、顺序、训练方向和裁剪边界；不复制
+方法检查点或实时模型用量。三组冻结库、运行配置、数据快照及模型因子顺序校验通过，
+`source_matches_search=false` 如实保留拟合来源。组合模型、评价与表达式模块与搜索工作树
+逐字节相同。运行与冻结库未被模型评估改写，未生成 `oos.json` 或 `library_similarity.json`，
+仓库与各工作区总表均未改变。本次未修改平台源码，也未发起模型服务请求。
+沿用版本披露的 Kernel 聚合数据、供应商历史版本及已观察 Test 的历史留出限制，
+不作为新的盲测证据。
+
+截面与模型评估脚本通过 Ruff 和格式检查；当前评估工作区的完整
+`pwsh -File scripts/check.ps1` 通过，1,330 项离线测试通过（145.42 秒）。
+
+[截面准备脚本](../../artifacts/comparisons/v3async_models_latest_20261104/prepare_snapshots.py)、
+[模型评估入口](../../artifacts/comparisons/v3async_models_latest_20261104/evaluate_models.py)、
+[截面与准入记录](../../artifacts/comparisons/v3async_models_latest_20261104/prepare.log)、
+[Luna 模型报告](../../artifacts/comparisons/v3async_luna_fold2_20261104/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-8d95766cb7-prefix317/model/report.md)、
+[Haiku 模型报告](../../artifacts/comparisons/v3async_haiku_fold2_20261104/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-600bd5bbd1-prefix183/model/report.md)、
+[DeepSeek 模型报告](../../artifacts/comparisons/v3async_deepseek_fold2_20261104/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-4e2a92c781-prefix110/model/report.md)、
+[Luna 评估日志](../../artifacts/comparisons/v3async_models_latest_20261104/luna-prefix317-models.log)、
+[Haiku 评估日志](../../artifacts/comparisons/v3async_models_latest_20261104/haiku-prefix183-models.log)、
+[DeepSeek 评估日志](../../artifacts/comparisons/v3async_models_latest_20261104/deepseek-prefix110-models.log)、
+[完整检查](../../artifacts/comparisons/v3async_models_latest_20261104/checks.log)。
+
+## 2026-11-05 V3 Async：9／8／12 因子的模型预测复测
+
+按用户要求继续评估同一批 V3 Async 的最新结果。北京时间 11 月 4 日 23:59:32
+固定 Luna／Haiku／DeepSeek 的 380／210／115 次截面，分别冻结 9／8／12 个因子；
+11 月 5 日 00:02 至 00:03 完成两个组合模型的 Test。对应独立目录为
+`8d95766cb7-prefix380`、`600bd5bbd1-prefix210`、`4e2a92c781-prefix115`。
+原搜索继续，Test 不回传方法；只评估模型预测，不计算单因子 OOS 或配对相关性。
+
+相比此前 317／183／110 次截面，分别新增 2／1／3 个因子，准入尝试编号为
+Luna 339、380，Haiku 185，DeepSeek 111、112、115。旧成员的完整冻结记录、顺序、
+训练方向和裁剪边界相同，数据快照、fold、方法与模型配置均未改变。
+所有 9／8／12 列都可用，没有移除列。Train+Val 训练行数依次为
+5,308,086、5,307,576、5,307,801；Luna 增加 14,460 行，其余两组不变。
+沿用固定的 Linear OLS、LightGBM 50 轮、15 叶、leaf2000/depth5，以及
+Train+Val 全局 P1–P99 和品种去均值。
+
+Test 的 √成交额加权 Pearson IC，括号内为相对此前截面的变化：
+
+| 生成模型 | 尝试次数 | 因子数 | Linear | LightGBM | 预测覆盖率 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| gpt-6-luna | 380 | 9 | 0.019577（+0.000858） | 0.018813（+0.002212） | 99.999844% |
+| claude-haiku-5-5 | 210 | 8 | 0.003758（−0.001861） | 0.007227（−0.002464） | 99.988745% |
+| deepseek-flash | 115 | 12 | 0.014821（+0.000148） | 0.015435（−0.002475） | 99.991637% |
+
+两模型在各组内覆盖相同。三组实际预测行数依次为 2,558,825、2,558,541、2,558,615，
+可评估行数均为 2,558,829；分别有 4、288、214 条全因子缺失行不预测。
+Luna 比上次多预测 1,575 行，其余两组的预测覆盖不变。加权 Spearman IC
+（Linear／LightGBM）依次为 0.018555／0.018729、0.005672／0.006593、0.004661／0.005088。
+本次两个预测模型均以 Luna 截面较高；三组尝试次数不同，指标按各自实际覆盖样本计算，
+尤其 Luna 新旧样本覆盖有变化，不是共同样本上的增量对照。
+
+复用已有截面准备与模型评估脚本，保留旧截面及日志；原子 trial 逐字节复制并核对，
+不复制方法检查点或实时模型用量。三组通过公共冻结、配置、数据与模型身份校验，
+`source_matches_search=false` 如实记录拟合来源。模型评估未改写运行或冻结库；
+没有生成单因子 OOS、库内相关性文件，也没有改变仓库或工作区总表。
+本次未修改平台源码或发起模型服务请求；原版本的数据与历史留出限制继续适用。
+
+完整 `pwsh -File scripts/check.ps1` 通过，1,330 项离线测试通过（191.13 秒）。
+
+[截面与准入记录](../../artifacts/comparisons/v3async_models_latest_20261104/prepare-9-8-12.log)、
+[Luna 模型报告](../../artifacts/comparisons/v3async_luna_fold2_20261104/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-8d95766cb7-prefix380/model/report.md)、
+[Haiku 模型报告](../../artifacts/comparisons/v3async_haiku_fold2_20261104/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-600bd5bbd1-prefix210/model/report.md)、
+[DeepSeek 模型报告](../../artifacts/comparisons/v3async_deepseek_fold2_20261104/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-4e2a92c781-prefix115/model/report.md)、
+[Luna 评估日志](../../artifacts/comparisons/v3async_models_latest_20261104/luna-prefix380-models.log)、
+[Haiku 评估日志](../../artifacts/comparisons/v3async_models_latest_20261104/haiku-prefix210-models.log)、
+[DeepSeek 评估日志](../../artifacts/comparisons/v3async_models_latest_20261104/deepseek-prefix115-models.log)、
+[完整检查](../../artifacts/comparisons/v3async_models_latest_20261104/checks-9-8-12.log)。
+
+## 2026-11-05 V3 Async：Luna／Haiku 各10因子的模型预测
+
+按用户要求只复测 Luna、Haiku。北京时间 00:15:59 固定各自最新已提交的
+457／233 次截面，生成 `8d95766cb7-prefix457`、`600bd5bbd1-prefix233`，
+两组均冻结 10 个因子，00:19 完成模型 Test。本次不评估 DeepSeek，原搜索继续，
+Test 不回传方法；只调用公共模型拟合与 Test，不计算单因子 OOS 或配对相关性。
+
+相较此前 380／210 次截面，Luna 新增第 393 次入库的
+`peer_leadership_move_magnitude_interaction`；Haiku 新增第 221、228 次入库的
+`cross_product_dispersion_rank_gated_move_5m_12_r78` 与
+`cross_product_dispersion_tail_gate_5m_12_z78`。旧成员的完整冻结记录、顺序、方向和
+裁剪边界相同，数据快照、fold、方法及模型配置未变。两组各 10 列全部可用，没有移除列；
+Train+Val 训练行数仍分别为 5,308,086、5,307,576。沿用固定 Linear OLS、
+LightGBM 50 轮、15 叶、leaf2000/depth5，以及 Train+Val 全局 P1–P99 和品种去均值。
+
+Test 的 √成交额加权 Pearson IC，括号内为相对此前 9／8 因子截面的变化：
+
+| 生成模型 | 尝试次数 | 因子数 | Linear | LightGBM | 预测覆盖率 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| gpt-6-luna | 457 | 10 | 0.020118（+0.000540） | 0.018723（−0.000090） | 99.999844% |
+| claude-haiku-5-5 | 233 | 10 | 0.003803（+0.000045） | 0.006619（−0.000608） | 99.988745% |
+
+两组各自的两模型覆盖率相同。实际预测行数仍为 2,558,825、2,558,541，
+可评估行数均为 2,558,829，分别有 4、288 条全因子缺失行不预测。
+训练行数与预测覆盖均未变化。加权 Spearman IC（Linear／LightGBM）分别为
+0.018633／0.018324、0.006118／0.006358。两组的 Linear 均提高，LightGBM 均下降；
+尝试次数仍不同，结果属于各自搜索阶段的历史留出诊断。
+
+复用已有脚本，仅选择 Luna、Haiku 准备截面；保留旧产物。原子 trial 逐字节复制并核对，
+不复制方法检查点或实时模型用量。公共冻结、配置、数据及模型因子顺序校验通过，
+`source_matches_search=false` 如实记录拟合来源。运行与冻结库未被评估改写，
+未生成单因子 OOS 或库内相关性文件，也没有改变仓库或工作区总表。
+本次未修改平台源码或发起模型服务请求，沿用原版本的数据与历史留出限制。
+完整 `pwsh -File scripts/check.ps1` 通过，1,330 项离线测试通过（146.14 秒）。
+
+[截面与准入记录](../../artifacts/comparisons/v3async_models_latest_20261104/prepare-10-10.log)、
+[Luna 模型报告](../../artifacts/comparisons/v3async_luna_fold2_20261104/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-8d95766cb7-prefix457/model/report.md)、
+[Haiku 模型报告](../../artifacts/comparisons/v3async_haiku_fold2_20261104/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-600bd5bbd1-prefix233/model/report.md)、
+[Luna 评估日志](../../artifacts/comparisons/v3async_models_latest_20261104/luna-prefix457-models.log)、
+[Haiku 评估日志](../../artifacts/comparisons/v3async_models_latest_20261104/haiku-prefix233-models.log)、
+[完整检查](../../artifacts/comparisons/v3async_models_latest_20261104/checks-10-10.log)。
+
+## 2026-11-05 V3 Async Luna：前500次模型评估与填表
+
+按用户要求评估并填表 `rq8_fold2_v3async_luna_v1` 的精确前 500 次截面。
+北京时间 00:25:27 从 `futures_kernel_5m_full-all-fold2-v3_async-42-8d95766cb7`
+建立独立、不可恢复的 `8d95766cb7-prefix500`，冻结全部 11 个入库因子。
+原搜索继续 1000 次预算，Test 不回传方法；本次只评估 Linear、LightGBM 预测，
+没有计算单因子 OOS 或配对相关性。
+
+相较 457 次截面新增第 473 次入库的 `persistent_hourly_failed_extreme_retreat`，
+原 10 个成员的完整冻结记录、顺序、训练方向和裁剪边界相同。前 500 次包括质量阈值
+拒绝 434、入库 11、行为重复 36、常数因子 10、编译失败 4、覆盖不足 2、表达式重复 3。
+原子 trial 逐字节复制并核对，不复制方法检查点或实时模型用量；此前截面保持不变。
+
+数据快照、fold2、seed 42、方法与模型配置均未改变。11 列全部可用，没有移除列，
+Train+Val 训练行数仍为 5,308,086。沿用固定 Linear OLS、LightGBM 50 轮、15 叶、
+leaf2000/depth5，以及 Train+Val 全局 P1–P99 和品种去均值。
+
+Test √成交额加权 Pearson IC：Linear 为 0.019912，较 457 次的 0.020118 下降
+0.000206；LightGBM 为 0.017605，较此前 0.018723 下降 0.001119。
+加权 Spearman IC 分别为 0.018712、0.017736。两个模型均预测
+2,558,825 / 2,558,829 行，覆盖率为 99.999844%，4 条全因子缺失行不预测。
+训练行数与预测覆盖均与上次相同。
+
+公共冻结、配置、数据快照及模型因子顺序校验通过，`source_matches_search=false`
+如实记录拟合来源。模型评估未改写运行或冻结库，未生成 `oos.json` 或
+`library_similarity.json`。按用户此次授权，已将 500 次的两项模型 Pearson 写入
+[实验总览](../../experiment_overview.md#期货因子搜索fold2)，关联运行与模型报告，
+并注明 11 个因子、实际覆盖及仅评估模型的范围。三个未评估的单因子指标栏以“—”表示，
+没有填零或借用其他截面的结果；相似度表未增加行。填表使用既有 Markdown 行渲染和
+共享文件锁，移除新增行与说明后逐字节等于填表前内容，其余历史结果保留。
+工作区总表未创建。
+
+本次未修改平台源码或发起模型服务请求，沿用原版本的数据与历史留出限制。
+准备脚本通过 Ruff 和格式检查；完整 `pwsh -File scripts/check.ps1` 通过，
+1,330 项离线测试通过（198.91 秒）。
+
+[500次准备脚本](../../artifacts/comparisons/v3async_luna_fold2_20261104/prepare_prefix500.py)、
+[截面与准入记录](../../artifacts/comparisons/v3async_luna_fold2_20261104/prefix500-prepare.log)、
+[模型报告](../../artifacts/comparisons/v3async_luna_fold2_20261104/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-8d95766cb7-prefix500/model/report.md)、
+[模型评估日志](../../artifacts/comparisons/v3async_luna_fold2_20261104/prefix500-models.log)、
+[填表核验日志](../../artifacts/comparisons/v3async_luna_fold2_20261104/prefix500-publish.log)、
+[完整检查](../../artifacts/comparisons/v3async_luna_fold2_20261104/prefix500-checks.log)。
+
+## 2026-11-05 V3 Async DeepSeek：思考强度 low 对照
+
+平台此前不发送思考参数，`deepseek-flash`（API 返回的模型名；底层版本未经官方确认）默认开启
+思考。小请求实测：默认与 `reasoning_effort` 为 low／high／max 时均产生推理 token，
+`thinking: disabled` 不产生；一道因子设计题上推理 token 为默认 2,223、high 1,872、low 836。
+V3 DeepSeek 运行平均每次请求输出 5,305 token，速度约为 Luna 的三分之一。
+
+`v3_async` 新增可选参数 `reasoning_effort`（low／medium／high／max）：设置时随 Chat 请求发送并
+写入运行配置；未设置时请求体与记录配置均不变，已运行的 V3 组恢复不受影响。新增测试覆盖发送、
+记录与非法值；V3 测试 8 项通过。
+
+对照运行 `futures_kernel_5m_full-all-fold2-v3_async-42-debb1b1dfd`（PID 1100521），版本
+`rq8_fold2_v3async_deepseek_low_v1`，与 `rq8_fold2_v3async_deepseek_v1` 仅差
+`reasoning_effort=low`；已提交首批方向。降低思考强度会改变模型能力，结果与既有 DeepSeek 组
+分开报告。
+
+[运行日志](../../artifacts/comparisons/v3async_deepseek_low_fold2_20261105/run.log)。
+
+## 2026-11-05 V3 Async Luna：前500次单因子补评
+
+用户要求补测其他指标，复用已有 `8d95766cb7-prefix500` 的 500 次截面和全部 11 个
+冻结因子，通过公共 `test_frozen` 完成单因子 Test。沿用冻结的 Train 方向与裁剪边界，
+不在 Test 上拟合或筛选，11 个因子全部计算成功。
+
+Test √成交额加权 Pearson IC 均值为 0.007264，中位数为 0.006719；
+11 / 11 个因子的加权 Pearson IC 为正，比例为 100.00%。加权 Spearman IC 均值为
+0.003325。各单因子预测覆盖率为 78.984606%–99.979366%；逐因子的加权、等权
+Pearson／Spearman 和覆盖率见运行报告及 `oos.json`。
+
+运行与冻结库、既有模型拟合和 Test 产物及模型报告逐字节保持不变，未重新拟合组合模型。
+Linear／LightGBM 的 Test 加权 Pearson 仍为 0.019912／0.017605，
+两者预测覆盖率仍为 99.999844%（2,558,825 / 2,558,829 行）。
+新增单因子 `oos.json`，由公共流程刷新运行报告；没有计算库内配对相关性。
+
+[实验总览](../../experiment_overview.md#期货因子搜索fold2)中该 500 次行的三个单因子
+指标栏已补齐，范围说明同步更新。两项模型单元格、其他行与相似度表保持不变，
+工作区总表未创建。填表复用既有行渲染和共享文件锁，核对其他内容未变。
+此前仅评估模型的记录保留为当时事实。
+
+本次未修改平台源码或发起模型服务请求，沿用该版本已记录的数据与历史留出诊断限制。
+完整 `pwsh -File scripts/check.ps1` 通过，1,330 项离线测试通过（153.58 秒）。
+
+[运行报告](../../artifacts/comparisons/v3async_luna_fold2_20261104/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-8d95766cb7-prefix500/report.md)、
+[单因子原始结果](../../artifacts/comparisons/v3async_luna_fold2_20261104/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-8d95766cb7-prefix500/oos.json)、
+[评估日志](../../artifacts/comparisons/v3async_luna_fold2_20261104/prefix500-single-factors.log)、
+[填表核验日志](../../artifacts/comparisons/v3async_luna_fold2_20261104/prefix500-single-factors-publish.log)、
+[完整检查](../../artifacts/comparisons/v3async_luna_fold2_20261104/prefix500-single-factor-checks.log)。
+
+## 2026-11-05 V3 Async 四组 1000 次完成
+
+Luna、Haiku、DeepSeek（服务默认思考）与 DeepSeek（`reasoning_effort = "low"`）四组 fold2 / seed 42
+均完成 1000 次尝试，状态为 frozen，并由公共流程完成冻结、Test 评估和填表。
+
+| 模型 | 入库 | Test 单因子加权 Pearson 均值／中位数 | 正 IC | 加权 Spearman 均值 | Linear | LightGBM |
+| --- | --- | --- | --- | --- | --- | --- |
+| gpt-6-luna | 21 | 0.005970 / 0.006418 | 21 / 21 | 0.002725 | 0.019660 | 0.017815 |
+| claude-haiku-5-5 | 43 | 0.003259 / 0.002384 | 34 / 43 | 0.000900 | 0.011279 | 0.016154 |
+| deepseek-flash | 95 | 0.003619 / 0.003513 | 79 / 95 | 0.003187 | 0.015633 | 0.009349 |
+| deepseek-flash（low） | 83 | 0.004421 / 0.004357 | 73 / 83 | 0.004879 | 0.019145 | 0.005648 |
+
+DeepSeek 默认思考组在第 846 次后失败一次：Analyst 请求在给出正文前达到服务端默认输出上限
+（`chat model output limit reached before any message content`）。该配置未设 `max_output_tokens`。
+失败请求不形成 trial；用原 `run.py` 恢复同一运行后跑完剩余预算，未修改源码或配置。
+原日志保留为 `run-length846.log`。其余三组无异常退出。
+
+## 2026-11-05 V3 Async 新分档规则：五组启动
+
+依据四组 V3 运行的分析，`feature/v3-async` 改为：特征跨度分为日内（≤1 交易日）、1–20 日、20 日以上；
+每档 `probe_attempts = 20`；Region 状态只由已测分档推导（`scale_bands = "intraday_1d_20d"`）。
+依据：六组 fold2 运行中按新分档的入库因子同档平均 |相关| 普遍高于跨档（V1 Haiku 531d 为 0.134／0.070，
+旧分档为 0.089／0.103），20 日以上因子 Test 衰减最大；V3 Haiku 的成交量、持仓量方向在每档 10 次未入库后
+即被判海床。旧运行配置无 `scale_bands`，观测台按旧规则展示。完整检查 1,347 项通过。
+
+启动五组（fold2 / seed 42 / 1000 次，其余设置同各自 v1 版本）：
+
+| 目录 | 版本 | 模型 | parallel_plans |
+| --- | --- | --- | --- |
+| `v3async2_luna_fold2_20261105` | `rq8_fold2_v3async_luna_v2` | gpt-6-luna | 5 |
+| `v3async2_luna_p16_fold2_20261105` | `rq8_fold2_v3async_luna_p16_v2` | gpt-6-luna | 16 |
+| `v3async2_haiku_fold2_20261105` | `rq8_fold2_v3async_haiku_v2` | claude-haiku-5-5 | 5 |
+| `v3async2_haiku_p10_fold2_20261105` | `rq8_fold2_v3async_haiku_p10_v2` | claude-haiku-5-5 | 10 |
+| `v3async2_deepseek_low_fold2_20261105` | `rq8_fold2_v3async_deepseek_low_v2` | deepseek-flash（low） | 5 |
+
+并发组与 5 并发组仅差 `parallel_plans`，用于比较最终效果与耗时。
+
+## 2026-11-05 高并发两组改用并行评估重跑
+
+按用户要求停止 `v3async2_haiku_p10_fold2_20261105`（109 次）与 `v3async2_luna_p16_fold2_20261105`（98 次），
+产物保留并以 `STOPPED` 标注。两组的瓶颈是串行评估（约 88% 墙钟时间），提高 `parallel_plans` 不提速。
+`feature/parallel-eval`（工作区 `AlphaAtlas-parallel`）照 ChaoticTrader_Future Miner 的 `max_parallel`
+加入 `parallel_evaluations`：不同研究组的候选在线程池中同时计算 Train／Valid，准入、残差、原子 trial
+与 `tell` 仍按 trial 编号串行；在算候选写入检查点，恢复时复用已提交 trial。
+
+| 目录 | 版本 | 模型 | parallel_plans | parallel_evaluations |
+| --- | --- | --- | --- | --- |
+| `v3async3_haiku_p10_fold2_20261105` | `rq8_fold2_v3async_haiku_p10_pe_v3` | claude-haiku-5-5 | 10 | 10 |
+| `v3async3_luna_p16_fold2_20261105` | `rq8_fold2_v3async_luna_p16_pe_v3` | gpt-6-luna | 16 | 16 |
+
+生成候选时的地图可能落后于在算候选，故与串行组不是同一轨迹；与 5 并发组比较时一并披露。
+
+## 2026-11-05 V3 Async 新分档 Luna：11／10 因子模型预测
+
+按用户要求评估正在运行的两组 Luna，在北京时间 11:39:34 读取各自已提交检查点并冻结
+独立截面。`rq8_fold2_v3async_luna_p16_pe_v3`（`bf0c21a38d`）取前 259 次、11 个因子，
+16 个并发计划、16 路并行评估；`rq8_fold2_v3async_luna_v2`（`510cffd920`）取前 271 次、
+10 个因子，5 个并发计划、串行评估。原搜索继续运行，Test 不回传方法。
+
+两组数据快照、八字段、fold2、seed 42、准入规则与模型配置相同，均采用新分档与每档
+20 次探测。方法配置仅有 `parallel_plans`、`parallel_evaluations` 差异；并行候选生成时
+可能尚未收到在算候选的准入反馈，搜索轨迹不同。模型沿用 Linear OLS、LightGBM 50 轮、
+15 叶、leaf2000/depth5，以及 Train+Val 全局 P1–P99 裁剪和品种去均值。
+
+Test √成交额加权 Pearson IC：
+
+| 实验 | 尝试次数 | 入库因子 | Linear | LightGBM | 预测覆盖率 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Luna，16 计划／16 路评估（bf0c21a38d） | 259 | 11 | 0.014802 | 0.018808 | 99.976943% |
+| Luna，5 计划／串行评估（510cffd920） | 271 | 10 | 0.009459 | 0.012289 | 100.000000% |
+
+对应加权 Spearman IC（Linear／LightGBM）分别为 0.018436／0.018493、
+0.015513／0.016501。每组两模型覆盖率相同：11 因子组预测 2,558,239 / 2,558,829 行，
+590 条全因子缺失行不预测；10 因子组预测全部 2,558,829 行。
+Train+Val 训练行数分别为 5,307,056、5,308,104，全部 11／10 列可用，没有移除列。
+当前 11 因子组的两项 Pearson 较高；尝试次数和覆盖样本不同，属于进度截面诊断，
+不能据此将差异归因于并发设置。
+
+原子 trial 逐字节复制并核对，全部已入库定义、顺序、Train 方向和裁剪记录保持不变；
+不复制方法检查点或实时模型用量。公共配置、数据、冻结及因子顺序校验通过，
+`source_matches_search=false` 如实记录拟合来源。模型评估未改写截面的运行与冻结库。
+仅评估组合预测，没有计算单因子 OOS 或库内配对相关性，仓库和工作区总表均未改写。
+
+本次没有修改平台源码或发起模型服务请求。沿用版本中已披露的 Kernel 聚合数据、
+未认证完整供应商历史版本 PIT、Test 已观察的历史留出诊断限制。
+准备脚本通过 Ruff 与格式检查；完整 `pwsh -File scripts/check.ps1` 通过，
+1,330 项离线测试通过（305.20 秒）。
+
+[截面准备脚本](../../artifacts/comparisons/v3async_luna_latest_20261105/prepare_snapshots.py)、
+[截面与准入记录](../../artifacts/comparisons/v3async_luna_latest_20261105/prepare.log)、
+[11因子模型报告](../../artifacts/comparisons/v3async3_luna_p16_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-bf0c21a38d-prefix259/model/report.md)、
+[10因子模型报告](../../artifacts/comparisons/v3async2_luna_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-510cffd920-prefix271/model/report.md)、
+[11因子评估日志](../../artifacts/comparisons/v3async_luna_latest_20261105/luna-p16-prefix259-models.log)、
+[10因子评估日志](../../artifacts/comparisons/v3async_luna_latest_20261105/luna-prefix271-models.log)、
+[完整检查](../../artifacts/comparisons/v3async_luna_latest_20261105/checks.log)。
+
+## 2026-11-05 V3 Async 新分档 Haiku：8／12 因子模型预测
+
+按用户更新后的 8／12 个入库因子评估两组运行，在北京时间 12:01:58 冻结各自最新已提交
+截面。`rq8_fold2_v3async_haiku_p10_pe_v3`（`a13803e3f9`）取前 233 次、8 个因子，
+10 个并发计划、10 路并行评估；`rq8_fold2_v3async_haiku_v2`（`20a1012038`）取前
+267 次、12 个因子，5 个并发计划、串行评估，包含第 266 次新入库成员。
+
+两组模型均为 `claude-haiku-5-5`，方法配置只差 `parallel_plans`、`parallel_evaluations`。
+同一数据快照、八字段、fold2、seed 42 和评估规则通过核对；模型沿用固定 Linear OLS、
+LightGBM 50 轮、15 叶、leaf2000/depth5，以及 Train+Val 全局 P1–P99 裁剪和品种去均值。
+
+Test √成交额加权 Pearson IC：
+
+| 实验 | 尝试次数 | 入库因子 | Linear | LightGBM | 预测覆盖率 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Haiku，10 计划／10 路评估（a13803e3f9） | 233 | 8 | 0.009662 | 0.012167 | 100.000000% |
+| Haiku，5 计划／串行评估（20a1012038） | 267 | 12 | 0.015280 | 0.019963 | 99.999844% |
+
+加权 Spearman IC（Linear／LightGBM）分别为 0.017824／0.017073、0.020712／0.024876。
+8 因子组预测全部 2,558,829 行；12 因子组预测 2,558,825 / 2,558,829 行，
+4 条全因子缺失行不预测。Train+Val 训练行数分别为 5,308,104、5,308,046，
+全部 8／12 列可用，没有移除列。当前 12 因子组两种模型的 Pearson 较高；预算节点不同，
+并行候选收到的地图反馈也可能不同，本次不将结果差异归因于并发设置。
+
+原子 trial 逐字节复制并核对，保留全部成员定义、顺序、Train 方向和裁剪记录，
+不复制方法检查点或实时模型用量。公共冻结、配置、数据和因子顺序校验通过，
+`source_matches_search=false` 如实记录拟合来源。评估未改写截面的运行与冻结库；
+原搜索继续运行，Test 不回传方法。仅评估组合预测，不计算单因子 OOS 或库内配对相关性，
+仓库和工作区总表均未改写。
+
+本次未修改平台源码或发起模型服务请求，沿用版本中 Kernel 聚合数据、未认证完整供应商
+历史版本 PIT 和 Test 已观察的历史留出诊断限制。准备脚本通过 Ruff 和格式检查；
+完整 `pwsh -File scripts/check.ps1` 通过，1,330 项离线测试通过（166.46 秒）。
+
+[截面准备脚本](../../artifacts/comparisons/v3async_haiku_latest_20261105/prepare_snapshots.py)、
+[截面与准入记录](../../artifacts/comparisons/v3async_haiku_latest_20261105/prepare.log)、
+[8因子模型报告](../../artifacts/comparisons/v3async3_haiku_p10_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-a13803e3f9-prefix233/model/report.md)、
+[12因子模型报告](../../artifacts/comparisons/v3async2_haiku_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-20a1012038-prefix267/model/report.md)、
+[8因子评估日志](../../artifacts/comparisons/v3async_haiku_latest_20261105/haiku-p10-prefix233-models.log)、
+[12因子评估日志](../../artifacts/comparisons/v3async_haiku_latest_20261105/haiku-prefix267-models.log)、
+[完整检查](../../artifacts/comparisons/v3async_haiku_latest_20261105/checks.log)。
+
+## 2026-11-05 V3 Async 新分档 DeepSeek low：9 因子模型预测与快捷入口
+
+按用户指定的 9 个入库因子评估 `rq8_fold2_v3async_deepseek_low_v2`，来源为
+`futures_kernel_5m_full-all-fold2-v3_async-42-bfabcc7663`。第 248 次入库第 9 个成员，
+第 251 次入库第 10 个成员，因此取最后仍为 9 个成员的前 250 次截面。
+北京时间 12:13:46 建立独立 `bfabcc7663-prefix250`；原搜索继续运行，Test 不回传方法。
+
+生成模型为 `deepseek-flash`，`reasoning_effort=low`，5 个并发计划、串行评估。
+数据快照、八字段、fold2、seed 42、准入和预测模型设置与同日两组 Haiku 一致，
+沿用固定 Linear OLS、LightGBM 50 轮、15 叶、leaf2000/depth5，
+以及 Train+Val 全局 P1–P99 裁剪和品种去均值。
+
+Test √成交额加权 Pearson IC：Linear 为 0.007325，LightGBM 为 0.010550；
+加权 Spearman IC 分别为 0.016166、0.018138。两个模型均预测
+2,413,625 / 2,558,829 行，覆盖率为 94.325373%，145,204 条全因子缺失行不预测。
+Train+Val 训练行数为 5,161,642，9 列全部可用，没有移除列。与其他截面对比时，
+尝试次数和实际预测覆盖不同，不能直接将指标差异归因于生成模型或并发设置。
+
+公共配置、数据、冻结库和因子身份校验通过；保留原子 trial、全部成员定义、顺序、
+Train 方向与裁剪记录，`source_matches_search=false` 如实记录拟合来源。
+只评估组合预测，未计算单因子 OOS 或库内配对相关性，实验总表未改写。
+最初 245 次／8 因子截面的已生成产物保留，本记录的结论仅对应 250 次／9 因子。
+沿用版本已披露的 Kernel 聚合数据、未认证完整供应商历史版本 PIT、Test 已观察的限制。
+
+按用户要求新增 [`scripts/evaluate_snapshot.py`](../../scripts/evaluate_snapshot.py)，
+接受运行目录、完整或短 ID、实验版本或 comparisons 目录名，一次完成截面冻结、固定模型
+拟合及 Test。默认取最新已提交记录，也可指定因子数或尝试次数；同一截面复用既有结果。
+复用公共模型入口，不新增评估规则、模型调用、配对相关性或自动填表流程。
+命令说明见[快捷预测评估](../model.md#运行中截面的快捷预测评估)。
+8 项合成数据专项测试通过，覆盖已提交边界、精确因子／尝试数、冻结记录保留、
+已有截面复用与篡改拒绝、不可用数量、检查点不一致及来源歧义。
+完整 `pwsh -File scripts/check.ps1` 通过，1,338 项离线测试通过（259.79 秒）。
+同一 9 因子截面通过快捷命令复测耗时 3.10 秒，运行、冻结库、模型拟合、Test、模型报告
+及总表逐字节保持不变，确认公共模型缓存复用生效。
+
+[9因子模型报告](../../artifacts/comparisons/v3async2_deepseek_low_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-bfabcc7663-prefix250/model/report.md)、
+[9因子评估日志](../../artifacts/comparisons/v3async_deepseek_low_latest_20261105/deepseek-9factors-models.log)、
+[9因子缓存复测](../../artifacts/comparisons/v3async_deepseek_low_latest_20261105/deepseek-9factors-cache.log)、
+[快捷入口检查](../../artifacts/comparisons/v3async_deepseek_low_latest_20261105/quick-path-checks.log)。
+
+## 2026-11-05 V3 Async 新分档 DeepSeek low：快捷评估11因子
+
+按用户要求直接执行 `scripts/evaluate_snapshot.py bfabcc7663 --factors 11`，
+北京时间 12:20:21 冻结前 256 次、11 个因子的截面。来源仍为
+`rq8_fold2_v3async_deepseek_low_v2`，原搜索继续运行，评估配置与此前 9 因子截面相同。
+
+Test √成交额加权 Pearson IC：Linear 为 0.007362，较 9 因子的 0.007325 提高
+0.000037；LightGBM 为 0.012489，较此前 0.010550 提高 0.001939。
+加权 Spearman IC 分别为 0.016630、0.018184。两模型预测覆盖率仍为 94.325373%，
+预测 2,413,625 / 2,558,829 行，145,204 条全因子缺失行不预测。
+Train+Val 训练行数为 5,171,810，较此前增加 10,168 行；11 列全部可用，没有移除列。
+
+复用快捷入口的冻结与公共模型校验，未调整模型参数或依据 Test 筛选成员。
+原 9 个成员的完整冻结记录和顺序保持不变，保留历史截面；仅计算组合预测，
+没有单因子 OOS、库内配对相关性或总表写入。结果仍属于该版本已有数据限制下的历史
+留出诊断。快捷入口沿用本轮已通过的 8 项专项测试和 1,338 项完整离线检查，未再修改实现。
+
+[11因子模型报告](../../artifacts/comparisons/v3async2_deepseek_low_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-bfabcc7663-prefix256/model/report.md)、
+[11因子评估日志](../../artifacts/comparisons/v3async_deepseek_low_latest_20261105/deepseek-11factors-models.log)。
+
+## 2026-11-05 V3 Async 新分档 Haiku：快捷评估15／13因子
+
+直接使用 `scripts/evaluate_snapshot.py` 评估两个 Haiku 的最新已提交截面。
+北京时间 12:28:22，`a13803e3f9`（10 计划／10 路评估）冻结前 285 次、15 个因子；
+12:28:34，`20a1012038`（5 计划／串行评估）冻结前 337 次、13 个因子。
+相较此前 233／267 次截面分别新增 7／1 个成员，原有成员的完整冻结记录与顺序未变。
+
+Test √成交额加权 Pearson IC，括号为相较各自上次 8／12 因子结果的变化：
+
+| 实验 | 尝试次数 | 入库因子 | Linear | LightGBM | 预测覆盖率 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Haiku，10 计划／10 路评估 | 285 | 15 | 0.011963（+0.002302） | 0.012571（+0.000405） | 100.000000% |
+| Haiku，5 计划／串行评估 | 337 | 13 | 0.016725（+0.001445） | 0.018745（−0.001218） | 99.999844% |
+
+加权 Spearman IC（Linear／LightGBM）分别为 0.020355／0.016041、0.020907／0.022190。
+预测行数仍分别为 2,558,829 和 2,558,825，可评估行数均为 2,558,829；
+串行组仍有 4 条全因子缺失行不预测。Train+Val 训练行数分别为 5,308,104、5,308,073，
+15／13 列全部可用，没有移除列。串行组两种模型的 Pearson 仍较高，但其 LightGBM
+较上次下降；尝试次数不同，不能将组间差异直接归因于并发设置。
+
+沿用相同数据、fold2、seed 42、冻结方向及固定模型参数，通过公共配置、冻结与因子身份
+校验，`source_matches_search=false` 如实记录拟合来源。原搜索继续运行，Test 不回传；
+保留已有数据及历史留出诊断限制。只测组合预测，未计算单因子 OOS 或配对相关性，
+未写实验总表。本次未修改实现，复用已通过专项与完整检查的快捷入口，并核对本次产物。
+
+[15因子模型报告](../../artifacts/comparisons/v3async3_haiku_p10_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-a13803e3f9-prefix285/model/report.md)、
+[13因子模型报告](../../artifacts/comparisons/v3async2_haiku_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-20a1012038-prefix337/model/report.md)、
+[15因子评估日志](../../artifacts/comparisons/v3async_haiku_latest_20261105/haiku-p10-latest-models-20261105-2.log)、
+[13因子评估日志](../../artifacts/comparisons/v3async_haiku_latest_20261105/haiku-latest-models-20261105-2.log)。
+
+## 2026-11-05 V3 Async 新分档 Luna：两组前500次快捷评估
+
+按用户要求，对 `bf0c21a38d`、`510cffd920` 分别执行
+`scripts/evaluate_snapshot.py <run_id> --attempts 500`。北京时间 12:34:09／12:34:15
+冻结精确前 500 次截面，16 计划／16 路评估组入库 16 个，5 计划／串行评估组入库 20 个。
+相较此前 259 次／11 因子、271 次／10 因子分别新增 5／10 个成员，原成员的完整冻结记录
+和顺序未变。两组数据、八字段、fold2、seed 42 与预测模型参数相同。
+
+Test √成交额加权 Pearson IC，括号为相较各自上次早期截面的变化：
+
+| 实验 | 尝试次数 | 入库因子 | Linear | LightGBM | 预测覆盖率 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Luna，16 计划／16 路评估（bf0c21a38d） | 500 | 16 | 0.011054（−0.003748） | 0.016333（−0.002475） | 100.000000% |
+| Luna，5 计划／串行评估（510cffd920） | 500 | 20 | 0.005626（−0.003833） | 0.011488（−0.000801） | 100.000000% |
+
+加权 Spearman IC（Linear／LightGBM）分别为 0.014000／0.016793、0.011336／0.016092。
+两组的两模型均预测全部 2,558,829 条可评估行，Train+Val 训练行数均为 5,308,104，
+16／20 列全部可用，没有移除列。500 次预算下并行组两种模型的 Pearson 较高，
+但两组均低于各自此前较早截面的结果；没有根据 Test 筛选因子或调整模型参数。
+
+公共配置、数据、冻结库和因子身份校验通过，`source_matches_search=false` 如实记录
+拟合来源。原搜索继续运行，Test 不回传；仅评估组合预测，未计算单因子 OOS 或库内
+配对相关性，未写实验总表。沿用版本已有数据与历史留出诊断限制；本次未修改实现，
+复用已经验证的快捷入口，并核对本次冻结成员、模型产物、指标及报告链接。
+
+[16因子模型报告](../../artifacts/comparisons/v3async3_luna_p16_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-bf0c21a38d-prefix500/model/report.md)、
+[20因子模型报告](../../artifacts/comparisons/v3async2_luna_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-510cffd920-prefix500/model/report.md)、
+[16因子评估日志](../../artifacts/comparisons/v3async_luna_latest_20261105/luna-p16-prefix500-models.log)、
+[20因子评估日志](../../artifacts/comparisons/v3async_luna_latest_20261105/luna-prefix500-models.log)。
+
+## 2026-11-05 V3 Async 新分档 DeepSeek low：快捷评估13因子
+
+按用户要求执行 `scripts/evaluate_snapshot.py bfabcc7663 --factors 13`，
+北京时间 12:46:05 冻结前 295 次、13 个因子的截面，来源仍为
+`rq8_fold2_v3async_deepseek_low_v2`。较此前 256 次／11 因子新增 2 个成员，
+原 11 个成员的完整冻结记录和顺序保持不变，数据及模型参数相同。
+
+Test √成交额加权 Pearson IC：Linear 为 0.010654，较 11 因子的 0.007362 提高
+0.003291；LightGBM 为 0.011547，较此前 0.012489 下降 0.000942。
+加权 Spearman IC 分别为 0.017518、0.018057。两个模型均预测
+2,413,690 / 2,558,829 行，覆盖率为 94.327913%，145,139 条全因子缺失行不预测；
+较此前多预测 65 行。Train+Val 训练行数为 5,172,397，较此前增加 587 行，
+13 列全部可用，没有移除列。
+
+公共配置、数据、冻结库及因子身份校验通过，`source_matches_search=false` 如实记录
+拟合来源。原搜索继续运行，Test 不回传；沿用版本已有数据与历史留出诊断限制。
+仅评估组合预测，没有计算单因子 OOS 或配对相关性，未写实验总表。
+本次复用已验证的快捷入口，未修改实现，并核对冻结成员、模型产物和报告指标。
+
+[13因子模型报告](../../artifacts/comparisons/v3async2_deepseek_low_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-bfabcc7663-prefix295/model/report.md)、
+[13因子评估日志](../../artifacts/comparisons/v3async_deepseek_low_latest_20261105/deepseek-13factors-models.log)。
+
+## 2026-11-05 Haiku 10 并发改用并发 Explorer 重跑
+
+`v3async3_haiku_p10_fold2_20261105` 的瓶颈在候选供应：仅 3／10 个计划位在用，47 个计划由 Miner 提前结束
+（blocked），平均每计划 3.6 次尝试，单个 Explorer 补位跟不上，评估有效并发仅 0.16。
+`feature/parallel-explorers`（工作区 `AlphaAtlas-explorers`）加入 `parallel_explorers`：多条 Explorer
+对话同时补位，启动时扣除其他对话已认领的计划位与额度，提交时另查其他对话已开计划的重复。
+完整检查 1,357 项通过。按用户要求停止该组（299 次，状态记为 interrupted，产物保留），启动
+`v3async4_haiku_p10_fold2_20261105`（`rq8_fold2_v3async_haiku_p10_pe_px3_v4`：parallel_plans=10、
+parallel_evaluations=10、parallel_explorers=3，其余同前）。五组运行均以 POLARS_MAX_THREADS=48、
+OPENBLAS_NUM_THREADS=8 启动或恢复。
+
+## 2026-11-05 并行评估缺陷：准入时观测值已被缓存淘汰
+
+`v3async3_luna_p16_fold2_20261105` 在第 613 次后失败：`observation reference is not available in this run`。
+并行评估的计算线程只把因子值留在评估器的有界缓存（内存与 512 MB 磁盘预算）中，16 个候选在算时，
+队头候选准入前其观测已被后续结果淘汰；串行评估算完即取，不会触发。修复：`EvaluationService.measure`
+返回报告及其 Valid 观测，在算条目持有该值直至准入，`SearchSession.evaluate(measured=...)` 直接使用；
+新增回归测试（观测查询始终失败时并行运行仍完成）。修复同步到 `AlphaAtlas-parallel` 与
+`AlphaAtlas-explorers`。失败请求未形成 trial，Luna 16 组以原目录恢复；Haiku Explorer 并发组尚未出错，
+也中断后恢复以加载修复。
+
+## 2026-11-05 V3 Async 新分档 Haiku：快捷评估21因子
+
+按用户要求执行 `scripts/evaluate_snapshot.py 20a1012038 --factors 21`，
+北京时间 12:54:58 冻结前 402 次、21 个因子的截面，来源为
+`rq8_fold2_v3async_haiku_v2`（5 计划、串行评估）。较此前 337 次／13 因子新增
+8 个成员，原 13 个成员的完整冻结记录和顺序保持不变，数据及模型参数相同。
+
+Test √成交额加权 Pearson IC：Linear 为 0.022957，较此前 0.016725 提高
+0.006232；LightGBM 为 0.028174，较此前 0.018745 提高 0.009429。
+加权 Spearman IC 分别为 0.021097、0.022277。两个模型均预测
+2,558,825 / 2,558,829 行，覆盖率为 99.999844%，4 条全因子缺失行不预测。
+Train+Val 训练行数为 5,308,073，与 13 因子截面一致；21 列全部可用，没有移除列。
+
+公共配置、数据、冻结库及因子身份校验通过，`source_matches_search=false` 如实记录
+拟合来源。原搜索继续运行，Test 不回传；沿用版本已有数据与历史留出诊断限制。
+仅评估组合预测，没有计算单因子 OOS 或配对相关性，未写实验总表。
+本次复用已验证的快捷入口，未修改实现，并核对冻结成员、模型产物和报告指标。
+
+[21因子模型报告](../../artifacts/comparisons/v3async2_haiku_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-20a1012038-prefix402/model/report.md)、
+[21因子评估日志](../../artifacts/comparisons/v3async_haiku_latest_20261105/haiku-21factors-models.log)。
+
+## 2026-11-05 V3 Async 新分档 DeepSeek low：快捷评估15因子
+
+按用户追加要求，在 Haiku 21 因子评估完成后执行
+`scripts/evaluate_snapshot.py bfabcc7663`，北京时间 12:58:29 冻结最新已提交的
+前 336 次、15 个因子截面，来源仍为 `rq8_fold2_v3async_deepseek_low_v2`。
+较此前 295 次／13 因子新增 2 个成员，原 13 个成员的完整冻结记录和顺序保持不变，
+数据及模型参数相同。
+
+Test √成交额加权 Pearson IC：Linear 为 0.010863，较此前 0.010654 提高
+0.000210；LightGBM 为 0.013846，较此前 0.011547 提高 0.002299。
+加权 Spearman IC 分别为 0.017424、0.017347。两个模型均预测
+2,413,726 / 2,558,829 行，覆盖率为 94.329320%，145,103 条全因子缺失行不预测；
+较此前多预测 36 行。Train+Val 训练行数为 5,172,415，较此前增加 18 行，
+15 列全部可用，没有移除列。
+
+公共配置、数据、冻结库及因子身份校验通过，`source_matches_search=false` 如实记录
+拟合来源。原搜索继续运行，Test 不回传；沿用版本已有数据与历史留出诊断限制。
+仅评估组合预测，没有计算单因子 OOS 或配对相关性，未写实验总表。
+本次复用已验证的快捷入口，未修改实现，并核对冻结成员、模型产物和报告指标。
+
+[15因子模型报告](../../artifacts/comparisons/v3async2_deepseek_low_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-bfabcc7663-prefix336/model/report.md)、
+[15因子评估日志](../../artifacts/comparisons/v3async_deepseek_low_latest_20261105/deepseek-latest-models-20261105-2.log)。
+
+## 2026-11-05 DeepSeek low 高并发组启动
+
+`v3async2_deepseek_low_fold2_20261105` 的瓶颈在 Explorer：计划均做满（5 次／计划，0 个提前结束），但
+Explorer 每批多只提交 1 个方向、需 3 轮左右对话；连续 2 分钟采样中 0 个计划在跑，最近 150 次尝试的
+67 分钟墙钟中有 31 分钟（47%）无任何 trial。启动 `v3async4_deepseek_low_p10_fold2_20261105`
+（`rq8_fold2_v3async_deepseek_low_p10_pe_px3_v4`：parallel_plans=10、parallel_evaluations=10、
+parallel_explorers=3，代码 `AlphaAtlas-explorers`，POLARS_MAX_THREADS=40），与 5 并发组仅差并发设置。
+同期 Haiku 新组（3 条 Explorer）15 分钟窗口速率 10.5 次／分，旧 Haiku 10 并发组为 2.0 次／分。
+
+## 2026-11-05 V3 Async 新分档 Luna：500／1000次结果入表
+
+按用户要求核对已完成 1000 次的 `rq8_fold2_v3async_luna_v2`（`510cffd920`，
+5 计划、串行评估），并将同一运行此前测过的前 500 次结果相邻写入实验总表。
+完整运行已自动完成冻结与评估，入库 24 个因子；前 500 次冻结 20 个因子。
+两目录分别执行快捷入口，公共配置、数据、冻结库和模型缓存校验通过，复用各自保存的
+Linear／LightGBM 拟合及 Test，没有重复训练。前 500 次成员的完整冻结记录与最终库
+前 20 个成员逐项一致，两个截面的数据、模型参数和依赖版本相同。
+
+Test √成交额加权 Pearson IC：
+
+| 尝试次数 | 因子数 | Linear | LightGBM | 预测覆盖率 |
+| --- | --- | --- | --- | --- |
+| 500 | 20 | 0.005626 | 0.011488 | 100.000000% |
+| 1000 | 24 | 0.005159 | 0.011148 | 100.000000% |
+
+1000 次较 500 次分别下降 0.000467、0.000340。加权 Spearman IC（Linear／LightGBM）
+分别为 500 次的 0.011336／0.016092、1000 次的 0.011181／0.016044。
+两截面均使用 5,308,104 条 Train+Val 训练行，并预测全部 2,558,829 条 Test 可评估行；
+20／24 列全部可用，没有移除列。保存的 `source_matches_search` 分别为 false／true，
+如实保留前缀主工作区评估与完整运行自动收尾的来源记录。
+
+完整运行已有 24 个成功的单因子 OOS 结果。核对原 OOS 指纹、成员身份、冻结定义、方向、
+裁剪边界及数据配置后，按前缀成员取其中 20 个结果汇总 500 次的单因子栏，不新建或
+伪造前缀 OOS 缓存：500 次加权 Pearson 均值／中位数为 0.004204／0.005208，正 IC
+15／20（75.00%），加权 Spearman 均值为 0.002541；1000 次对应为
+0.003705／0.004106、17／24（70.83%）、0.002768。
+
+此次只复用已有评估并填表，未计算配对相关性；完整运行此前自动收尾生成的相关产物保留。
+没有根据 Test 选择因子或调参，沿用本版本的数据与历史留出诊断限制。未修改实现；
+核对表格数值、行位置和报告链接，并执行差异格式检查。
+
+[500次模型报告](../../artifacts/comparisons/v3async2_luna_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-510cffd920-prefix500/model/report.md)、
+[1000次模型报告](../../artifacts/comparisons/v3async2_luna_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-510cffd920/model/report.md)、
+[单因子OOS来源](../../artifacts/comparisons/v3async2_luna_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-510cffd920/oos.json)、
+[500次快捷校验日志](../../artifacts/comparisons/v3async_luna_latest_20261105/luna-prefix500-models-verified.log)、
+[1000次快捷校验日志](../../artifacts/comparisons/v3async_luna_latest_20261105/luna-1000-models-verified.log)。
+
+随后按用户要求，从实验总览主结果表撤下 `510cffd920` 的 500／1000 次两行及对应说明。
+按用户追加要求，相似度表中的同一运行记录也已撤下。
+上述历史评估记录和原始产物保留；撤表不改变已经完成的评估事实。
+
+## 2026-11-05 V3 Async DeepSeek low：两组前500次快捷评估
+
+按用户要求，分别以 `scripts/evaluate_snapshot.py <run_id> --attempts 500` 冻结并评估
+两个运行的前 500 次已提交记录。北京时间 15:13:08，5 计划／串行评估组 `bfabcc7663`
+截面入库 28 个因子；15:14:03，10 计划／10 路评估／3 路 Explorer 组 `3f8261a9ad`
+截面入库 17 个因子。两组均为 DeepSeek low，使用相同数据、fold2、seed 和固定预测模型参数。
+
+Test √成交额加权 IC：
+
+| 运行 | 因子数 | Linear Pearson | LightGBM Pearson | Linear Spearman | LightGBM Spearman | 预测覆盖率 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 5 计划／串行评估 | 28 | 0.011093 | 0.015482 | 0.014950 | 0.014534 | 94.434212% |
+| 10 计划／10 路评估／3 路 Explorer | 17 | 0.017090 | 0.012079 | 0.015518 | 0.011271 | 99.994372% |
+
+两组分别预测 2,416,410／2,558,829 和 2,558,685／2,558,829 行，训练行数为
+5,203,172 和 5,307,840，所有因子列均保留。预测覆盖范围不同，且搜索并发设置不同，
+指标差异不能直接归因于并发。公共配置、数据、冻结库与因子身份校验通过；拟合来源与
+搜索启动源码记录不同，`source_matches_search=false`。原搜索继续运行，Test 不回传。
+仅评估组合预测，未计算单因子 OOS 或库内配对相关性，未写实验总表。沿用已有数据与
+历史留出诊断限制，Test 已被观察，不能视为最终盲测。
+
+[串行组模型报告](../../artifacts/comparisons/v3async2_deepseek_low_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-bfabcc7663-prefix500/model/report.md)、
+[高并发组模型报告](../../artifacts/comparisons/v3async4_deepseek_low_p10_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-3f8261a9ad-prefix500/model/report.md)、
+[串行组日志](../../artifacts/comparisons/v3async_deepseek_low_latest_20261105/deepseek-serial-prefix500-models.log)、
+[高并发组日志](../../artifacts/comparisons/v3async_deepseek_low_latest_20261105/deepseek-parallel-prefix500-models.log)。
+
+## 2026-11-05 V3 Async 16路并行 Luna：500／1000次结果入表
+
+按用户要求评估 `rq8_fold2_v3async_luna_p16_pe_v3`（`bf0c21a38d`，16 计划、
+16 路并行评估）的完整 1000 次结果，并与此前前 500 次结果相邻写入实验总表。
+完整运行冻结 45 个因子，其原运行脚本在此次核对期间完成了自动收尾；前 500 次有
+16 个因子。两目录均通过快捷入口的公共配置、数据、冻结库和模型缓存校验，复用保存的
+各自模型。最终库的前 16 个完整冻结成员与 500 次逐项一致，数据、模型参数和依赖版本相同。
+
+Test √成交额加权 Pearson IC：
+
+| 尝试次数 | 因子数 | Linear | LightGBM | 预测覆盖率 |
+| --- | --- | --- | --- | --- |
+| 500 | 16 | 0.011054 | 0.016333 | 100.000000% |
+| 1000 | 45 | 0.007330 | 0.014097 | 100.000000% |
+
+1000 次较 500 次分别下降 0.003723、0.002236。加权 Spearman IC（Linear／LightGBM）
+分别为 500 次的 0.014000／0.016793、1000 次的 0.009642／0.015438。
+两截面均使用 5,308,104 条 Train+Val 训练行，并预测全部 2,558,829 条 Test 可评估行；
+16／45 列全部可用，没有移除列。两者 `source_matches_search=false` 均按保存的模型来源
+如实保留，冻结配置、数据和因子身份校验通过。
+
+核对完整运行单因子 OOS 的指纹、成员身份及全部成功状态，再按与前缀完全一致的冻结定义、
+方向和裁剪边界提取前 16 个结果汇总 500 次单因子栏，未新建前缀 OOS 缓存。
+500 次单因子加权 Pearson 均值／中位数为 0.006369／0.005350，正 IC 为
+16／16（100.00%），加权 Spearman 均值为 0.002274；1000 次对应为
+0.005481／0.005366、41／45（91.11%）、0.005203。
+
+未额外发起配对相关性计算；原运行脚本自动收尾生成的 1000 次相似度结果保留。
+没有根据 Test 选择因子或调参，沿用本版本的数据与历史留出诊断限制。未修改实现；
+核对两行表格数值、位置、报告链接及文档锚点，并执行差异格式检查。
+
+[500次模型报告](../../artifacts/comparisons/v3async3_luna_p16_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-bf0c21a38d-prefix500/model/report.md)、
+[1000次模型报告](../../artifacts/comparisons/v3async3_luna_p16_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-bf0c21a38d/model/report.md)、
+[单因子OOS来源](../../artifacts/comparisons/v3async3_luna_p16_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-bf0c21a38d/oos.json)、
+[500次快捷校验日志](../../artifacts/comparisons/v3async_luna_latest_20261105/luna-p16-prefix500-models-verified.log)、
+[1000次快捷校验日志](../../artifacts/comparisons/v3async_luna_latest_20261105/luna-p16-1000-models-verified.log)。
+
+## 2026-11-05 DeepSeek low：两组500次组合模型结果入表
+
+按用户要求，将 `bfabcc7663` 与 `3f8261a9ad` 的前 500 次组合模型结果写入
+[实验总览](../../experiment_overview.md#期货因子搜索fold2)。分别入库 28／17 个因子，
+Linear 加权 Pearson 为 0.011093／0.017090，LightGBM 为 0.015482／0.012079。
+两组预测覆盖率分别为 94.434212%／99.994372%；单因子 Test 未评估，表中标记“—”。
+本次复用已有评估结果，未增加 Test 计算或改变原搜索。
+
+## 2026-11-05 V3 Async Haiku：最新30／34因子模型预测
+
+按用户要求用快捷脚本评估两个在跑 Haiku 的最新已提交截面。北京时间 15:21:40，
+`rq8_fold2_v3async_haiku_v2`（`20a1012038`，5 计划、串行评估）冻结前 779 次、
+30 个因子；15:21:41，`rq8_fold2_v3async_haiku_p10_pe_px3_v4`（`67a4cb9f79`，
+10 计划、10 路评估、3 个并行 Explorer）冻结前 671 次、34 个因子。
+两组均执行 `scripts/evaluate_snapshot.py <短ID>`，使用相同固定数据、模型配置及依赖版本。
+
+Test √成交额加权 Pearson IC：
+
+| 运行 | 尝试次数 | 因子数 | Linear | LightGBM | 预测覆盖率 |
+| --- | --- | --- | --- | --- | --- |
+| 5 计划／串行评估（20a1012038） | 779 | 30 | 0.018476 | 0.026646 | 99.999844% |
+| 10 计划／10 路评估／3 Explorer（67a4cb9f79） | 671 | 34 | 0.009381 | 0.000455 | 100.000000% |
+
+加权 Spearman IC（Linear／LightGBM）分别为 0.017638／0.016217、0.011140／−0.000214。
+串行组较此前 402 次／21 因子的加权 Pearson 分别下降 0.004481、0.001527；原 21 个
+完整冻结成员及顺序保持不变，新增 9 个成员。3 Explorer 组为本次首次预测评估，
+不与已停止的旧 10 路评估运行合并。两组尝试数与因子集合不同，不是相同预算的比较。
+
+两组 Train+Val 训练行数分别为 5,308,073、5,308,104，30／34 列全部可用，没有移除列。
+Test 可评估行均为 2,558,829；串行组预测 2,558,825 行，4 条全因子缺失行不预测，
+3 Explorer 组预测全部行。公共配置、数据、冻结库、模型输入身份和保存结果校验通过，
+两组 `source_matches_search=false` 如实保留来源差异。
+
+仅评估组合预测，未计算单因子 OOS 或库内配对相关性，未写实验总表。原搜索继续运行，
+Test 不回传，沿用版本已有数据与历史留出诊断限制。未修改实现；核对冻结截面、
+模型指标、覆盖率和报告链接，并执行差异格式检查。
+
+[30因子模型报告](../../artifacts/comparisons/v3async2_haiku_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-20a1012038-prefix779/model/report.md)、
+[34因子模型报告](../../artifacts/comparisons/v3async4_haiku_p10_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-67a4cb9f79-prefix671/model/report.md)、
+[串行组评估日志](../../artifacts/comparisons/v3async_haiku_latest_20261105/haiku-serial-latest-models-20261105-3.log)、
+[3 Explorer组评估日志](../../artifacts/comparisons/v3async_haiku_latest_20261105/haiku-px3-latest-models-20261105.log)。
+
+## 2026-11-05 Haiku 两组模型差距诊断：冻结模型敏感性
+
+诊断固定使用此前已测的串行组 `20a1012038-prefix779`（30 因子）及 3 Explorer 组
+`67a4cb9f79-prefix671`（34 因子），不追随源运行后续新增成员。最明确的发现是：并行组
+LightGBM 对市场流动性状态的使用拖累了本段 Test，串行组的日收益公共分量则帮助了
+保存模型；该结果解释模型输入依赖，尚不能把差距归因为并发设置本身。
+
+两组资产、快照、目标、fold、seed、字段、规则、运行时及下游模型配置一致。两组模型的
+训练行分别为 5,308,073／5,308,104，Test 预测行仅相差 4 行；所有输入列均保留。
+方法配置的差异为 `parallel_plans=5/10`、`parallel_evaluations=1/10`、
+`parallel_explorers=1/3`。因子 ID 完全重合的只有 2 个，这两个因子的 Train／Val 指标、
+方向和覆盖率也一致；表达式 ID 不同不代表经济机制必然不同。
+
+入库因子的定向 Train IC 均值为 0.008019／0.008688，Val IC 均值为
+0.010416／0.009814，未显示与组合 Test 差距同量级的验证期差异。串行组 30 个成员来自
+21 个 Region，最多一个区域 4 个；并行组 34 个成员来自 15 个 Region，其中慢趋势区域
+12 个、价格限制锁定区域 6 个，合计 18／34。区域计数是研究分类，不等价于因子间相关性。
+两个截面的有效尝试数不同，且都只有一轮，不能据此证明并发降低泛化。
+
+从已保存 LightGBM 提取训练分裂增益，分别选各自前三个特征做固定模型敏感性检查。
+将被检查列的标准化输入设为 0，即保存的训练均值；其他输入、原始有效预测行和模型参数
+均保持不变，不重新训练、不计算单因子 OOS 或配对相关性。先重现两个模型的原 Test 四项
+指标，与已保存报告逐项核对（绝对容差 1e-12）。所有敏感性结果只作事后诊断，不回传搜索，
+不据此更新因子库、模型或实验总表；均值遮蔽的结果不等于删列重训的结果。
+
+下表为 LightGBM 的 Test √成交额加权 Pearson IC：
+
+| 组别 | 被替换为训练均值的输入 | IC |
+| --- | --- | --- |
+| 串行 | 无，原模型 | 0.026646 |
+| 串行 | 日收益公共分量 `common_component_r1d_1` | 0.014690 |
+| 串行 | 日线突破失败公共分量 `failed_daily_sweep_common_component_1d_20_2` | 0.030075 |
+| 串行 | 市场持仓变化状态 `market_positioning_build_state_only_5m_48` | 0.022721 |
+| 串行 | 上述三个输入一起 | 0.022884 |
+| 3 Explorer | 无，原模型 | 0.000455 |
+| 3 Explorer | 市场流动性状态 `market_liquidity_gate_alone_control` | 0.014861 |
+| 3 Explorer | 偏离上一日收盘 `prior_settlement_dev_1d_5m` | −0.007093 |
+| 3 Explorer | 价格停滞条件信号 `staleness_gate_060_reversal_48_12_5m` | −0.001188 |
+| 3 Explorer | 上述三个输入一起 | 0.008948 |
+
+并行组市场流动性状态取横截面日成交额对数均值的 60 日标准分数，占其训练分裂增益的
+22.996%，是训练增益最高的列。单独遮蔽后 IC 改善 0.014406，2024／2025 年均改善，
+指向该特征在当前树模型中的使用方式为主要拖累之一；价格停滞信号的遮蔽反而更差，
+不能将其与流动性信号一并判为失效。串行组日收益公共分量占训练增益 20.369%，遮蔽后
+IC 下降 0.011957；新增突破失败公共分量虽占 19.453% 训练增益，遮蔽却改善 Test。
+这些结果也说明训练增益不等于 Test 贡献，且不同特征的遮蔽效应不能相加。
+
+按 Test 起点交易年份切片，保留完整 Test 的固定品种权重，原模型加权 Pearson 为：
+
+| 组别／模型 | 2024 | 2025 |
+| --- | --- | --- |
+| 串行 Linear | 0.022660 | 0.014221 |
+| 串行 LightGBM | 0.042980 | 0.007086 |
+| 3 Explorer Linear | 0.019591 | 0.005010 |
+| 3 Explorer LightGBM | 0.010113 | −0.008785 |
+
+两组按年份可评估行均为 1,238,337／1,320,492，合计 2,558,829。串行 LightGBM 的优势
+在 2024 更突出，2025 同样衰减；并行组流动性状态遮蔽后的两年 IC 为
+0.025093／0.007492。年度 IC 不能直接平均还原完整 Test IC。
+
+搜索实现中每个 Miner 仍先收到本组反馈再生成下一候选；多路评估的准入、反馈、地图更新
+仍按 trial 顺序执行。多个 Explorer 和多个在算候选会改变生成时可见的地图、活动计划及
+后续选择，因此是不同搜索轨迹。该机制是可能影响因子集合的途径，不是此次差距的独立
+因果证明。要隔离并发作用，需要固定预算并多轮复跑，分别改变计划数、评估并发和
+Explorer 数；当前 Test 继续按历史留出诊断理解。
+
+诊断脚本通过 Ruff 检查与格式检查；数值校验以原模型指标重现为准，未修改平台实现。
+
+[保存状态与特征重要性](../../artifacts/comparisons/haiku_diagnosis_20261105/saved_state_analysis.json)、
+[串行组敏感性结果](../../artifacts/comparisons/haiku_diagnosis_20261105/serial_sensitivity.json)、
+[并行组敏感性结果](../../artifacts/comparisons/haiku_diagnosis_20261105/parallel_sensitivity.json)、
+[可复现诊断脚本](../../artifacts/comparisons/haiku_diagnosis_20261105/model_sensitivity.py)。
+
+## 2026-11-05 V3 Region 可用性：集中问题与三模型重跑
+
+**问题**：V3 入库因子高度集中在单个 Region。DeepSeek low 串行组 62 个因子中 66% 来自
+Overnight gap order-flow persistence；前 500 次已有 10 个 Region 产生入库，第 501–650 次中
+145 次仍在该 Region，新增 31 个因子全部来自这里。DeepSeek low 3-Explorer 组 53% 来自 Daily
+settlement close-location pressure，Luna 16 路组 62% 来自 Close-VWAP price dislocation，Haiku
+3-Explorer 组 38%。集中 Region 的入库残差 IC 后半段普遍下降（如 DeepSeek 0.0033→0.0018）。
+Haiku 两组的 779／671 次快照中，3-Explorer 组单因子 Test IC 更高（均值 0.0072 vs 0.0051），
+但 Linear／LightGBM 分别为 0.0094／0.0005 vs 0.0185／0.0266；线性系数反号 12/34 vs 3/30，
+LightGBM 最大增益因子为测试 IC -0.0152 的市场状态对照因子。
+
+**原因**：退火进入 depth 后只围绕活动 Region；持续入库使它保持 land，不会关闭；Metropolis
+用累计得分比较，新 Region 难以接任；并发计划和多个 Explorer 同时拿到同一深挖目标。提示词要求
+depth 测试活动 Region 的 probing／land 档，与上述规则一致地推动继续深挖。
+
+**修改**（feature/region-availability，仅 V3 方法，平台准入不变）：新增可选
+`region_admission_limit` 与 `region_plan_limit`。平台用同一判断给出 Region 可用性：入库达上限为
+full，运行计划达上限为 busy。地图标注 `available`／`closed_reason`，提案校验拒绝不可用 Region 及
+同批次重复 Region，depth 仅在活动 Region 可用且未被其他 Explorer 占用时保留，关闭或 full 的活动
+Region 在计划结束时释放退火活动位。提示词只说明上述平台规则。未设置时旧运行不受影响。
+完整检查 1364 项通过。
+
+**运行**：三组均为 10 计划、10 路评估、3 个 Explorer，`region_admission_limit=5`、
+`region_plan_limit=1`：`v3async5_haiku_avail_fold2_20261105`、
+`v3async5_deepseek_low_avail_fold2_20261105`、`v3async5_luna_avail_fold2_20261105`
+（版本 `rq8_fold2_v3async_{model}_p10_pe_px3_avail_v5`）。Luna 对照组原为 16 计划、单 Explorer，
+并发设置与本组不同。
+
+## 2026-11-05 V3 Async 并行 Haiku：快捷评估46因子
+
+按用户要求再次评估此前的并行 Haiku `67a4cb9f79`，版本
+`rq8_fold2_v3async_haiku_p10_pe_px3_v4`（10 计划、10 路评估、3 个 Explorer）。
+执行 `scripts/evaluate_snapshot.py 67a4cb9f79`，北京时间 16:11:54 固定前 810 次、
+46 个入库因子。此前 671 次／34 因子的完整冻结成员与顺序保持不变，新增 12 个成员；
+数据快照、fold、模型参数及依赖版本与上次一致。
+
+| 模型 | Test 加权 Pearson IC | 较34因子变化 | Test 加权 Spearman IC | 预测覆盖率 |
+| --- | --- | --- | --- | --- |
+| Linear | 0.009408 | +0.000026 | 0.011433 | 100.000000% |
+| LightGBM | −0.001066 | −0.001521 | −0.000017 | 100.000000% |
+
+加权口径为 √成交额；品种等权 Pearson IC（Linear／LightGBM）为
+0.008455／0.000404，等权 Spearman IC 为 0.012801／0.005260。
+Linear 主指标基本持平，LightGBM 从 0.000455 降至 −0.001066；新增因子后本段
+Test 的组合主指标没有明显改善，不能仅凭因子数量增加推断预测增强。
+
+Train+Val 训练行数 5,308,104，46 列全部保留；两个模型均预测 Test 全部
+2,558,829 行。公共评估入口完成配置、数据与冻结校验；另核对冻结 SHA、配置指纹、
+模型输入身份、fit／test 规格、四项指标和覆盖率，`source_matches_search=false`
+如实保留来源差异。仅评估组合模型，未计算单因子 OOS 或配对相关性，未写实验总表。
+原搜索保持独立，Test 不回传，沿用版本已有数据与历史留出诊断限制。未修改平台实现。
+
+[46因子模型报告](../../artifacts/comparisons/v3async4_haiku_p10_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-67a4cb9f79-prefix810/model/report.md)、
+[评估日志](../../artifacts/comparisons/v3async_haiku_latest_20261105/haiku-px3-latest-models-20261105-2.log)。
+
+随后按用户要求停止源运行 `67a4cb9f79`，最终保存 833 次尝试、48 个入库因子。
+SIGINT 后进程仍继续搜索，随后仅对该进程发送 SIGTERM 并确认退出。取得原运行锁后，
+使用运行所属工作树的检查点接口将状态标为 `interrupted`，记录用户主动停止并刷新报告；
+`resumable=true`，检查点字节及配置指纹保持不变，保留原子 trial 和此前评估产物。
+
+## 2026-11-05 无深挖：可用性组改为无深挖，串行 Haiku 第 500 次分叉
+
+**依据**：退火温度从 0.25 等比降到 0.02，以几何中点为界，预算后半程全部是 depth，Explorer
+只能围绕活动 Region。旧运行后半程中，单个 Region 占 22%–76% 的尝试；11 组运行中有 8 组后半程
+入库因子的 Test IC 低于前半程（如 V1 Haiku 531d 0.0096→0.0052、V3 DeepSeek low
+0.0061→0.0034）。这一对比混有因子库变大的影响，所以另做下面的对照。
+
+**修改**：V3 支持沿用 V1 的 `selection_policy="greedy"`：每轮 breadth，Explorer 输入不含
+mode／活动 Region，退火不再移动活动 Region。提示词中的 depth 规则替换为只做 breadth 的说明；
+默认（退火）提示词逐字节不变。完整检查 1365 项通过。
+
+**运行**：
+- 可用性组（v3async5，跑到 160–209 次）已停止，标记 interrupted，保留产物。改为
+  `v3async6_{haiku,deepseek_low,luna}_avail_nodepth_fold2_20261105`（版本
+  `rq8_fold2_v3async_{model}_p10_pe_px3_avail_nodepth_v6`），与 v5 仅差 `selection_policy`。
+- `v3async6_haiku_nodepth_fork500_fold2_20261105`：由 `fork.py` 复制串行 Haiku（20a1012038）
+  前 500 个 trial（库 26 个），按截至第 500 次的记录重建方法状态（无在途计划，token 用量从 0 计），
+  从第 501 次起 `selection_policy="greedy"`，其余配置不变（版本
+  `rq8_fold2_v3async_haiku_nodepth_fork500_v1`）。与原运行的后 500 次对照，只差有无深挖。
+  第 500 次时在途的计划不延续，原运行同一时点的 5 个在途计划会继续。
+
+## 2026-11-05 V3 Async 串行 Haiku：快捷复测902次截面
+
+按用户要求运行 `scripts/evaluate_snapshot.py 20a1012038`，北京时间 16:33:44 固定
+`rq8_fold2_v3async_haiku_v2` 前 902 次、30 个因子，重新拟合两个模型并评估 Test。
+该截面与此前 779 次截面的完整冻结库字节相同，期间没有新增入库因子；数据快照、
+fold、模型配置及依赖版本一致，重新保存的拟合内容和全部 Test 报告也完全一致。
+
+| 模型 | Test 加权 Pearson IC | Test 加权 Spearman IC | 预测覆盖率 |
+| --- | --- | --- | --- |
+| Linear | 0.018476 | 0.017638 | 99.999844% |
+| LightGBM | 0.026646 | 0.016217 | 99.999844% |
+
+加权口径为 √成交额。品种等权 Pearson IC（Linear／LightGBM）为
+0.021436／0.021605，等权 Spearman IC 为 0.022372／0.021572。
+Train+Val 训练 5,308,073 行，30 列全部保留；Test 预测 2,558,825／2,558,829 行。
+已核对配置指纹、冻结 SHA、模型输入身份、fit／test 规格、四项指标及覆盖率；
+`source_matches_search=false` 如实保留来源差异。仅评估组合预测，未计算单因子 OOS
+或配对相关性，未写实验总表，Test 不回传搜索，沿用已有数据与历史留出诊断限制。
+
+[902次模型报告](../../artifacts/comparisons/v3async2_haiku_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-20a1012038-prefix902/model/report.md)、
+[评估日志](../../artifacts/comparisons/v3async_haiku_latest_20261105/haiku-serial-latest-models-20261105-4.log)。
+
+## 2026-11-05 停止 DeepSeek low 串行组；观测台增加停止按钮
+
+- `v3async2_deepseek_low_fold2_20261105`（`rq8_fold2_v3async_deepseek_low_v2`，bfabcc7663）在
+  718 次时按用户要求停止，标记 interrupted：入库因子 66% 集中在 Overnight gap order-flow
+  persistence。产物保留，可 resume。
+- 观测台运行标题栏增加“停止运行”按钮（仅 running 状态显示，需确认）。后端
+  `POST /api/stop?id=…` 从 /proc 找到持有该运行 `.run.lock` 的进程并发 SIGINT，效果等同 Ctrl+C，
+  运行自行记录 interrupted；不保存 PID，没有进程持锁时返回 409。请求须带 `X-Atlas-Action: stop`
+  头，跨站页面无法伪造。改动应用于主仓库、AlphaAtlas-scales（当前观测台进程）与
+  AlphaAtlas-regions，测试 `tests/test_dashboard_stop.py`。
+
+## 2026-11-05 Haiku 10 并发组误恢复后停止；停止按钮改为 SIGINT→SIGTERM
+
+- `v3async4_haiku_p10_fold2_20261105`（67a4cb9f79）16:28 在 833 次无 traceback 退出、状态仍为
+  running，当时按异常退出处理并从检查点恢复。用户本意是停止该组，现于 875 次停止并记为
+  interrupted。
+- 恢复后的该进程对 SIGINT 两次都无响应（信号已送达、Python 已注册处理器，仍继续提交 trial；
+  ptrace 受限，未能取栈，原因未明）。停止按钮因此改为：先 SIGINT，20 秒内未退出则 SIGTERM；
+  进程放开运行锁后，若 run.json 仍为 running，观测台在运行锁内记为 interrupted。测试覆盖
+  正常处理 SIGINT 与忽略 SIGINT 两种进程。
+- DeepSeek low 3-Explorer 组（3f8261a9ad）于 780 次由停止按钮停止，进程自行记为 interrupted。
+
+## 2026-11-05 V3 Async Luna avail nodepth：前500次快捷评估
+
+按用户要求执行 `scripts/evaluate_snapshot.py 90706b3755 --attempts 500`，北京时间
+17:44:11 冻结 `rq8_fold2_v3async_luna_p10_pe_px3_avail_nodepth_v6` 的前 500 次
+已提交截面，入库 14 个因子。原搜索继续运行，Test 不回传方法。
+
+Test √成交额加权 Pearson IC：Linear 为 0.008455，LightGBM 为 0.006432；加权
+Spearman IC 分别为 0.016645、0.017685。两模型均预测 2,558,825／2,558,829 行，
+覆盖率为 99.999844%，4 条全因子缺失行不预测。Train+Val 训练行数为 5,308,099，
+14 列全部可用。公共配置、数据、冻结库和因子身份校验通过；`source_matches_search=false`
+记录拟合与搜索启动源码来源不同。只评估组合预测，未计算单因子 OOS 或库内配对相关性，
+未写实验总表。Test 已被观察，属于历史留出诊断。
+
+[模型报告](../../artifacts/comparisons/v3async6_luna_avail_nodepth_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-90706b3755-prefix500/model/report.md)、
+[评估日志](../../artifacts/comparisons/v3async6_luna_avail_nodepth_fold2_20261105/prefix500-models.log)。
+
+## 2026-11-05 V3 Async Luna avail nodepth：16因子快捷评估
+
+按用户要求执行 `scripts/evaluate_snapshot.py 90706b3755 --factors 16`，北京时间
+17:47:43 冻结前 546 次、16 个因子的截面。较此前 500 次／14 因子新增 2 个成员，
+原 14 个成员的完整冻结记录和顺序保持一致。
+
+Test √成交额加权 Pearson IC：Linear 为 0.008074，较 14 因子的 0.008455 下降
+0.000381；LightGBM 为 0.007072，较此前 0.006432 上升 0.000641。加权 Spearman IC
+分别为 0.016467、0.017217。两个模型均预测 2,558,825／2,558,829 行，覆盖率为
+99.999844%；Train+Val 训练行数为 5,308,099，16 列全部可用。公共配置、数据、
+冻结库和因子身份校验通过，`source_matches_search=false` 记录源码来源差异。
+原搜索继续运行，Test 不回传；只评估组合预测，未计算单因子 OOS 或库内相关性。
+Test 已被观察，属于历史留出诊断。
+
+[16因子模型报告](../../artifacts/comparisons/v3async6_luna_avail_nodepth_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-90706b3755-prefix546/model/report.md)、
+[评估日志](../../artifacts/comparisons/v3async6_luna_avail_nodepth_fold2_20261105/16factors-models.log)。
+
+## 2026-11-05 V3 Async Haiku 无深挖分支：645次与500次预测对比
+
+按用户要求使用 `scripts/evaluate_snapshot.py` 评估
+`rq8_fold2_v3async_haiku_nodepth_fork500_v1`（`20a1012038-nodepth500`）最新截面，
+北京时间 17:49:26 固定前 645 次、30 个因子；同时用 `20a1012038 --attempts 500`
+评估原串行运行的精确 500 次截面，共 26 个因子。分支在第 501 次起采用
+`selection_policy=greedy`，本次比基础截面新增 145 次尝试、4 个因子。
+
+两组原 26 个成员的完整冻结记录、顺序、方向和裁剪边界一致；数据快照、fold、字段、
+规则、运行时、下游模型参数及依赖版本相同。Test √成交额加权 IC 为：
+
+| 模型／指标 | 500次／26因子 | 无深挖645次／30因子 | 变化 |
+| --- | --- | --- | --- |
+| Linear Pearson | 0.024497 | 0.023496 | −0.001002 |
+| LightGBM Pearson | 0.028821 | 0.030248 | +0.001427 |
+| Linear Spearman | 0.021668 | 0.020990 | −0.000679 |
+| LightGBM Spearman | 0.022225 | 0.022917 | +0.000691 |
+
+品种等权 Pearson IC（Linear／LightGBM）从 0.026013／0.023997 变为
+0.024698／0.025855；等权 Spearman IC 从 0.027057／0.026753 变为
+0.025979／0.028591。新增因子后 LightGBM 改善，Linear 略降。这属于续搜前后比较，
+预算和因子集合不同，尚不能单独归因于 `greedy` 策略。
+
+两组 Train+Val 均训练 5,308,073 行，26／30 列全部保留；Test 均预测
+2,558,825／2,558,829 行，覆盖率 99.999844%。公共评估入口与额外核对确认配置指纹、
+冻结 SHA、模型输入身份、fit／test 规格、全部指标及覆盖率一致有效；两组
+`source_matches_search=false` 如实记录来源差异。仅评估组合预测，未计算单因子 OOS
+或配对相关性，未写实验总表。Test 不回传搜索，沿用已有数据与历史留出诊断限制。
+
+[500次模型报告](../../artifacts/comparisons/v3async2_haiku_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-20a1012038-prefix500/model/report.md)、
+[无深挖645次模型报告](../../artifacts/comparisons/v3async6_haiku_nodepth_fork500_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-20a1012038-nodepth500-prefix645/model/report.md)、
+[500次评估日志](../../artifacts/comparisons/v3async_haiku_latest_20261105/haiku-serial-prefix500-models-20261105.log)、
+[无深挖分支评估日志](../../artifacts/comparisons/v3async_haiku_latest_20261105/haiku-nodepth500-latest-models-20261105.log)。
+
+## 2026-11-05 V3 Async avail nodepth：DeepSeek／Haiku最新预测
+
+按用户要求同时执行快捷脚本 `scripts/evaluate_snapshot.py e78d475f38` 和
+`scripts/evaluate_snapshot.py 132e72e79a`。北京时间 17:59:19 分别固定
+`rq8_fold2_v3async_deepseek_low_p10_pe_px3_avail_nodepth_v6` 前 437 次、16 个因子，
+`rq8_fold2_v3async_haiku_p10_pe_px3_avail_nodepth_v6` 前 351 次、20 个因子。
+两组均为 10 计划、10 路评估、3 个 Explorer，`selection_policy=greedy`、
+`region_admission_limit=5`、`region_plan_limit=1`。数据与下游模型配置相同；
+这是各自最新截面，尝试数不同。
+
+Test √成交额加权 Pearson IC：
+
+| 运行 | 尝试次数 | 因子数 | Linear | LightGBM | 预测覆盖率 |
+| --- | --- | --- | --- | --- | --- |
+| DeepSeek low（e78d475f38） | 437 | 16 | 0.009954 | 0.016424 | 100.000000% |
+| Haiku（132e72e79a） | 351 | 20 | 0.014111 | 0.012811 | 100.000000% |
+
+加权 Spearman IC（Linear／LightGBM）分别为 DeepSeek 0.016394／0.021873、
+Haiku 0.013852／0.012652。品种等权 Pearson IC 分别为
+0.011327／0.016516、0.018143／0.009754；等权 Spearman IC 分别为
+0.013411／0.021368、0.017573／0.013802。
+
+两组 Train+Val 均训练 5,308,104 行，16／20 列全部可用；Test 均预测全部
+2,558,829 行。公共评估入口及额外核对确认配置指纹、冻结 SHA、模型输入身份、
+fit／test 规格、依赖版本、全部指标和覆盖率有效；两组 `source_matches_search=false`
+如实保留来源差异。仅评估组合预测，未计算单因子 OOS 或配对相关性，未写实验总表。
+原搜索继续运行，Test 不回传，沿用已有数据与历史留出诊断限制。
+
+[DeepSeek模型报告](../../artifacts/comparisons/v3async6_deepseek_low_avail_nodepth_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-e78d475f38-prefix437/model/report.md)、
+[Haiku模型报告](../../artifacts/comparisons/v3async6_haiku_avail_nodepth_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-132e72e79a-prefix351/model/report.md)、
+[DeepSeek评估日志](../../artifacts/comparisons/v3async6_deepseek_low_avail_nodepth_fold2_20261105/latest-models-20261105.log)、
+[Haiku评估日志](../../artifacts/comparisons/v3async6_haiku_avail_nodepth_fold2_20261105/latest-models-20261105.log)。
+
+## 2026-11-05 V3 Async Haiku nodepth 续跑：最新截面快捷评估
+
+按用户要求，以 `scripts/evaluate_snapshot.py` 评估
+`rq8_fold2_v3async_haiku_nodepth_fork500_v1` 的最新已提交截面。北京时间 18:07:11
+冻结前 670 次、30 个入库因子；该运行由 `20a1012038` 的前 500 次续跑，截面尝试数
+包含继承部分。原搜索继续运行，Test 不回传方法。
+
+Test √成交额加权 Pearson IC：Linear 为 0.023496，LightGBM 为 0.030248；加权
+Spearman IC 分别为 0.020990、0.022917。两模型均预测 2,558,825／2,558,829 行，
+覆盖率为 99.999844%；Train+Val 训练行数为 5,308,073，30 列全部可用。公共配置、
+数据、冻结库和因子身份校验通过，模型拟合与搜索启动的源码记录不同。只评估组合预测，
+未计算单因子 OOS 或库内配对相关性。Test 已被观察，属于历史留出诊断。
+
+[模型报告](../../artifacts/comparisons/v3async6_haiku_nodepth_fork500_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-20a1012038-nodepth500-prefix670/model/report.md)、
+[评估日志](../../artifacts/comparisons/v3async6_haiku_nodepth_fork500_fold2_20261105/latest-models.log)。
+
+## 2026-11-05 V3 Async DeepSeek low avail nodepth：前500次快捷评估
+
+按用户要求执行 `scripts/evaluate_snapshot.py e78d475f38 --attempts 500`，北京时间
+18:19:52 冻结 `rq8_fold2_v3async_deepseek_low_p10_pe_px3_avail_nodepth_v6` 的前
+500 次截面，入库 19 个因子。原搜索继续运行，Test 不回传方法。
+
+Test √成交额加权 Pearson IC：Linear 为 0.011632，LightGBM 为 0.016788；加权
+Spearman IC 分别为 0.019499、0.022164。两个模型均预测全部 2,558,829 条可评估行，
+覆盖率 100%；Train+Val 训练行数为 5,308,104，19 列全部可用。公共配置、数据、
+冻结库和因子身份校验通过；模型拟合与搜索启动的源码记录不同。只评估组合预测，
+未计算单因子 OOS 或库内配对相关性。Test 已被观察，属于历史留出诊断。
+
+[模型报告](../../artifacts/comparisons/v3async6_deepseek_low_avail_nodepth_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-e78d475f38-prefix500/model/report.md)、
+[评估日志](../../artifacts/comparisons/v3async6_deepseek_low_avail_nodepth_fold2_20261105/prefix500-models.log)。
+
+随后按用户要求再次调用同一快捷命令，公共入口校验通过并复用已有 fit／test 缓存。
+相较此前 437 次／16 因子截面新增 3 个成员，原 16 个完整冻结记录保持不变，模型配置、
+数据、fold 及依赖版本一致；Linear／LightGBM 加权 Pearson 分别提高 0.001678／0.000364。
+本次未写实验总表。[快捷校验日志](../../artifacts/comparisons/v3async6_deepseek_low_avail_nodepth_fold2_20261105/prefix500-models-verified.log)。
+
+## 2026-11-05 DeepSeek low avail nodepth：500次组合模型结果入表
+
+按用户要求，将 `e78d475f38` 前 500 次的组合模型结果写入
+[实验总览](../../experiment_overview.md#期货因子搜索fold2)：19 个因子，Linear／LightGBM
+加权 Pearson 分别为 0.011632／0.016788，预测覆盖率均为 100%。单因子 Test 尚未评估，
+表中标记“—”；本次复用已有结果，未增加 Test 计算。
+
+## 2026-11-05 V3 Async Luna 与 Haiku：最新截面快捷评估
+
+按用户要求分别执行快捷评估。北京时间 18:26:44，`90706b3755` 冻结前 758 次、
+21 个因子；Haiku 续跑 `20a1012038-nodepth500` 冻结前 716 次、33 个因子，次数
+包含继承的前 500 次。此前分别评估的 546 次／16 因子与 670 次／30 因子完整成员
+记录及顺序均与各自新截面的前序成员一致。
+
+Test √成交额加权 Pearson IC：
+
+| 截面 | 因子 | Linear | LightGBM |
+| --- | ---: | ---: | ---: |
+| Luna 758 次 | 21 | 0.010273 | 0.006219 |
+| Haiku 716 次 | 33 | 0.024171 | 0.027623 |
+
+相较此前各自截面，Luna 的 Linear／LightGBM 分别变化 +0.002198／−0.000853；
+Haiku 分别变化 +0.000676／−0.002625。加权 Spearman IC 分别为 Luna 的
+0.016112／0.016699 和 Haiku 的 0.019596／0.021720。两截面的两个模型均预测
+2,558,825／2,558,829 行，覆盖率为 99.999844%；Train+Val 训练行数分别为
+5,308,099／5,308,074，所有因子列保留。
+
+公共配置、数据、冻结库和因子身份校验通过；模型拟合与搜索启动的源码记录不同。
+原搜索继续运行，Test 不回传。只评估组合预测，未计算单因子 OOS 或库内配对相关性；
+Test 已被观察，属于历史留出诊断。
+
+[Luna 模型报告](../../artifacts/comparisons/v3async6_luna_avail_nodepth_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-90706b3755-prefix758/model/report.md)、
+[Haiku 模型报告](../../artifacts/comparisons/v3async6_haiku_nodepth_fork500_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-20a1012038-nodepth500-prefix716/model/report.md)、
+[Luna 评估日志](../../artifacts/comparisons/v3async6_luna_avail_nodepth_fold2_20261105/latest-models-758.log)、
+[Haiku 评估日志](../../artifacts/comparisons/v3async6_haiku_nodepth_fork500_fold2_20261105/latest-models-716.log)。
+
+## 2026-11-05 V3 Async 串行 Haiku：最终结果主表核对
+
+按用户要求，将已评估的串行 Haiku `20a1012038` 结果落实到主表。原运行已完成
+1000 次并自动写入主表，仍为 30 个因子；核对 `prefix902` 与最终运行的完整冻结库、
+数据快照、模型配置及依赖版本一致，全部模型 Test 报告完全相同。
+保留最终 1000 次这一行，补充串行标识、模型报告链接及 902 次后无新增因子的说明。
+
+Test √成交额加权 Pearson IC（Linear／LightGBM）为 0.018476／0.026646，
+加权 Spearman IC 为 0.017638／0.016217，两模型预测覆盖率均为 99.999844%
+（2,558,825／2,558,829 行）。单因子栏沿用并核对最终运行已有 OOS：加权 Pearson
+均值／中位数为 0.005100／0.005174，正 IC 26／30（86.67%），加权 Spearman
+均值为 0.002107。配置指纹、冻结 SHA、因子身份、fit／test 规格与 OOS 指纹校验通过。
+本次仅核对已有产物并整理表格，未重新训练、评估 Test 或计算配对相关性。
+
+[最终模型报告](../../artifacts/comparisons/v3async2_haiku_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-20a1012038/model/report.md)、
+[902次模型报告](../../artifacts/comparisons/v3async2_haiku_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-20a1012038-prefix902/model/report.md)、
+[最终单因子结果](../../artifacts/comparisons/v3async2_haiku_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-20a1012038/oos.json)。
+
+## 2026-11-05 V3 Async Haiku avail nodepth：最新截面快捷评估及 Luna 停止
+
+按用户要求，快捷评估 `rq8_fold2_v3async_haiku_p10_pe_px3_avail_nodepth_v6`
+（`132e72e79a`）最新已提交截面。北京时间 18:32:11 冻结前 405 次、25 个因子。
+Test √成交额加权 Pearson IC：Linear 为 0.014278，LightGBM 为 0.012310；加权
+Spearman IC 分别为 0.014020、0.012761。两模型均预测全部 2,558,829 条可评估行；
+Train+Val 训练行数为 5,308,104，25 列全部可用。公共配置、数据、冻结库和因子身份
+校验通过，模型拟合与搜索启动的源码记录不同。原 Haiku 搜索继续运行，Test 不回传；
+只评估组合预测，未计算单因子 OOS 或库内配对相关性。Test 已被观察，属于历史留出诊断。
+
+按用户要求停止 Luna `90706b3755`：项目停止入口发出中断后，运行锁释放时出现竞争，
+入口未能立即写状态；确认无锁持有者后，在获取运行锁的情况下按同一停止流程将状态记为
+`interrupted`。检查点保留 790 次已提交尝试和 21 个入库因子，可用于后续恢复。
+
+[Haiku 模型报告](../../artifacts/comparisons/v3async6_haiku_avail_nodepth_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-132e72e79a-prefix405/model/report.md)、
+[评估日志](../../artifacts/comparisons/v3async6_haiku_avail_nodepth_fold2_20261105/latest-models-405.log)。
+
+- 2026-11-05：Luna「可用性＋无深挖」v6（`90706b3755`）效果差，用户在第 790 次手动停止（状态 interrupted，不续跑）。
+  以完全相同的配置另开重复运行 `rq8_fold2_v3async_luna_p10_pe_px3_avail_nodepth_r2_v7`
+  （`v3async7_luna_avail_nodepth_r2_fold2_20261105`，run `0e0d7ab291`，seed 42），用于区分配置问题与单次运行波动。
+
+## 2026-11-05 Haiku 两组无深挖：437次最终库／763次截面预测
+
+按用户要求对 `rq8_fold2_v3async_haiku_p10_pe_px3_avail_nodepth_v6`（`132e72e79a`）
+与 `rq8_fold2_v3async_haiku_nodepth_fork500_v1`（`20a1012038-nodepth500`）调用快捷脚本。
+前者在本次调用期间因 `V1 Explorer unresolved` 提前冻结：Explorer 未提出可执行的新方向，
+回复认为需要当前 context 未提供的远月价格或时段／日历字段。原子 trial 和检查点确认实际
+完成 437 次、入库 26 个；`run.json` 的 1000 是预算，不能视为已完成次数。
+
+首次快捷调用遇到原进程收尾锁；等待其自动收尾完成后，再次调用快捷脚本，公共入口核对
+并复用已有 fit／test 缓存。原脚本自身已完成单因子审计、库内相关性并自动写入总表，
+本次未另外启动这些计算或手动填表。500 次分支于北京时间 18:48:34 固定前 763 次、
+35 个因子，快捷脚本完成模型拟合与 Test；次数包含继承的前 500 次，源分支继续搜索。
+
+Test √成交额加权 Pearson IC：
+
+| 运行 | 实际尝试次数 | 因子数 | Linear | LightGBM | 预测覆盖率 |
+| --- | --- | --- | --- | --- | --- |
+| 可用性＋无深挖（132e72e79a） | 437，提前结束 | 26 | 0.016715 | 0.013289 | 100.000000% |
+| 串行500次分支（20a1012038-nodepth500） | 763 | 35 | 0.025362 | 0.028509 | 99.999844% |
+
+加权 Spearman IC（Linear／LightGBM）分别为 0.014545／0.011906、0.020367／0.021887。
+品种等权 Pearson IC 分别为 0.021374／0.010900、0.024448／0.025055；等权 Spearman IC
+分别为 0.018750／0.014401、0.024428／0.028053。
+
+较各自此前 405 次／25 因子、716 次／33 因子，完整前序冻结成员及顺序保持不变，
+分别新增 1／2 个成员；加权 Pearson 的 Linear／LightGBM 分别变化
++0.002438／+0.000979、+0.001191／+0.000886。两组预算、搜索方式和因子集合不同，
+此处汇报各自进展。
+
+两组 Train+Val 训练行分别为 5,308,104／5,308,074，26／35 列全部保留；Test 预测行
+分别为 2,558,829／2,558,825，可评估行均为 2,558,829。公共入口及额外核对验证实际
+次数、配置指纹、冻结 SHA、因子身份、fit／test 规格、数据、下游模型参数、依赖版本、
+全部指标和覆盖率；两组 `source_matches_search=false` 如实保留来源差异。Test 不回传方法，
+沿用已有数据与历史留出诊断限制。
+
+[437次模型报告](../../artifacts/comparisons/v3async6_haiku_avail_nodepth_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-132e72e79a/model/report.md)、
+[437次快捷校验日志](../../artifacts/comparisons/v3async6_haiku_avail_nodepth_fold2_20261105/latest-models-20261105-2-verified.log)、
+[763次模型报告](../../artifacts/comparisons/v3async6_haiku_nodepth_fork500_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-20a1012038-nodepth500-prefix763/model/report.md)、
+[763次评估日志](../../artifacts/comparisons/v3async6_haiku_nodepth_fork500_fold2_20261105/latest-models-20261105-2.log)。
+
+## 2026-11-05 V3 Async 无深挖：Luna重复组／DeepSeek最新预测
+
+按用户要求同时执行快捷脚本，分别评估
+`rq8_fold2_v3async_luna_p10_pe_px3_avail_nodepth_r2_v7`（`0e0d7ab291`）与
+`rq8_fold2_v3async_deepseek_low_p10_pe_px3_avail_nodepth_v6`（`e78d475f38`）。
+北京时间 19:03:33／19:03:34 固定前 281 次／9 因子及前 600 次／24 因子的截面。
+两组数据快照、fold、字段、规则、下游模型配置及依赖版本相同，尝试数和预测覆盖不同。
+
+Test √成交额加权 Pearson IC：
+
+| 运行 | 尝试次数 | 因子数 | Linear | LightGBM | 预测覆盖率 |
+| --- | --- | --- | --- | --- | --- |
+| Luna重复组（0e0d7ab291） | 281 | 9 | 0.009307 | 0.006410 | 94.304231% |
+| DeepSeek low（e78d475f38） | 600 | 24 | 0.014673 | 0.026595 | 100.000000% |
+
+加权 Spearman IC（Linear／LightGBM）分别为 Luna 0.004586／0.004148、
+DeepSeek 0.019122／0.027194。品种等权 Pearson IC 分别为
+0.005813／0.003830、0.015734／0.025790；等权 Spearman IC 分别为
+0.000359／0.002484、0.021393／0.026936。
+
+DeepSeek 较前 500 次／19 因子新增 5 个成员，原 19 个完整冻结记录和顺序保持不变；
+Linear／LightGBM 加权 Pearson 分别提高 0.003041／0.009807，后者由 0.016788
+升至 0.026595。该比较保持数据、配置、训练行数和 Test 覆盖一致。
+
+Luna／DeepSeek 的 Train+Val 训练行数分别为 5,152,899／5,308,104，9／24 列全部保留；
+Test 可评估行均为 2,558,829，分别预测 2,413,084／2,558,829 行，Luna 有 145,745 条
+可评估行未预测。公共入口及额外核对验证配置指纹、冻结 SHA、因子身份、fit／test 规格、
+全部指标及覆盖率；两组 `source_matches_search=false` 如实保留来源差异。仅评估组合预测，
+未计算单因子 OOS 或配对相关性，未写实验总表。Test 不回传搜索，沿用已有数据与历史
+留出诊断限制。
+
+[Luna模型报告](../../artifacts/comparisons/v3async7_luna_avail_nodepth_r2_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-0e0d7ab291-prefix281/model/report.md)、
+[DeepSeek模型报告](../../artifacts/comparisons/v3async6_deepseek_low_avail_nodepth_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-e78d475f38-prefix600/model/report.md)、
+[Luna评估日志](../../artifacts/comparisons/v3async7_luna_avail_nodepth_r2_fold2_20261105/latest-models-20261105.log)、
+[DeepSeek评估日志](../../artifacts/comparisons/v3async6_deepseek_low_avail_nodepth_fold2_20261105/latest-models-20261105-2.log)。
+
+- 2026-11-05：Haiku「可用性＋无深挖」v6（`132e72e79a`）在第 437 次正常冻结：Explorer 判断现有字段下地图已无可执行
+  新机制并返回 unresolved。入库 26 个，单因子 Test IC 均值／中位数 0.0063／0.0047（20/26 为正），
+  Linear 0.016715，LightGBM 0.013289。
+- 2026-11-05：DeepSeek low「可用性＋无深挖」v6（`e78d475f38`）在第 643 次因一次结构不完整的模型回复
+  （`chat model response has no message content`，各运行中首次出现）失败，按原配置续跑。
+- 2026-11-05：提示词精简与一致化（分支 `feature/prompt-cleanup`）：Miner 可用 `done` 按计划自身规则正常结束计划，
+  `blocked` 只表示缺失能力（Haiku v6 的 138 条 `blocked_plans` 大多是正常提前结束）；改正并发 Explorer 的
+  `available_slots` 说明（原替换句已失效）；Region 选择规则只出现一次；分档状态按判定顺序描述。
+  以此启动 Haiku、Luna 两组 v8（`..._p8_pe8_px3_avail_nodepth_v8`，run `1b154fb482`／`22d7cdbc4f`）：
+  可用性 5／1、无深挖、8 计划、8 路评估、3 Explorer。与 v6 同时改了提示词和并发，二者不可分开归因。
+- 2026-11-05：Luna v8（`22d7cdbc4f`）在第 142 次因模型网关返回 HTTP 520 失败；该类网关错误原不重试。
+  公共客户端将 HTTP 520–524 加入可重试分类（prompts 与 regions 两个工作树），随后续跑。
+
+## 2026-11-05 Luna 无深挖 v7／v8：最新截面快捷评估
+
+按用户要求同时执行 `scripts/evaluate_snapshot.py 0e0d7ab291` 和
+`scripts/evaluate_snapshot.py 22d7cdbc4f`。北京时间 19:46:29，分别固定
+`rq8_fold2_v3async_luna_p10_pe_px3_avail_nodepth_r2_v7` 前 534 次、14 因子，
+`rq8_fold2_v3async_luna_p8_pe8_px3_avail_nodepth_v8` 前 165 次、7 因子。
+两组数据快照、fold、字段、规则和下游模型参数相同；v7 为 10 计划／10 路评估，
+v8 为 8 计划／8 路评估，两组均为 3 Explorer、可用性限制 5／1、greedy 无深挖。
+v8 另有此前记录的提示词调整，当前预算也不同，不能将差异单独归因于并发数。
+
+Test √成交额加权 Pearson IC：
+
+| 运行 | 尝试次数 | 因子数 | Linear | LightGBM | 预测覆盖率 |
+| --- | --- | --- | --- | --- | --- |
+| Luna v7（0e0d7ab291） | 534 | 14 | 0.006363 | 0.010175 | 99.995271% |
+| Luna v8（22d7cdbc4f） | 165 | 7 | 0.010870 | 0.007531 | 100.000000% |
+
+加权 Spearman IC（Linear／LightGBM）分别为 v7 0.003427／0.005887、
+v8 0.018530／0.013501。品种等权 Pearson IC 分别为
+0.002707／0.006482、0.014546／0.016630；等权 Spearman IC 分别为
+−0.000013／0.005375、0.022428／0.018393。
+
+v7 较此前 281 次／9 因子新增 5 个成员，原 9 个完整冻结成员及顺序保持不变。
+Linear／LightGBM 加权 Pearson 分别变化 −0.002944／+0.003764；预测覆盖率由
+94.304231% 升至 99.995271%，预测样本也发生变化，不能把该差值全部视为同一样本上的改善。
+
+两组 Train+Val 训练行数分别为 5,307,922／5,308,104，14／7 列全部保留；Test
+可评估行均为 2,558,829，分别预测 2,558,708／2,558,829 行，v7 有 121 条可评估行
+未预测。公共入口及额外核对验证配置指纹、冻结 SHA、因子身份、fit／test 规格、
+依赖版本、全部指标及覆盖率；两组 `source_matches_search=false` 如实保留来源差异。
+仅评估组合预测，未计算单因子 OOS 或配对相关性，未写实验总表。Test 不回传搜索，
+沿用已有数据与历史留出诊断限制。
+
+[v7模型报告](../../artifacts/comparisons/v3async7_luna_avail_nodepth_r2_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-0e0d7ab291-prefix534/model/report.md)、
+[v8模型报告](../../artifacts/comparisons/v3async8_luna_avail_nodepth_p8_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-22d7cdbc4f-prefix165/model/report.md)、
+[v7评估日志](../../artifacts/comparisons/v3async7_luna_avail_nodepth_r2_fold2_20261105/latest-models-20261105-2.log)、
+[v8评估日志](../../artifacts/comparisons/v3async8_luna_avail_nodepth_p8_fold2_20261105/latest-models-20261105.log)。
+
+- 2026-11-05：按用户要求停止 Luna v7（`0e0d7ab291`）。通过现有停止入口向该运行锁
+  持有进程发送 SIGINT，进程正常退出并自行记录 `interrupted`；确认没有运行锁持有者。
+  检查点与最后原子 trial 均为 606 次尝试、14 个入库因子，配置指纹一致，已有结果及
+  可恢复检查点保留。本次是用户主动停止，不自动续跑；Luna v8（`22d7cdbc4f`）继续运行。
+
+## 2026-11-05 Luna v8：282次／14因子快捷预测
+
+用户要求复测 Luna v8（`rq8_fold2_v3async_luna_p8_pe8_px3_avail_nodepth_v8`，
+`22d7cdbc4f`）当前结果。请求时提及 13 个因子，实际调用快捷脚本时已增至 14 个；
+于北京时间 20:03:21 固定前 282 次尝试，保存在 `-prefix282`，源搜索继续运行。
+
+Test 模型指标：
+
+| 模型 | √成交额加权 Pearson IC | √成交额加权 Spearman IC | 品种等权 Pearson IC | 品种等权 Spearman IC |
+| --- | --- | --- | --- | --- |
+| Linear | 0.015513 | 0.019604 | 0.019038 | 0.022810 |
+| LightGBM | 0.014500 | 0.016770 | 0.019365 | 0.021360 |
+
+较此前 165 次／7 因子，Linear／LightGBM 加权 Pearson 分别提高
+0.004643／0.006969（此前为 0.010870／0.007531）。原 7 个完整冻结成员和顺序保持不变；
+数据快照、fold、下游模型参数、依赖版本、训练行数和 Test 覆盖一致。
+
+Train+Val 训练 5,308,104 行，14 列全部保留；两个模型均预测全部 2,558,829 条 Test
+可评估行，覆盖率 100%。公共入口与额外核对确认配置指纹、冻结 SHA、因子身份、
+fit／test 规格、四项指标与覆盖率；`source_matches_search=false` 如实保留来源差异。
+本次仅评估组合预测，不计算单因子 OOS 或配对相关性，不写实验总表。Test 不回传搜索，
+结果沿用已有数据与历史留出诊断限制。
+
+[模型报告](../../artifacts/comparisons/v3async8_luna_avail_nodepth_p8_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-22d7cdbc4f-prefix282/model/report.md)、
+[快捷评估日志](../../artifacts/comparisons/v3async8_luna_avail_nodepth_p8_fold2_20261105/latest-models-20261105-2.log)。
+- 2026-11-05：深挖／无深挖对照（同一串行 Haiku 前 500 次，`20a1012038` 对 `20a1012038-nodepth500`）：
+  分叉组在第 912 次因 Explorer 判断无可执行新方向而正常冻结（unresolved）。第 501 次起：
+
+  | 第 501 次起 | 带深挖（串行原组，至 1000） | 无深挖（分叉，至 912） |
+  | --- | --- | --- |
+  | 尝试 / 涉及区域 / 最大区域占比 | 500 / 17 / 45% | 412 / 44 / 8% |
+  | 新入库（来自区域数） | 4（3） | 15（11） |
+  | 总入库 | 30 | 41 |
+  | 单因子 Test IC 均值／中位数（为正） | 0.0051／0.0052（26/30） | 0.0064／0.0065（37/41） |
+  | Linear／LightGBM | 0.018476／0.026646 | 0.026102／0.022128 |
+
+  无深挖用更少尝试多入库 11 个，分散到 11 个区域，单因子 Test IC 与 Linear 更高，LightGBM 略低。
+  单一 seed、单一模型，结论仅支持“后半程深挖在该运行中无益”。
+- 2026-11-05：Haiku v8（`1b154fb482`，新提示词、8 计划／8 评估）在第 515 次因 Explorer unresolved 正常冻结。
+  入库 32 个，来自 25 个区域（单区域最多 3 个，最大区域尝试占比 4%）；单因子 Test IC 0.0077／0.0064（28/32 为正），
+  Linear 0.019176，LightGBM 0.006097。Miner 用 `done` 结束计划 45 次，`blocked` 仅 2 次。
+  Haiku 三组无深挖运行均因 unresolved 提前停止（437、515、912 次）。
+
+## 2026-11-05 Luna v8：500次与871次截面快捷预测
+
+按用户要求对 `rq8_fold2_v3async_luna_p8_pe8_px3_avail_nodepth_v8`（`22d7cdbc4f`）
+调用快捷脚本，分别使用 `--attempts 500` 和 `--attempts 871`。北京时间
+21:42:34／21:42:35 固定指定截面，分别有 20／29 个入库因子；原搜索继续运行。
+
+Test √成交额加权 IC：
+
+| 尝试次数 | 因子数 | Linear Pearson | LightGBM Pearson | Linear Spearman | LightGBM Spearman |
+| --- | --- | --- | --- | --- | --- |
+| 500 | 20 | 0.011798 | 0.015331 | 0.016976 | 0.017250 |
+| 871 | 29 | 0.010497 | 0.012807 | 0.015846 | 0.015809 |
+
+品种等权 Pearson IC（Linear／LightGBM）分别为 0.011795／0.018287、
+0.011072／0.014726；等权 Spearman IC 分别为 0.018829／0.020996、
+0.018195／0.019898。871 次较 500 次的 Linear／LightGBM 加权 Pearson
+分别下降 0.001301／0.002525；新增 9 个因子后，这两个固定模型的历史 Test 表现降低。
+
+前 500 次的全部 20 个冻结成员、顺序、方向和裁剪边界在 871 次截面中保持不变。
+两组数据快照、fold、模型配置和依赖版本一致；Train+Val 均训练 5,308,104 行，
+20／29 列全部保留，两个模型均预测全部 2,558,829 条 Test 可评估行，覆盖率 100%。
+公共入口及额外核对确认配置指纹、冻结 SHA、因子身份、fit／test 规格、四项指标和
+覆盖率；两组 `source_matches_search=false` 如实保留来源差异。本次仅评估模型预测，
+不计算单因子 OOS 或配对相关性，不更新实验总表。Test 不回传搜索，沿用已有数据与
+历史留出诊断限制。
+
+[500次模型报告](../../artifacts/comparisons/v3async8_luna_avail_nodepth_p8_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-22d7cdbc4f-prefix500/model/report.md)、
+[871次模型报告](../../artifacts/comparisons/v3async8_luna_avail_nodepth_p8_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-22d7cdbc4f-prefix871/model/report.md)、
+[500次评估日志](../../artifacts/comparisons/v3async8_luna_avail_nodepth_p8_fold2_20261105/prefix500-models.log)、
+[871次评估日志](../../artifacts/comparisons/v3async8_luna_avail_nodepth_p8_fold2_20261105/prefix871-models.log)。
+
+## 2026-11-05 Haiku v8：500次／31因子快捷预测
+
+按用户要求对 `rq8_fold2_v3async_haiku_p8_pe8_px3_avail_nodepth_v8`（`1b154fb482`）
+执行快捷脚本 `--attempts 500`，于北京时间 21:54:10 固定前 500 次尝试、31 个入库因子。
+原运行已在 515 次／32 因子冻结，本次明确评估前 500 次截面；其全部冻结成员与顺序
+均保持原记录，未包含最后新增的第 32 个成员。
+
+Test 模型指标：
+
+| 模型 | √成交额加权 Pearson IC | √成交额加权 Spearman IC | 品种等权 Pearson IC | 品种等权 Spearman IC |
+| --- | --- | --- | --- | --- |
+| Linear | 0.017342 | 0.015984 | 0.017401 | 0.018160 |
+| LightGBM | 0.002950 | 0.008422 | 0.008006 | 0.013896 |
+
+Train+Val 训练 5,308,104 行，31 列全部保留。两个模型均预测 2,558,827 条 Test
+可评估行，总可评估行 2,558,829，缺失 2 行，覆盖率 99.999922%。公共入口及额外核对
+确认实际次数、配置指纹、冻结 SHA、因子身份、fit／test 规格、全部指标和覆盖率；
+`source_matches_search=false` 如实保留来源差异。本次只评估模型预测，不计算单因子 OOS
+或配对相关性，不更新实验总表；Test 不回传方法，沿用已有数据与历史留出诊断限制。
+
+[500次模型报告](../../artifacts/comparisons/v3async8_haiku_avail_nodepth_p8_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-1b154fb482-prefix500/model/report.md)、
+[快捷评估日志](../../artifacts/comparisons/v3async8_haiku_avail_nodepth_p8_fold2_20261105/prefix500-models.log)。
+- 2026-11-05：V3 Explorer 不再允许 unresolved（`feature/prompt-cleanup`）：提示词写明当前方向受阻（区域 busy／full／关闭，
+  或缺数据、工具）时搜索新方向——换一个可用 Region 或提出新机制；仍回复 unresolved 时平台在对话内退回。
+  动机：三组 Haiku 无深挖运行在 437、515、912 次因 unresolved 停止，理由含候选区域暂时 busy、可用区域未筛完。
+  - 无深挖分叉从 912 次续跑至 1000（`cont912.py`，run `…-20a1012038-nodepth500-cont912`）：复制 912 个 trial 与方法状态，
+    把停机 Explorer 的两次 unresolved 改写为新代码的退回，配置不变；第 913 次起使用新代码（含提示词精简与 Miner `done`）。
+    原 912 次冻结运行保留不动。
+  - Haiku v9（`rq8_fold2_v3async_haiku_p8_pe8_px3_avail_nodepth_v9`）：与 v8 仅差此项，从头运行。
+
+## 2026-11-05 Luna v8／DeepSeek v6：966次与975次最新预测
+
+按用户要求执行快捷脚本，分别评估
+`rq8_fold2_v3async_luna_p8_pe8_px3_avail_nodepth_v8`（`22d7cdbc4f`）与
+`rq8_fold2_v3async_deepseek_low_p10_pe_px3_avail_nodepth_v6`（`e78d475f38`）。
+北京时间 22:05:35／22:05:37 固定前 966 次／32 因子及前 975 次／43 因子的截面。
+
+Test √成交额加权 IC：
+
+| 运行 | 尝试次数 | 因子数 | Linear Pearson | LightGBM Pearson | Linear Spearman | LightGBM Spearman |
+| --- | --- | --- | --- | --- | --- | --- |
+| Luna v8 | 966 | 32 | 0.009837 | 0.011657 | 0.014413 | 0.015594 |
+| DeepSeek v6 | 975 | 43 | 0.016252 | 0.025573 | 0.018896 | 0.024048 |
+
+品种等权 Pearson IC（Linear／LightGBM）分别为 Luna 0.010537／0.013097、
+DeepSeek 0.015504／0.025687；等权 Spearman IC 分别为 0.016695／0.020037、
+0.021188／0.023674。
+
+较各自前次评估，Luna 从 871 次／29 因子新增 3 个，Linear／LightGBM 加权 Pearson
+分别下降 0.000660／0.001149；DeepSeek 从 600 次／24 因子新增 19 个，分别变化
++0.001578／−0.001022。两组各自的前序完整冻结成员和顺序保持不变。当前两个截面及
+各自此前截面的数据快照、fold、下游模型配置和依赖版本一致。
+
+两组 Train+Val 均训练 5,308,104 行，32／43 列全部保留；两个模型均预测全部
+2,558,829 条 Test 可评估行，覆盖率 100%。公共入口及额外核对确认配置指纹、冻结
+SHA、因子身份、fit／test 规格、四项指标及覆盖率；两组 `source_matches_search=false`
+如实保留来源差异。本次仅评估组合预测，不计算单因子 OOS 或配对相关性，不更新
+实验总表。Test 不回传搜索，沿用已有数据与历史留出诊断限制。
+
+[Luna模型报告](../../artifacts/comparisons/v3async8_luna_avail_nodepth_p8_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-22d7cdbc4f-prefix966/model/report.md)、
+[DeepSeek模型报告](../../artifacts/comparisons/v3async6_deepseek_low_avail_nodepth_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-e78d475f38-prefix975/model/report.md)、
+[Luna评估日志](../../artifacts/comparisons/v3async8_luna_avail_nodepth_p8_fold2_20261105/latest-models-20261105-3.log)、
+[DeepSeek评估日志](../../artifacts/comparisons/v3async6_deepseek_low_avail_nodepth_fold2_20261105/latest-models-20261105-3.log)。
+
+## 2026-11-05 DeepSeek v6：最终1000次结果入表
+
+用户要求将 `rq8_fold2_v3async_deepseek_low_p10_pe_px3_avail_nodepth_v6`（`e78d475f38`）
+按 1000 次结果写入总表。最终原运行状态为 `frozen`，检查点确认完成 1000 次、入库
+43 个因子；第 976–1000 次原子 trial 均未入库，库版本持续为 43。原运行与已评估的
+`-prefix975` 完整冻结库逐字节一致，研究配置及下游模型配置相同；双方配置指纹、冻结
+SHA，以及既有 fit／test 的来源与规格核对通过。
+
+按用户授权在 `experiment_overview.md` 的同组 500 次行后新增 1000 次行，复用已有
+975 次截面的模型预测结果：Test √成交额加权 Pearson IC 为 Linear 0.016252、
+LightGBM 0.025573，覆盖率均为 100%。行身份链接最终 1000 次运行报告，指标链接保留
+实际的 975 次模型报告，并在表下说明复用依据。
+单因子指标维持“—”，本次未重训模型、计算单因子 OOS 或配对相关性。
+
+[最终1000次运行报告](../../artifacts/comparisons/v3async6_deepseek_low_avail_nodepth_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-e78d475f38/report.md)、
+[复用的模型报告](../../artifacts/comparisons/v3async6_deepseek_low_avail_nodepth_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-e78d475f38-prefix975/model/report.md)。
+- 2026-11-05：Luna v8（`22d7cdbc4f`，新提示词但仍允许 unresolved，8 计划／8 评估）跑满 1000 次冻结：入库 35 个，
+  单因子 Test IC 0.0047／0.0056（28/35 为正），Linear 0.010046，LightGBM 0.011573；尝试分布于 62 个区域，
+  最大区域占比 7%。不如串行 Luna（1000 次：21 个，Linear 0.019660，LightGBM 0.017815），与 16 路并行 Luna
+  （45 个，0.007330／0.014097）相近：Luna 在并发运行中入库更多但组合 OOS 更差，分散度改善未带来组合收益。
+- 2026-11-05：DeepSeek low「可用性＋无深挖」v6（`e78d475f38`）跑满 1000 次冻结（643 次处续跑一次）：入库 43 个，来自
+  20 个区域（单区域最多 6 个：达到上限时已在运行的计划仍可入库），最大区域尝试占比 6%；单因子 Test IC
+  0.0063／0.0053（41/43 为正），Linear 0.016252，LightGBM 0.025573。此前两组 DeepSeek V3 1000 次运行入库 83／95 个，
+  Linear 0.019145／0.015633，LightGBM 0.005648／0.009349：可用性＋无深挖后入库数减半，单因子质量与 LightGBM 明显提高。
+
+## 2026-11-05 Haiku cont912：938次快捷评估；Luna v8最终结果核对
+
+按用户要求对 `futures_kernel_5m_full-all-fold2-v3_async-42-20a1012038-nodepth500-cont912`
+执行快捷脚本。北京时间 22:21:39 固定前 938 次、41 个因子，次数包含继承的前 912 次。
+续跑尚未新增入库，完整冻结库与原 912 次运行一致。两个模型重新拟合后，全部 Test IC
+与 912 次结果的差异不超过 4.1×10⁻¹¹，LightGBM 四项 IC 完全一致。
+
+评估期间用户询问 Luna v8（`22d7cdbc4f`）是否已测；核对发现原运行已完成最终
+1000 次／35 因子的自动评估并写入总表，因此读取和验证既有结果，无需重复拟合。
+其完整冻结库保留此前 966 次的 32 个成员，另新增 3 个；最终结果区别于此前 966 次截面。
+
+Test √成交额加权 IC：
+
+| 运行 | 尝试次数 | 因子数 | Linear Pearson | LightGBM Pearson | Linear Spearman | LightGBM Spearman |
+| --- | --- | --- | --- | --- | --- | --- |
+| Haiku cont912 | 938 | 41 | 0.026102 | 0.022128 | 0.021008 | 0.016947 |
+| Luna v8 | 1000 | 35 | 0.010046 | 0.011573 | 0.014729 | 0.015340 |
+
+品种等权 Pearson IC（Linear／LightGBM）分别为 Haiku 0.024890／0.021921、
+Luna 0.011889／0.012396；等权 Spearman IC 分别为 0.024874／0.024476、
+0.017545／0.018941。Luna 较 966 次的 Linear／LightGBM 加权 Pearson 分别变化
++0.000210／−0.000084。
+
+Train+Val 训练行分别为 5,308,074／5,308,104，41／35 列全部保留；Test 可评估行
+均为 2,558,829，Haiku 预测 2,558,825 行，覆盖率 99.999844%，Luna 预测全部行。
+配置指纹、冻结 SHA、因子身份、fit／test 规格、指标及覆盖率核对通过；各自与前序
+评估的数据、fold、下游模型配置和依赖版本一致，均保留 `source_matches_search=false`。
+Haiku 本次只评估组合预测，不追加单因子 OOS 或配对相关性，不写其新截面到总表。
+Luna 的既有自动收尾结果与表格保留；Test 均不回传搜索。
+
+[Haiku938次模型报告](../../artifacts/comparisons/v3async6_haiku_nodepth_fork500_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-20a1012038-nodepth500-cont912-prefix938/model/report.md)、
+[Haiku快捷评估日志](../../artifacts/comparisons/v3async6_haiku_nodepth_fork500_fold2_20261105/cont912-latest-models-20261105.log)、
+[Luna1000次模型报告](../../artifacts/comparisons/v3async8_luna_avail_nodepth_p8_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-22d7cdbc4f/model/report.md)。
+
+## 2026-11-05 Haiku v9：272次／12因子快捷预测
+
+按用户要求对 `rq8_fold2_v3async_haiku_p8_pe8_px3_avail_nodepth_v9`（`f7fec0f4f2`）
+执行快捷脚本，于北京时间 22:47:31 固定前 272 次尝试、12 个入库因子，源搜索继续运行。
+
+Test 模型指标：
+
+| 模型 | √成交额加权 Pearson IC | √成交额加权 Spearman IC | 品种等权 Pearson IC | 品种等权 Spearman IC |
+| --- | --- | --- | --- | --- |
+| Linear | 0.012945 | 0.015897 | 0.011990 | 0.017602 |
+| LightGBM | 0.015588 | 0.013818 | 0.017161 | 0.017636 |
+
+Train+Val 训练 5,307,761 行，12 列全部保留。两个模型均预测 2,558,551 条 Test
+可评估行，总可评估行 2,558,829，缺失 278 行，覆盖率 99.989136%。公共入口及额外
+核对确认实际次数、配置指纹、冻结 SHA、因子身份、fit／test 规格、全部指标和覆盖率；
+`source_matches_search=false` 如实保留来源差异。本次仅评估组合预测，不计算单因子 OOS
+或配对相关性，不更新实验总表。Test 不回传搜索，沿用已有数据与历史留出诊断限制。
+
+[模型报告](../../artifacts/comparisons/v3async9_haiku_avail_nodepth_p8_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-f7fec0f4f2-prefix272/model/report.md)、
+[快捷评估日志](../../artifacts/comparisons/v3async9_haiku_avail_nodepth_p8_fold2_20261105/latest-models-20261105.log)。
+- 2026-11-05：Luna 组合 OOS 偏差的归因（fold2，V3 Async 四组 Luna 与 Haiku／DeepSeek 对照）：
+  - 不是并发特有：两组串行 Luna 分别为 Linear 0.0197（`8d95766cb7`）与 0.0052（`510cffd920`），四组中三组偏差。
+  - Luna 的 5m 因子各组都稳定（Test 0.0060–0.0069，几乎无负值）；差组的问题集中在日线（`@1d`）因子：
+    `510cffd920` 18/24、16 路 24/45、v8 26/35 为日线因子，Test 仅 0.0027–0.0042，负值 4–7 个；好组 `8d95766cb7`
+    只有 2/21 个日线因子、无负值。各模型日线尝试的入库率相近（4.6%–6.9%），不是 Luna 筛选更宽。
+  - Luna 的日线因子多为阈值／事件型（失败突破、边界拒绝、日内 VWAP 不对称等，16/26），且几乎不结合 5m 信息；
+    此类条件型日线因子 Test 0.0015–0.0037。Haiku 日线因子中连续型 Test 0.0079–0.0081；DeepSeek 一半日线因子混合 5m
+    信息（Test 0.0099）。
+  - 时间上，好组使用旧分档（1h／1d），差组均为三分档（日内／1–20 日／20 日以上）后：Luna 日线尝试占比从 7% 升至
+    32%–42%，与“在未测分档测试同一机制算新方向”的提示一致。样本仅四组，属相关性证据。
+
+## 2026-11-05 Haiku cont912：最终1000次／42因子模型结果
+
+按用户要求跟踪 `futures_kernel_5m_full-all-fold2-v3_async-42-20a1012038-nodepth500-cont912`
+至 1000 次提交。运行已正常冻结，最终入库 42 个因子；此前 938 次的全部 41 个冻结成员
+及顺序保留，新增 1 个。本次复用并核对原脚本自动收尾生成的模型结果，没有另起重复拟合。
+
+Test 模型指标：
+
+| 模型 | √成交额加权 Pearson IC | √成交额加权 Spearman IC | 品种等权 Pearson IC | 品种等权 Spearman IC |
+| --- | --- | --- | --- | --- |
+| Linear | 0.025755 | 0.020874 | 0.024001 | 0.024276 |
+| LightGBM | 0.022685 | 0.016496 | 0.020622 | 0.023093 |
+
+较 938 次／41 因子，Linear／LightGBM 加权 Pearson 分别变化 −0.000347／+0.000557。
+数据快照、fold、下游模型配置与依赖版本一致；Train+Val 训练 5,308,074 行，42 列全部
+保留。两个模型均预测 2,558,825／2,558,829 条 Test 可评估行，覆盖率 99.999844%。
+配置指纹、冻结 SHA、因子身份、fit／test 规格、全部指标和覆盖率核对通过；
+`source_matches_search=false` 如实保留来源差异，沿用历史留出诊断限制。
+
+原脚本已完成自动收尾并将该续跑分支的 1000 次结果写入总表；原 912 次运行保持独立。
+本次未另行启动单因子 OOS 或配对相关性计算，Test 不回传方法。
+
+[最终模型报告](../../artifacts/comparisons/v3async6_haiku_nodepth_fork500_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-20a1012038-nodepth500-cont912/model/report.md)、
+[最终运行报告](../../artifacts/comparisons/v3async6_haiku_nodepth_fork500_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-20a1012038-nodepth500-cont912/report.md)。
+- 2026-11-05：无深挖分叉续跑（`…-nodepth500-cont912`）跑满 1000 次冻结，未再停机：第 913–1000 次新增 1 个因子
+  （共 42 个），单因子 Test IC 0.0065／0.0067（38/42 为正），Linear 0.025755，LightGBM 0.022685，与 912 次快照
+  （0.026102／0.022128）基本相同。
+- 2026-11-05：Luna v9（`rq8_fold2_v3async_luna_p8_pe8_px3_avail_nodepth_v9`，run `af75f77310`）：与 Haiku v9 同配置
+  （不允许 unresolved、可用性 5／1、无深挖、8 计划／8 评估／3 Explorer），用于复查 Luna 结果的波动。
+  - 重复运行 `..._avail_nodepth_v9_r2`（run `ea03683b78`）：配置与 Luna v9 完全相同（seed 42），两组并行，用于估计运行间随机性。
+
+## 2026-11-05 Haiku无深挖分支：500／1000次模型的年度稳定性
+
+用户要求检查模型在 Test 按年的表现。比较共享前 500 次搜索的两个冻结模型输入：
+原串行 `20a1012038-prefix500`（500 次／26 因子）与无深挖续跑
+`20a1012038-nodepth500-cont912`（1000 次／42 因子）。复用各自保存的模型与预处理，
+不重训或筛选因子。42 个冻结因子计算一次，其中前 26 个完整记录与 500 次库一致。
+
+以完整 Test 的合格样本为基础，按 `trading_day` 切分 2024／2025 年和各自然月，
+保留原 Test 目标边界及 2024–2025 全期固定品种 √成交额权重。两组可预测行逐行相同；
+2024 年预测 1,238,337／1,238,337 行，2025 年预测 1,320,488／1,320,492 行。
+四个模型的全期四项 IC 复现已存结果（绝对容差 1e-10、相对容差 1e-9），预测覆盖亦一致。
+
+年度 √成交额加权 Pearson IC：
+
+| 截面 | 模型 | 2024 | 2025 | 2025较2024下降 | 正IC月数（全24月） |
+| --- | --- | --- | --- | --- | --- |
+| 500次／26因子 | Linear | 0.029338 | 0.020063 | 31.6% | 21/24 |
+| 500次／26因子 | LightGBM | 0.048659 | 0.011103 | 77.2% | 20/24 |
+| 1000次／42因子 | Linear | 0.030558 | 0.020494 | 32.9% | 18/24 |
+| 1000次／42因子 | LightGBM | 0.034210 | 0.011242 | 67.1% | 18/24 |
+
+年度加权 Spearman 同样是 2025 较弱：500 次 Linear 为 0.027304→0.017746，
+LightGBM 为 0.026147→0.017182；1000 次分别为 0.025425→0.015820、
+0.020103→0.011591。年度／全期 IC 不是月度 IC 的简单平均。
+
+描述性判断：Linear 的年度落差小于 LightGBM，但两个年份的表现并不均衡。
+500 次 LightGBM 的高全期 Pearson 主要伴随较强的 2024 表现，2025 仅约 0.0111；
+扩到 1000 次后，2025 仅增加 0.000139，年度落差缩小主要来自 2024 下降 0.014449。
+Linear 两年 Pearson 小幅提高，正 IC 月数却由 21 降至 18；LightGBM 由 20 降至 18。
+月度 Pearson 标准差在两年、两个模型中都增大，未观察到扩库后更好的月度稳定性。
+这里只描述已观察的两个历史年份，不作长期稳定或因果归因判断。
+
+预测与评分复用 MarketData、冻结 DSL、`transform`、`predict`、`metrics`、`product_weights`
+和 `split_panel`。配置指纹、冻结 SHA、输入顺序、数据快照和模型规格核对通过；脚本
+Ruff 检查通过，各年度／月份指标有限、覆盖率及样本数核对通过。未修改原模型、
+搜索状态或实验总表，不计算因子配对相关性，诊断不回传搜索。
+
+[年度／月度报告](../../artifacts/comparisons/haiku_nodepth_yearly_20261105/report.md)、
+[完整指标](../../artifacts/comparisons/haiku_nodepth_yearly_20261105/results.json)、
+[复跑脚本](../../artifacts/comparisons/haiku_nodepth_yearly_20261105/evaluate_yearly.py)。
+
+## 2026-11-05 Haiku v9：500次／24因子快捷预测
+
+按用户要求评估 `rq8_fold2_v3async_haiku_p8_pe8_px3_avail_nodepth_v9`（`f7fec0f4f2`）
+前 500 次。请求时检查点为 495 次；等待提交达到 500 后，使用快捷脚本
+`--attempts 500` 于北京时间 23:43:01 固定 24 个入库因子，源搜索继续运行。
+
+Test 模型指标：
+
+| 模型 | √成交额加权 Pearson IC | √成交额加权 Spearman IC | 品种等权 Pearson IC | 品种等权 Spearman IC |
+| --- | --- | --- | --- | --- |
+| Linear | 0.013542 | 0.016441 | 0.017930 | 0.021550 |
+| LightGBM | 0.013391 | 0.016203 | 0.017432 | 0.021956 |
+
+此前 272 次的 12 个完整冻结成员及顺序保留，新增 12 个。较此前截面，Linear／LightGBM
+加权 Pearson 分别变化 +0.000596／−0.002198；预测覆盖率由 99.989136% 升至 100%，
+多覆盖 278 行，上述差值使用各自可预测样本。数据快照、fold、模型配置与依赖版本一致。
+
+Train+Val 训练 5,308,104 行，24 列全部保留；两个模型均预测全部 2,558,829 条 Test
+可评估行。配置指纹、冻结 SHA、因子身份、fit／test 规格、四项指标与覆盖率核对通过；
+`source_matches_search=false` 如实保留来源差异。本次仅评估模型预测，不计算单因子 OOS
+或配对相关性，不更新实验总表，Test 不回传搜索，沿用已有历史留出诊断限制。
+
+[500次模型报告](../../artifacts/comparisons/v3async9_haiku_avail_nodepth_p8_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-f7fec0f4f2-prefix500/model/report.md)、
+[快捷评估日志](../../artifacts/comparisons/v3async9_haiku_avail_nodepth_p8_fold2_20261105/prefix500-models.log)。
+
+## 2026-11-05 Luna v9／v9 r2：当前376次与333次快捷预测
+
+按用户要求，用快捷脚本分别固定两组当前已提交截面，源搜索继续运行：
+`rq8_fold2_v3async_luna_p8_pe8_px3_avail_nodepth_v9`（`af75f77310`）于北京时间
+23:54:19 捕获 376 次／15 因子；同配置重复运行 `..._v9_r2`（`ea03683b78`）于
+23:54:20 捕获 333 次／15 因子。各自保存到 `-prefix376`／`-prefix333`。
+
+Test 模型指标：
+
+| 截面 | 模型 | √成交额加权 Pearson IC | √成交额加权 Spearman IC | 品种等权 Pearson IC | 品种等权 Spearman IC |
+| --- | --- | --- | --- | --- | --- |
+| v9：376次／15因子 | Linear | 0.014912 | 0.020047 | 0.018610 | 0.024695 |
+| v9：376次／15因子 | LightGBM | 0.013972 | 0.020585 | 0.017417 | 0.025122 |
+| v9 r2：333次／15因子 | Linear | 0.008747 | 0.017208 | 0.011420 | 0.019638 |
+| v9 r2：333次／15因子 | LightGBM | 0.012930 | 0.015052 | 0.016592 | 0.021446 |
+
+两组数据快照、fold、下游模型配置与依赖版本一致，15 列均全部保留。v9 的 Train+Val
+训练 5,308,076 行，两个模型均预测 2,558,827／2,558,829 条 Test 可评估行，覆盖率
+99.999922%；r2 训练 5,308,002 行，预测 2,558,795／2,558,829 行，覆盖率 99.998671%。
+当前 v9 的两个模型加权 Pearson／Spearman 均较高；这里使用各自可预测样本，尝试数
+不同，不能解释为固定预算下的重复实验优劣结论。
+
+两组配置指纹、冻结 SHA、因子身份与顺序、fit／test 规格、四项指标和覆盖率均核对通过；
+`source_matches_search=false` 如实保留来源差异。仅评估模型预测，不计算单因子 OOS
+或配对相关性，不更新实验总表，Test 不回传搜索，沿用历史留出诊断限制。
+
+[v9模型报告](../../artifacts/comparisons/v3async9_luna_avail_nodepth_p8_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-af75f77310-prefix376/model/report.md)、
+[v9 r2模型报告](../../artifacts/comparisons/v3async9_luna_avail_nodepth_p8_r2_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-ea03683b78-prefix333/model/report.md)。
+
+## 2026-11-05 V3 Async Luna v9 与 v9 r2：当前截面快捷评估
+
+按用户要求运行 `scripts/evaluate_snapshot.py af75f77310` 和
+`scripts/evaluate_snapshot.py ea03683b78`，北京时间 23:53:10 分别冻结检查点已提交的
+前 369 次和前 323 次；两组均入库 15 个因子。两组使用 Luna、fold2、seed 42、8 计划、
+8 路评估和 3 路 Explorer；下游模型配置相同。
+
+Test √成交额加权 IC：
+
+| 运行 | 尝试次数 | 因子数 | Linear Pearson | LightGBM Pearson | Linear Spearman | LightGBM Spearman | 预测覆盖率 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| v9（af75f77310） | 369 | 15 | 0.014912 | 0.013972 | 0.020047 | 0.020585 | 99.999922% |
+| v9 r2（ea03683b78） | 323 | 15 | 0.008747 | 0.012930 | 0.017208 | 0.015052 | 99.998671% |
+
+两组分别预测 2,558,827／2,558,829 和 2,558,795／2,558,829 条 Test 可评估行；
+Train+Val 训练行数为 5,308,076 和 5,308,002，所有因子列均保留。两组尝试次数不同，
+不能将当前指标差异直接归因于单一因素。公共配置、数据、冻结库及因子身份校验通过；
+原搜索继续运行，Test 不回传。仅评估组合预测，没有单因子 OOS、库内配对相关性或总表写入；
+Test 已被观察，属于历史留出诊断，不能视为最终盲测。
+
+[v9 模型报告](../../artifacts/comparisons/v3async9_luna_avail_nodepth_p8_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-af75f77310-prefix369/model/report.md)、
+[v9 r2 模型报告](../../artifacts/comparisons/v3async9_luna_avail_nodepth_p8_r2_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-ea03683b78-prefix323/model/report.md)、
+[v9 日志](../../artifacts/comparisons/v3async_luna_v9_latest_20261105/v9-models.log)、
+[v9 r2 日志](../../artifacts/comparisons/v3async_luna_v9_latest_20261105/v9-r2-models.log)。
+
+## 2026-11-06 V3 Async Luna v9 与 v9 r2：最新截面快捷评估
+
+按用户要求再次运行 `scripts/evaluate_snapshot.py af75f77310` 和
+`scripts/evaluate_snapshot.py ea03683b78`，北京时间 00:42:55 分别冻结检查点已提交的
+前 677 次／24 因子和前 625 次／27 因子。两组原搜索继续运行，配置沿用此前截面。
+
+Test √成交额加权 IC：
+
+| 运行 | 尝试次数 | 因子数 | Linear Pearson | LightGBM Pearson | Linear Spearman | LightGBM Spearman | 预测覆盖率 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| v9（af75f77310） | 677 | 24 | 0.014744 | 0.013806 | 0.018897 | 0.019497 | 99.999922% |
+| v9 r2（ea03683b78） | 625 | 27 | 0.013646 | 0.016707 | 0.021010 | 0.018343 | 100.000000% |
+
+与此前 369 次／15 因子和 323 次／15 因子截面相比，两组分别增加 9 和 12 个成员；
+此前成员的完整冻结记录与顺序均保持一致。Linear／LightGBM 的 Pearson 分别变化
+−0.000167／−0.000167 和 +0.004899／+0.003777。预测覆盖分别为
+2,558,827／2,558,829 和 2,558,829／2,558,829；Train+Val 训练行数为
+5,308,076 和 5,308,104，所有因子列均保留。两组尝试次数和成员不同，指标差异不能
+直接归因于单一因素。
+
+公共配置、数据、冻结库及因子身份校验通过；Test 不回传搜索。仅评估组合预测，未计算
+单因子 OOS 或库内配对相关性，未写实验总表；Test 已被观察，属于历史留出诊断。
+
+[v9 模型报告](../../artifacts/comparisons/v3async9_luna_avail_nodepth_p8_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-af75f77310-prefix677/model/report.md)、
+[v9 r2 模型报告](../../artifacts/comparisons/v3async9_luna_avail_nodepth_p8_r2_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-ea03683b78-prefix625/model/report.md)、
+[v9 日志](../../artifacts/comparisons/v3async_luna_v9_latest_20261106/v9-models.log)、
+[v9 r2 日志](../../artifacts/comparisons/v3async_luna_v9_latest_20261106/v9-r2-models.log)。
+
+## 2026-11-06 V3 Async Luna v9 与 v9 r2：前500次快捷评估
+
+按用户要求运行 `scripts/evaluate_snapshot.py af75f77310 --attempts 500` 和
+`scripts/evaluate_snapshot.py ea03683b78 --attempts 500`，北京时间 00:50:05 分别冻结
+前 500 次已提交记录，入库 18 和 22 个因子。两组原搜索继续运行，配置沿用此前截面。
+
+Test √成交额加权 IC：
+
+| 运行 | 尝试次数 | 因子数 | Linear Pearson | LightGBM Pearson | Linear Spearman | LightGBM Spearman | 预测覆盖率 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| v9（af75f77310） | 500 | 18 | 0.015366 | 0.013423 | 0.019510 | 0.019552 | 99.999922% |
+| v9 r2（ea03683b78） | 500 | 22 | 0.013794 | 0.015852 | 0.020765 | 0.018932 | 100.000000% |
+
+分别预测 2,558,827／2,558,829 和 2,558,829／2,558,829 条 Test 可评估行；
+Train+Val 训练行数为 5,308,076 和 5,308,101，所有因子列均保留。核对前 500 次的
+完整成员记录与顺序，分别与此前 677 次和 625 次截面的前 18 和 22 个成员一致。
+公共配置、数据、冻结库及因子身份校验通过；Test 不回传搜索。仅评估组合预测，未计算
+单因子 OOS 或库内配对相关性，未写实验总表；Test 已被观察，属于历史留出诊断。
+
+[v9 模型报告](../../artifacts/comparisons/v3async9_luna_avail_nodepth_p8_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-af75f77310-prefix500/model/report.md)、
+[v9 r2 模型报告](../../artifacts/comparisons/v3async9_luna_avail_nodepth_p8_r2_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-ea03683b78-prefix500/model/report.md)、
+[v9 日志](../../artifacts/comparisons/v3async_luna_v9_latest_20261106/v9-prefix500-models.log)、
+[v9 r2 日志](../../artifacts/comparisons/v3async_luna_v9_latest_20261106/v9-r2-prefix500-models.log)。
+
+- 2026-11-06：用户要求再跑一组 Luna v9 重复，合计 3 组，最后汇报 3 组在 500 和 1000 trial 时的平均结果。新增 `v3async9_luna_avail_nodepth_p8_r3_fold2_20261105`（版本 `..._v9_r3`，run 23979d14af），配置与 v9（af75f77310）、r2（ea03683b78）完全相同。500 处用 `scripts/evaluate_snapshot.py --attempts 500` 做前缀快照。
+
+## 2026-11-06 V3 Async Luna v9 与 v9 r2：26／29因子快捷评估
+
+按用户要求再次运行 `scripts/evaluate_snapshot.py af75f77310` 和
+`scripts/evaluate_snapshot.py ea03683b78`，北京时间 00:56:49 分别冻结检查点已提交的
+前 743 次／26 因子和前 695 次／29 因子。两组原搜索继续运行，配置沿用此前截面。
+
+Test √成交额加权 IC：
+
+| 运行 | 尝试次数 | 因子数 | Linear Pearson | LightGBM Pearson | Linear Spearman | LightGBM Spearman | 预测覆盖率 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| v9（af75f77310） | 743 | 26 | 0.012589 | 0.011004 | 0.018057 | 0.018472 | 99.999922% |
+| v9 r2（ea03683b78） | 695 | 29 | 0.014337 | 0.016470 | 0.020781 | 0.018419 | 100.000000% |
+
+与此前 677 次／24 因子和 625 次／27 因子截面相比，两组各增加 2 个成员，此前成员
+完整冻结记录及顺序均保持一致。Linear／LightGBM 的 Pearson 分别变化
+−0.002155／−0.002802 和 +0.000691／−0.000236。分别预测
+2,558,827／2,558,829 和 2,558,829／2,558,829 条 Test 可评估行；Train+Val 训练行数
+为 5,308,076 和 5,308,104，所有因子列均保留。
+
+公共配置、数据、冻结库及因子身份校验通过；Test 不回传搜索。仅评估组合预测，未计算
+单因子 OOS 或库内配对相关性，未写实验总表；Test 已被观察，属于历史留出诊断。
+
+[v9 模型报告](../../artifacts/comparisons/v3async9_luna_avail_nodepth_p8_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-af75f77310-prefix743/model/report.md)、
+[v9 r2 模型报告](../../artifacts/comparisons/v3async9_luna_avail_nodepth_p8_r2_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-ea03683b78-prefix695/model/report.md)、
+[v9 日志](../../artifacts/comparisons/v3async_luna_v9_latest_20261106/v9-26f-latest-models.log)、
+[v9 r2 日志](../../artifacts/comparisons/v3async_luna_v9_latest_20261106/v9-r2-29f-latest-models.log)。
+- 2026-11-06：Luna v9 三组同时失败，报 HTTP 401（本地 codex 网关返回 token_expired，即上游登录过期，不是代码问题）。停止位置：v9 在 801（27 个因子），r2 在 747（29 个），r3 在 174（7 个）。Haiku v9 不受影响。用户重新登录网关后，用 `run.py <run_dir>` 续跑。
+- 2026-11-06：Haiku v9（f7fec0f4f2，不接受 unresolved）正常冻结在 1000，没有再提前停。共 34 个因子；Linear 0.014474，LGBM 0.012566；单因子测试 IC 中位数 0.0040（验证 0.0081，测试/验证 0.53）。按跨度分：intraday 7 个，1d_to_20d 11 个，over_20d 16 个，各组测试 IC 均值在 0.005 左右。对比 Haiku v8（515 次停止）：32 个因子，0.019176/0.006097，单因子测试 IC 0.0064。对比旧提示词续跑组 cont912（1000）：42 个因子，0.025755/0.022685，单因子测试 IC 0.0067。
+
+## 2026-11-06 V3 Async Luna v9 与 v9 r2：27／29因子快捷评估
+
+按用户要求再次运行 `scripts/evaluate_snapshot.py af75f77310` 和
+`scripts/evaluate_snapshot.py ea03683b78`，北京时间 10:04:38 分别冻结检查点已提交的
+前 801 次／27 因子和前 747 次／29 因子。两组原搜索继续运行，配置沿用此前截面。
+
+Test √成交额加权 IC：
+
+| 运行 | 尝试次数 | 因子数 | Linear Pearson | LightGBM Pearson | Linear Spearman | LightGBM Spearman | 预测覆盖率 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| v9（af75f77310） | 801 | 27 | 0.013296 | 0.011163 | 0.017680 | 0.018150 | 99.999922% |
+| v9 r2（ea03683b78） | 747 | 29 | 0.014337 | 0.016470 | 0.020781 | 0.018419 | 100.000000% |
+
+相较此前 743 次／26 因子截面，v9 增加 1 个成员，原成员的完整冻结记录和顺序一致；
+Linear／LightGBM Pearson 分别提高 0.000706／0.000160。r2 相较 695 次／29 因子截面，
+全部成员完整冻结记录及顺序一致，两模型的 Test 指标一致。分别预测
+2,558,827／2,558,829 和 2,558,829／2,558,829 条 Test 可评估行；Train+Val 训练行数
+为 5,308,079 和 5,308,104，所有因子列均保留。
+
+公共配置、数据、冻结库及因子身份校验通过；Test 不回传搜索。仅评估组合预测，未计算
+单因子 OOS 或库内配对相关性，未写实验总表；Test 已被观察，属于历史留出诊断。
+
+[v9 模型报告](../../artifacts/comparisons/v3async9_luna_avail_nodepth_p8_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-af75f77310-prefix801/model/report.md)、
+[v9 r2 模型报告](../../artifacts/comparisons/v3async9_luna_avail_nodepth_p8_r2_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-ea03683b78-prefix747/model/report.md)、
+[v9 日志](../../artifacts/comparisons/v3async_luna_v9_latest_20261106/v9-latest-repeat-2-models.log)、
+[v9 r2 日志](../../artifacts/comparisons/v3async_luna_v9_latest_20261106/v9-r2-latest-repeat-2-models.log)。
+
+## 2026-11-06 V3 Async Luna v9 r3：当前截面快捷评估
+
+按用户要求运行 `scripts/evaluate_snapshot.py 23979d14af`，北京时间 10:18:28 冻结
+`rq8_fold2_v3async_luna_p8_pe8_px3_avail_nodepth_v9_r3` 检查点已提交的前 280 次，
+入库 15 个因子。Test √成交额加权 Pearson IC：Linear 为 0.014280，LightGBM 为
+0.013703；加权 Spearman IC 分别为 0.018664 和 0.017539。
+
+两模型均预测 2,558,823／2,558,829 条 Test 可评估行，覆盖率 99.999766%；
+Train+Val 训练行数为 5,308,085，所有因子列均保留。公共配置、数据、冻结库及因子身份
+校验通过；原搜索继续运行，Test 不回传。仅评估组合预测，未计算单因子 OOS 或库内配对
+相关性，未写实验总表；Test 已被观察，属于历史留出诊断。
+
+[r3 模型报告](../../artifacts/comparisons/v3async9_luna_avail_nodepth_p8_r3_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-23979d14af-prefix280/model/report.md)、
+[r3 日志](../../artifacts/comparisons/v3async_luna_v9_latest_20261106/v9-r3-latest-models.log)。
+
+## 2026-11-06 V3 Async Luna v9 r3：21因子快捷评估
+
+按用户要求再次运行 `scripts/evaluate_snapshot.py 23979d14af`，北京时间 10:38:26 冻结
+检查点已提交的前 396 次／21 因子。Test √成交额加权 Pearson IC：Linear 为 0.014094，
+LightGBM 为 0.012094；加权 Spearman IC 分别为 0.019151 和 0.015648。
+
+相较此前 280 次／15 因子截面，新增 6 个成员，原成员完整冻结记录及顺序保持一致；
+Linear／LightGBM Pearson 分别下降 0.000186／0.001609。两模型均预测
+2,558,823／2,558,829 条 Test 可评估行，覆盖率 99.999766%，与此前相同；Train+Val
+训练行数为 5,308,085，所有因子列均保留。公共配置、数据、冻结库及因子身份校验通过；
+原搜索继续运行，Test 不回传。仅评估组合预测，未计算单因子 OOS 或库内配对相关性，
+未写实验总表；Test 已被观察，属于历史留出诊断。
+
+[21因子模型报告](../../artifacts/comparisons/v3async9_luna_avail_nodepth_p8_r3_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-23979d14af-prefix396/model/report.md)、
+[评估日志](../../artifacts/comparisons/v3async_luna_v9_latest_20261106/v9-r3-21f-models.log)。
+
+## 2026-11-06 V3 Async Luna v9 r3：25因子快捷评估
+
+按用户要求再次运行 `scripts/evaluate_snapshot.py 23979d14af`，北京时间 11:03:02 冻结
+检查点已提交的前 470 次／25 因子。Test √成交额加权 Pearson IC：Linear 为 0.012377，
+LightGBM 为 0.010776；加权 Spearman IC 分别为 0.015101 和 0.013465。
+
+相较此前 396 次／21 因子截面，新增 4 个成员，原成员完整冻结记录及顺序保持一致；
+Linear／LightGBM Pearson 分别下降 0.001717／0.001318。两模型均预测
+2,558,823／2,558,829 条 Test 可评估行，覆盖率 99.999766%，与此前相同；Train+Val
+训练行数为 5,308,085，所有因子列均保留。公共配置、数据、冻结库及因子身份校验通过；
+原搜索继续运行，Test 不回传。仅评估组合预测，未计算单因子 OOS 或库内配对相关性，
+未写实验总表；Test 已被观察，属于历史留出诊断。
+
+[25因子模型报告](../../artifacts/comparisons/v3async9_luna_avail_nodepth_p8_r3_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-23979d14af-prefix470/model/report.md)、
+[评估日志](../../artifacts/comparisons/v3async_luna_v9_latest_20261106/v9-r3-25f-models.log)。
+
+## 2026-11-06 Luna v9：最终1000次／27因子，复用相同模型的Test证据
+
+用户通知 `rq8_fold2_v3async_luna_p8_pe8_px3_avail_nodepth_v9`（`af75f77310`）
+已完成 1000 次。核对原运行与检查点，实际提交 1000 次、冻结 27 个因子；冻结库文件
+与已评估的 `-prefix801` 逐字节一致。原脚本已自动完成最终模型训练；两个模型保存的
+全部拟合结果（含预处理）与 801 次模型逐项一致，因子身份、顺序、数据快照、fold、
+模型配置、实现标识和依赖版本亦一致，因此直接复用 801 次已保存的 Test 证据。
+记录时原脚本仍在自动收尾，最终目录尚未写出 `model/test.json`；以下不冒充新执行的 Test。
+
+| 模型 | √成交额加权 Pearson IC | √成交额加权 Spearman IC | 品种等权 Pearson IC | 品种等权 Spearman IC |
+| --- | --- | --- | --- | --- |
+| Linear | 0.013296 | 0.017680 | 0.013706 | 0.019884 |
+| LightGBM | 0.011163 | 0.018150 | 0.011497 | 0.021200 |
+
+相较 500 次／18 因子，新增 9 个成员，原成员完整冻结记录和顺序保留；Linear／LightGBM
+加权 Pearson 分别下降 0.002071／0.002260，Spearman 分别下降 0.001830／0.001402。
+801 次之后的 199 次没有新增成员。最终训练 5,308,079 行、全部 27 列保留；复用的
+Test 结果预测 2,558,827／2,558,829 行，覆盖率 99.999922%，与 500 次覆盖行数相同。
+
+最终配置指纹、冻结 SHA、fit 规格及缓存 Test 规格、四项指标与覆盖率核对通过；
+`source_matches_search=false` 如实保留。未启动重复评估、单因子 OOS 或配对相关性，
+未手动更新实验总表；原脚本已有的自动收尾继续运行。Test 不回传搜索，沿用历史留出
+诊断限制。
+
+[复用的801次Test报告](../../artifacts/comparisons/v3async9_luna_avail_nodepth_p8_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-af75f77310-prefix801/model/report.md)、
+[最终模型报告](../../artifacts/comparisons/v3async9_luna_avail_nodepth_p8_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-af75f77310/model/report.md)。
+
+## 2026-11-06 V3 Async Luna v9 r3：前500次快捷评估
+
+按用户要求运行 `scripts/evaluate_snapshot.py 23979d14af --attempts 500`，北京时间
+11:12:13 冻结精确前 500 次／26 因子。Test √成交额加权 Pearson IC：Linear 为
+0.012439，LightGBM 为 0.010776；加权 Spearman IC 分别为 0.015132 和 0.013465。
+
+相较此前 470 次／25 因子截面，新增 1 个成员，原成员完整冻结记录及顺序保持一致；
+Linear Pearson 提高 0.000062，LightGBM 的 Test 指标一致。两模型均预测
+2,558,823／2,558,829 条 Test 可评估行，覆盖率 99.999766%，与此前相同；Train+Val
+训练行数为 5,308,085，所有因子列均保留。公共配置、数据、冻结库及因子身份校验通过；
+原搜索继续运行，Test 不回传。仅评估组合预测，未计算单因子 OOS 或库内配对相关性，
+未写实验总表；Test 已被观察，属于历史留出诊断。
+
+[500次模型报告](../../artifacts/comparisons/v3async9_luna_avail_nodepth_p8_r3_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-23979d14af-prefix500/model/report.md)、
+[评估日志](../../artifacts/comparisons/v3async_luna_v9_latest_20261106/v9-r3-prefix500-models.log)。
+
+## 2026-11-06 V3 Async Luna v9、r2、r3：前500次单因子补评
+
+按用户要求，对 `af75f77310`、`ea03683b78` 和 `23979d14af` 的既有前 500 次冻结截面
+分别调用公共 `test_frozen`，沿用冻结的训练方向及裁剪边界，计算全部入库因子的单因子
+Test 指标。三组成员身份与冻结库顺序一致，18／22／26 个因子全部计算成功，所列两个
+指标均无缺失。表中均值对各入库因子的对应指标等权平均；各因子指标本身按品种 √成交额加权。
+
+| 运行 | 因子数 | Test 单因子加权 Pearson 均值 | Test 单因子加权 Spearman 均值 |
+| --- | ---: | ---: | ---: |
+| v9（af75f77310） | 18 | 0.004228 | 0.003599 |
+| v9 r2（ea03683b78） | 22 | 0.006834 | 0.006407 |
+| v9 r3（23979d14af） | 26 | 0.005926 | 0.005100 |
+
+公共配置、数据、冻结库及因子身份校验通过；原搜索不接收 Test 反馈。新增截面的
+`oos.json` 并刷新运行报告，未重新拟合组合模型，未计算库内配对相关性或写入实验总表。
+Test 已被观察，属于历史留出诊断，不是最终盲测。
+
+[v9 单因子结果](../../artifacts/comparisons/v3async9_luna_avail_nodepth_p8_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-af75f77310-prefix500/oos.json)、
+[v9 r2 单因子结果](../../artifacts/comparisons/v3async9_luna_avail_nodepth_p8_r2_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-ea03683b78-prefix500/oos.json)、
+[v9 r3 单因子结果](../../artifacts/comparisons/v3async9_luna_avail_nodepth_p8_r3_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-23979d14af-prefix500/oos.json)。
+
+## 2026-11-06 Haiku V3 串行与无深挖续跑：共享500次结果入表
+
+按用户要求，将 `20a1012038` 与 `20a1012038-nodepth500-cont912` 共享的前 500 次
+截面放在两条 1000 次主表行之前。核对两组前 500 个原子 trial 逐字节一致，500 次冻结库
+的 26 个成员完整记录与顺序均与两组最终库前 26 个成员一致；两组数据快照及 fold 一致。
+
+单因子结果从已保存的最终 OOS 按 26 个冻结成员身份提取，核对冻结库 SHA、OOS 指纹和
+结果身份；两组提取结果一致。Test √成交额加权 Pearson 均值／中位数为
+0.006393／0.006366，正 IC 25／26（96.15%），加权 Spearman 均值为 0.002584。
+500 次截面的既有 Linear／LightGBM Test 加权 Pearson 分别为 0.024497／0.028821，
+预测覆盖率为 99.999844%。两条 1000 次行保留，主表只列一条共享截面，避免重复计数。
+
+此次复用已有结果，未重新计算 Test 或创建单因子 OOS 缓存；在主表说明了单因子结果来源。
+核对行位置、数值及链接，`git diff --check` 通过。Test 属于已观察的历史留出诊断。
+
+[500次模型报告](../../artifacts/comparisons/v3async2_haiku_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-20a1012038-prefix500/model/report.md)、
+[单因子 OOS 来源](../../artifacts/comparisons/v3async2_haiku_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-20a1012038/oos.json)、
+[实验总览](../../experiment_overview.md#期货因子搜索fold2)。
+
+## 2026-11-06 V1 与 V3 主表差距诊断（fold2，1000 次）
+
+用户问为什么主表里很多 V1 比 V3 好。对主表全部 fold2 V1 运行（DS 958979b287／4e3f0e7900，Haiku ef96a68059／531d4676f6，Luna 382bb38611）和 V3 运行（DS 4e2a92c781／debb1b1dfd／e78d475f38，Haiku 600bd5bbd1／cont912／f7fec0f4f2，Luna 8d95766cb7／bf0c21a38d／22d7cdbc4f／af75f77310）做逐因子诊断。脚本见会话草稿，只读运行产物，不回传搜索。组合模型数值取自主表（统一的 leaf2000／depth5 参数）。
+
+- **差距不是一致的**。500 次截面上 V3 不比 V1 差：Luna V3 为 0.0199／0.0111（Linear），V1 为 0.0121；Haiku V3 为 0.0245，V1 为 0.0163／0.0246。到 1000 次，平均 Linear 是 V1 0.0192、V3 0.0153，平均 LGBM 是 V1 0.0171、V3 0.0147。差距主要来自 Luna：V1 为 0.0182，V3 四组为 0.0197／0.0073／0.0100／0.0133。Haiku 和 DS 的区间相互重叠，最好的 Haiku Linear（0.0258）和最好的 DS LGBM（0.0256）都是 V3。
+- **单次运行的波动很大**。V1 Luna 只有一组；V3 的四组 Luna 版本各不相同，同配置组之间的差距与 V1 和 V3 的差距同量级。之前的敏感性诊断也显示，单个特征就能让 LGBM 的 Test 变化约 0.014。
+- **单因子质量和冗余度不是主因**。V3 入库因子的测试/验证比（0.41–0.94）不低于 V1（0.22–1.00）；有效因子数／因子数，V3 为 0.24–0.68，V1 为 0.17–0.65。无深挖版本的 Region 集中度也更低，最大的单个 Region 只占 10–15%。
+- **一致的结构差异是 V3 偏向日线因子**。入库因子中含 `@1d` 的比例，V1 为 4%／12%／32%／52%／25%，V3 多为 51–74%（Luna 串行组 8d95766cb7 只有 10%）。Luna 与 Haiku 的 V3 日线因子测试 IC 偏低：Luna 0.0028–0.0042，同组 5m 因子 0.0068–0.0070，与 V1 Luna 的 5m 因子 0.0073 相当；Haiku f7f 为 0.0046，5m 为 0.0063。DS 是例外，它的日线因子测试 IC 不低（e78 为 0.0080）。可能的原因：V3 的三档时间跨度和"未测跨度算作新方向"的提示，再加上每档 20 次试探，让 Explorer 把预算投向日线和长周期，而目标只有 12 根 bar（1 小时）。
+- 结论：现有证据不足以说明 V3 整体劣于 V1。可以确认的是 Luna（以及部分 Haiku 运行）的 V3 库日线占比过高，而这部分因子泛化较弱。要定论，需要同配置多轮复跑（Luna v9 三组正在跑；V1 Luna 也应补重复）。要检验日线偏向，可以把"未测跨度算作新方向"改为中性表述，或对比去掉时间跨度分档的版本。
+
+## 2026-11-06 V3 Async Luna v9 r2：500／1000次评估结果
+
+`rq8_fold2_v3async_luna_p8_pe8_px3_avail_nodepth_v9_r2`（`ea03683b78`）完成 1000 次
+搜索并冻结 32 个因子。按用户要求核对与前 500 次截面的结果：500 次入库 22 个因子，
+其完整冻结记录和顺序与最终库前 22 个成员一致。
+
+Test √成交额加权 IC：
+
+| 尝试次数 | 因子数 | 单因子 Pearson 均值／中位数 | 正 IC | 单因子 Spearman 均值 | Linear Pearson | LightGBM Pearson |
+| --- | ---: | --- | --- | ---: | ---: | ---: |
+| 500 | 22 | 0.006834／0.008631 | 19／22（86.36%） | 0.006407 | 0.013794 | 0.015852 |
+| 1000 | 32 | 0.006489／0.006844 | 28／32（87.50%） | 0.005579 | 0.014437 | 0.016280 |
+
+单因子结果全部成功且指标无缺失；模型输入无被移除因子列。两截面的两模型均预测
+全部 2,558,829 条 Test 可评估行，Train+Val 训练行数分别为 5,308,101／5,308,104。
+核对配置指纹、冻结库 SHA、单因子 OOS 指纹和成员身份、模型拟合及 Test 规格一致。
+最终单因子与模型 Test 结果由运行的自动收尾生成；写本记录时库内相似度仍在计算。
+Test 已被观察，属于历史留出诊断。
+
+[500次模型报告](../../artifacts/comparisons/v3async9_luna_avail_nodepth_p8_r2_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-ea03683b78-prefix500/model/report.md)、
+[500次单因子结果](../../artifacts/comparisons/v3async9_luna_avail_nodepth_p8_r2_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-ea03683b78-prefix500/oos.json)、
+[1000次模型 Test](../../artifacts/comparisons/v3async9_luna_avail_nodepth_p8_r2_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-ea03683b78/model/test.json)、
+[1000次单因子结果](../../artifacts/comparisons/v3async9_luna_avail_nodepth_p8_r2_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-ea03683b78/oos.json)。
+
+## 2026-11-06 V3 Async Luna v9 r2：500／1000次结果入表
+
+按用户要求，将 `ea03683b78` 已评估的前 500 次和最终 1000 次结果相邻写入主表；
+复用各自已保存的单因子和模型 Test，不重新计算。两截面分别入库 22／32 个因子，
+单因子 Pearson 均值／中位数为 0.006834／0.008631、0.006489／0.006844，
+Spearman 均值／中位数为 0.006407／0.004732、0.005579／0.005149；
+Linear／LightGBM Pearson 为 0.013794／0.015852、0.014437／0.016280。
+
+自动收尾完成最终 496 对 Val 相似度，但原运行脚本使用旧表头写主工作区总表时失败；
+本次使用主工作区当前填表逻辑复用完整结果补入 1000 次及其相似度行，再按相同表头
+补入 500 次行。两截面成员关系、数据及产物校验见前一节；核对行顺序、数值、相似度
+和链接，`git diff --check` 通过。Test 已被观察，属于历史留出诊断。
+
+[实验总览](../../experiment_overview.md#期货因子搜索fold2)、
+[1000次相似度](../../artifacts/comparisons/v3async9_luna_avail_nodepth_p8_r2_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-ea03683b78/library_similarity.json)。
+- 补充（用户指出）：V3 的三档按整个表达式的特征回看跨度计算（`feature_span_minutes`，一个交易日按 240 分钟），不看字段用的是 `@1d` 还是 `@15m`。`@1d` 是另一个维度。两者的关系是实际观察到的：over_20d 档的尝试几乎全部用了 `@1d`（如 Luna af7 为 0.00 不用／0.16 用，Haiku f7f 为 0.06／0.22），1d_to_20d 档两种写法都有。V1 Luna 的 over_20d 尝试只占 3%，V3 Luna 无深挖、并行组为 16–29%（串行组 8d9 为 2%）。因此上面"分档把预算推向日线"应理解为：分档把预算推向长回看，Miner 实现长回看时几乎都用 `@1d`。
+- 2026-11-06 提示词修改（prompts 工作区，未提交）：Explorer 对分档的描述从 "feature span, the approximate trading time…" 改为 "lookback span"，说明按整个表达式回看窗口的时间跨度计算，嵌套窗口和 DELAY 累加（例：5m 上 `DELAY(TS_MEAN($volume,48),48)` 约两天，平台算出 475 分钟，属 1d_to_20d），并写明字段频率不决定所属档。"未测档算新方向"一句不变。Luna v9 r3（23979d14af）在修改前启动，进程内仍用旧提示词；若 r3 中途崩溃恢复，会混入新提示词，需要另行记录。新提示词用于之后新起的组。
+
+
+## 2026-11-06 V3 Async Luna v9 r3：最新709次／32因子快捷评估
+
+按用户要求，用 `scripts/evaluate_snapshot.py 23979d14af` 评估当前已提交截面；
+2026-11-06 12:20:05（北京时间）固定前 709 次尝试、32 个入库因子，保存为
+`futures_kernel_5m_full-all-fold2-v3_async-42-23979d14af-prefix709`。
+沿用原数据、fold 和模型配置，Train+Val 拟合后评估 Test。
+
+| 模型 | Test 加权 Pearson | Test 加权 Spearman | Test 等权 Pearson | Test 等权 Spearman |
+| --- | ---: | ---: | ---: | ---: |
+| Linear | 0.012457 | 0.015354 | 0.010322 | 0.015521 |
+| LightGBM | 0.011352 | 0.014747 | 0.013985 | 0.017382 |
+
+相较同运行前 500 次／26 因子，Linear／LightGBM 加权 Pearson 分别提高
+0.000018／0.000576，加权 Spearman 分别提高 0.000222／0.001281。
+前 500 次的 26 个完整冻结成员及顺序与当前库前 26 个成员一致。Train+Val 共
+5,308,089 行，32 个因子列全部保留；两模型均预测全部 2,558,829 条 Test 可评估行，
+覆盖率 100%（500 次为 2,558,823／2,558,829，99.999766%）。
+
+公共配置、冻结库 SHA、因子身份及模型 fit/test 规格校验通过，四项指标均为有限值。
+只评估组合模型预测，未计算单因子 OOS 或配对相关性，未写入实验总表；原搜索不接收
+Test 反馈。Test 已被观察，本结果属于历史留出诊断。
+
+[709次模型报告](../../artifacts/comparisons/v3async9_luna_avail_nodepth_p8_r3_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-23979d14af-prefix709/model/report.md)、
+[500次模型报告](../../artifacts/comparisons/v3async9_luna_avail_nodepth_p8_r3_fold2_20261105/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-23979d14af-prefix500/model/report.md)、
+[评估日志](../../artifacts/comparisons/v3async9_luna_avail_nodepth_p8_r3_fold2_20261105/latest-models-20261106.log)。
+
+
+## 2026-11-06 V3 Async Luna v9 r3：按用户要求停止
+
+按用户要求，通过现有 `stop_run` 入口对 `23979d14af` 的运行锁持有进程发送 SIGINT；
+进程已退出，确认没有运行锁持有者，运行状态为 `interrupted`。最终保留 752 次已提交
+尝试、34 个入库因子；原子 trial 数与检查点 completed 一致。原始产物、可恢复检查点
+及既有 500／709 次模型评估保留。本次为用户主动停止，不自动续跑，未新增评估或写入总表。
+
+
+## 2026-11-06 Haiku 5.5：五方法 B26 初始库增量实验启动
+
+按用户指定，仅运行 AlphaPROBE、AlphaSchema、MCTS-LLM、ReAct、AlphaAtlas V3，
+不追加有限文法基线或 AlphaAtlas 其他版本。五个独立进程并行启动，各 300 次新增尝试，
+合计上限 1,500；Fold2、seed 42、26 项初始 B26、八字段＋26 个发布特征保持不变。
+
+四个对照方法沿用 B26 v5；V3 沿用本日 B26 Luna V3 的完整配置与保存源码。
+各方法仅修改 `chat_model`、`chat_base_url`、`chat_key_env`，统一使用
+`claude-haiku-5-5` 和既有本机 Claude CLI 桥接。AlphaPROBE 的 Qwen3 embedding 不变。
+V3 保留既有残差反馈、8 并行计划／8 路评估／3 Explorer、greedy 选题、每 Region
+5 项入库及 1 个并发计划上限；其他方法不新增残差配置。数据源、字段、算子身份、
+初始因子身份、准入与模型配置已逐项核对。
+
+| 方法 | Run ID |
+| --- | --- |
+| AlphaPROBE | `futures_kernel_5m_full-all-fold2-alphaprobe-42-a99c2b066d` |
+| AlphaSchema | `futures_kernel_5m_full-all-fold2-alphaschema-42-8cc5576eb7` |
+| MCTS-LLM | `futures_kernel_5m_full-all-fold2-mcts_llm-42-64f65a23b9` |
+| ReAct | `futures_kernel_5m_full-all-fold2-react-42-db9096e73d` |
+| AlphaAtlas V3 | `futures_kernel_5m_full-all-fold2-v3_async-42-61c42b9f7c` |
+
+启动时五个 `run.json` 均为 `running`，模型均为 `claude-haiku-5-5`，日志确认只加载
+截至 2023-12-31 的搜索数据。四方法和 V3 分为两个 scope，以保留各自配置；五组全部
+冻结后拟合两个 scope 的所有模型，再统一进入历史 Test。保留 200／300 前缀，
+Linear OLS、LightGBM 50 轮／leaf2000／depth5、共同训练与预测行及 20 交易日块
+2,000 次配对重采样均不变；不计算并集、不筛选准入成员、不回传 Test。
+
+启动前 `pwsh -File scripts/check.ps1` 通过：1341 项测试，154.02 秒；版本加载、
+方法配置与 B26 身份校验通过。真实服务健康检查与实验启动独立于自动化测试。
+源码副本只作本轮执行来源，复用原有来源指纹、原子 trial、恢复与冻结校验。
+本条记录启动事实，增量结果尚未产生；2024–2025 仍属于已观察的历史诊断留出集。
+
+[配置与入口](../../configs/experiments/zk26_seeded_fold2_haiku55_all_300_20261106/README.md)、
+[总控日志](../../artifacts/comparisons/zk26_seeded_fold2_haiku55_all_300_20261106/run.log)、
+[检查日志](../../artifacts/comparisons/zk26_seeded_fold2_haiku55_all_300_20261106/check.log)。
+
+
+### Haiku B26 本轮 ReAct 初始化兼容修复与恢复
+
+ReAct `db9096e73d` 首次完成 26 项初始库测量后，在构造系统提示词时因
+`KeyError: initial_library.members` 停止；当时已提交候选 0、Chat 请求 0。
+原因是 ReAct 的提示词字段说明未覆盖公共 context 的 `initial_library.members` 和
+`initial_library.semantics`。已补齐成员数说明及初始库规则段落，加入使用真实平台初始库、
+合成行情及模拟模型的回归测试，验证首次候选可提交、初始因子重复正确拒绝且不额外扣预算。
+
+修复同步保存在本轮独立 `source/react/` 副本，原 `source/methods/` 与 `source/v3/`
+保留。源代码变化由本记录及保存副本说明，恢复沿用原配置与冻结校验；版本、模型和研究参数没有改动。
+2026-11-06 重新执行 `pwsh -File scripts/check.ps1`：1342 项全部通过，144.83 秒。
+ReAct 沿原 Run ID 恢复，保留已测量的 26 项初始库和 300 次新增预算。
+
+其他四个搜索持续运行，已收到真实 Haiku 回复。恢复脚本负责在 ReAct 与其他四组都冻结后，
+先拟合两个 scope 的全部模型，再评估历史 Test；原总控保存首个 ReAct 子进程的失败退出码，
+因此不执行配对评估。任一运行失败或被用户停止时，恢复脚本不会继续进入 Test。
+
+[修复后检查](../../artifacts/comparisons/zk26_seeded_fold2_haiku55_all_300_20261106/check-react-fix.log)、
+[ReAct 日志](../../artifacts/comparisons/zk26_seeded_fold2_haiku55_all_300_20261106/react.log)、
+[恢复与收尾日志](../../artifacts/comparisons/zk26_seeded_fold2_haiku55_all_300_20261106/recovery.log)。
+
+
+ReAct 完整 B26 上下文补充验证：首次恢复仍在模型调用前因
+`prepared_fields.fields.zk_mom1.description` 缺少说明停止。最终修复同时覆盖初始库和
+全部发布特征的 description、calculation_frequency、publication、calculation_expression，
+保留公共准备语义，说明准备公式不开放额外原始字段，方法窗口仍按基础频率计数。
+新增完整 34 字段／26 项初始库的离线提示词回归，验证全部 26 个发布字段元数据、
+信息边界与不扣预算；两项定向回归通过。最终完整检查 1343 项通过，141.67 秒。
+
+最终修复另存于本轮 `source/react/`，前一修复副本保留为 `source/react-initial-fix/`。
+两次初始化兼容失败都发生在首个 Chat 请求和候选提交之前；再次恢复沿用原运行。
+[最终检查日志](../../artifacts/comparisons/zk26_seeded_fold2_haiku55_all_300_20261106/check-react-b26-final.log)。
+
+
+## 2026-11-06 AlphaAtlas V3 Luna：B26 初始库增量补充
+
+补齐实验总览的 B26 初始库比较。运行
+`futures_kernel_5m_full-all-fold2-v3_async-42-8142c2c849` 完成 300 次并冻结，
+新增 16 项、最终 42 项成员；同一条轨迹的 200 次前缀新增 7 项、共 33 项。
+300 次 Linear 的加权 Pearson 增量为 +0.008258，95% 区间完全为正；
+LightGBM 增量接近零，区间含零。全部新增成员参与对应节点的组合，没有按 Test 筛选。
+
+版本为 `rq8_zk26_seeded_fold2_v3async_luna_20261106`。数据、Fold2、seed 42、
+34 字段、初始 B26、准入规则与下游模型沿用原表 v5。V3 的完整方法参数复制 Luna v9
+`af75f77310`：8 个并行计划、8 路评估、3 个 Explorer，每 Region 最多 5 项入库、同时
+1 个计划，`selection_policy=greedy`（无深挖）。搜索保留 B26 的 lag1 诊断并开启
+`library_residual=residual_ic_v1`。执行源码保存于本轮产物目录的 `source/`。
+V3 的残差反馈、提示词和并发配置与旧方法不同，本轮属于固定数据与候选预算下的系统比较。
+
+初始 26 项重新在 Train/Val 测量，不占新增预算；其身份、方向、数据快照及 Train/Val
+报告均与 V1 的 `5f77947f20` 一致。数值核对采用相对容差 1e-12、绝对容差 1e-15；
+仅运行特有的评估引用、ID 和耗时不同。新增准入均经过包含 B26 的公共查重。
+
+六个配对模型全部保存后才评估历史 Test。Linear OLS、LightGBM 50 轮、leaf2000/depth5
+及预处理与原表相同；B26 新拟合的完整状态与原 v5 完全一致。共同 Train+Val 为
+5,296,605 行，Test 为 2,549,205／2,558,829 行，覆盖率 99.6239%。逐行 row_id、
+日期、品种、标签及两种 B26 预测与原 v5 完全一致。IC 使用相同 80 个品种、2,401,248 行，
+WMSE 使用 86 个品种、2,429,676 行。B26 的 Linear／LightGBM IC 仍为
+0.01270556／0.01064594；33／42 列全部保留，Linear 均满列秩，fit 在 Test 期间逐字节未变。
+
+| 节点 | 新增 / 总成员 / 入模列数 | 模型 | 扩充加权 Pearson IC | ΔIC [95% 区间] | WMSE 下降 |
+| --- | ---: | --- | ---: | --- | ---: |
+| 200 | 7 / 33 / 33 | Linear | +0.016271 | +0.003566 [−0.002951, +0.012324] | −0.002027% |
+| 200 | 7 / 33 / 33 | LightGBM | +0.008428 | −0.002218 [−0.011971, +0.011070] | −0.023961% |
+| 300 | 16 / 42 / 42 | Linear | +0.020964 | +0.008258 [+0.001682, +0.018117] | +0.008025% |
+| 300 | 16 / 42 / 42 | LightGBM | +0.010659 | +0.000013 [−0.011466, +0.014836] | −0.021602% |
+
+300 次 Linear 的 2024／2025 年 ΔIC 分别为 +0.003614／+0.011103；LightGBM 分别为
+−0.002028／+0.005908。300 次 WMSE 下降区间为 Linear
+[−0.030869%, +0.034929%]、LightGBM [−0.070433%, +0.048304%]，均含零。
+全部区间使用固定预测、按年分层、全市场同步的 20 交易日块、2,000 次重采样，全部重复有效。
+主节点保持 300；200 次是同一轨迹的前缀。2024–2025 已查看，结论属于历史诊断留出评估；
+区间不包含搜索随机性，不作多重比较后的方法优胜声明。
+
+搜索含准备共 51.21 分钟，其中初始库测量 257.40 秒；Chat 请求 541 次，输入 token
+23,632,768，输出 token 250,722，unknown usage 为 0。提交结果为：准入 16、质量拒绝
+251、数值重复 13、定义重复 1、覆盖不足 10、常量 3、Train 指标未定义 3、编译拒绝 3。
+模型成本与并发设置单列，墙钟耗时受共享主机负载影响。
+
+本轮结果与文档补齐后执行 `pwsh -File scripts/check.ps1`：Ruff、格式、算子目录及
+1,343 项离线测试全部通过，pytest 128.71 秒。测试使用合成数据和模拟服务；允许本地
+socket 后，观测台 HTTP 与 asyncio 测试正常通过。真实搜索和历史数据评价独立执行。
+
+[配置及复跑命令](../../configs/experiments/zk26_seeded_fold2_v3_luna_300_20261106/README.md)、
+[四组配对结果](zookeeper26_fold2/v3_luna_20261106/results.jsonl)、
+[42 项冻结定义与来源](zookeeper26_fold2/v3_luna_20261106/factors.jsonl)、
+[搜索与成本](zookeeper26_fold2/v3_luna_20261106/search_runs.jsonl)、
+[样本、模型与初始化核验](zookeeper26_fold2/v3_luna_20261106/evaluation_audit.json)。
+同目录保存 fit、test、版本、scope 和 plan；逐行预测留在 Git 排除的
+`data/comparisons/zk26_seeded_fold2_v3_luna_300_20261106/predictions.parq`。
+
+恢复后核对（北京时间 2026-11-06 12:59:07）：五组均为 `running`，均收到 Haiku 回复并已提交候选；alphaprobe 60/300、alphaschema 30/300、mcts_llm 22/300、react 2/300、v3_async 126/300。ReAct 的短暂模型服务错误经原有有界重试恢复，已产生正式原子 trial；26 项初始成员及完整配置保持一致。后续进度以运行产物为准。
+
+## 2026-11-06 Haiku 5.5 B26：AlphaPROBE 与 V3 提前配对评估
+
+按用户后续指示，先评估已经完成 300 次并冻结的 AlphaPROBE（`a99c2b066d`）和
+AlphaAtlas V3（`61c42b9f7c`）。AlphaPROBE 使用单方法 scope `alphaprobe_ready.json`
+显式引用原运行，V3 复用原 `v3.json`。两个 scope 的全部配对模型先并行拟合，均在
+15:23:20（北京时间）前保存，再并行评估历史 Test；15:26:12 全部完成。
+原五方法批次继续保留，其他方法的搜索不接收本次 Test 结果。
+
+Fold2、seed 42、初始 B26、200／300 次前缀、全部新增准入成员和模型配置均沿用原实验。
+Linear OLS；LightGBM 50 轮、leaf2000/depth5；不计算并集、不按 Test 筛选成员。
+两个 scope 使用相同的 5,296,605 行 Train+Val 和 2,549,205 行共同 Test，
+Test eligible 共 2,558,829 行、覆盖率 99.6239%。IC 使用 80 个品种、2,401,248 行；
+WMSE 使用 86 个品种、2,429,676 行。两个节点全部列均保留，Linear 均满列秩。
+
+与原表配对 B26 核对：逐行 row_id、日期、品种和标签完全一致；预处理与 LightGBM
+模型、预测完全一致。Linear 仅有浮点求解差异，系数最大绝对差 1.90e-19，
+Test 预测最大绝对差 1.47e-18。配对基线 IC 仍为 Linear 0.01270556、
+LightGBM 0.01064594。早期 `model_overview/fit.json` 属于普通单库拟合；本轮数值核对
+采用原表 `single_methods_v5` 及 `v3_luna_20261106` 的配对基线。
+
+| 方法 / 节点 | 新增 / 总成员 / 入模列数 | Linear ΔIC [95% 区间] | LightGBM ΔIC [95% 区间] | Linear WMSE 下降 | LightGBM WMSE 下降 |
+| --- | ---: | --- | --- | ---: | ---: |
+| AlphaPROBE / 200 | 5 / 31 / 31 | +0.003715 [−0.002029, +0.011490] | +0.006018 [−0.000218, +0.014806] | +0.004399% | +0.012792% |
+| AlphaPROBE / 300 | 6 / 32 / 32 | +0.004741 [−0.000859, +0.012629] | +0.004747 [−0.001829, +0.013994] | −0.006472% | +0.008585% |
+| AlphaAtlas V3 / 200 | 13 / 39 / 39 | +0.000563 [−0.009620, +0.010620] | +0.002703 [−0.012072, +0.020014] | −0.048722% | −0.033679% |
+| AlphaAtlas V3 / 300 | 20 / 46 / 46 | +0.007474 [−0.003441, +0.017650] | +0.004601 [−0.008339, +0.019551] | −0.038815% | −0.043389% |
+
+300 次 AlphaPROBE 的 WMSE 下降区间为 Linear [−0.026465%, +0.022650%]、
+LightGBM [−0.017994%, +0.043458%]；V3 为 Linear [−0.058655%, +0.057157%]、
+LightGBM [−0.081171%, +0.102244%]。两个节点、两种模型的 ΔIC 和 WMSE 下降区间
+均含零，尚无稳定改善的证据。区间采用按年分层、全市场同步的 20 交易日块、
+2,000 次重采样，全部重复有效。2024–2025 属于已查看的历史诊断留出集；区间不包含
+搜索随机性，不能据此作多重比较后的方法优胜声明。
+
+本次核对时，AlphaSchema 为 273/300、MCTS-LLM 为 229/300，仍在搜索；ReAct 完成
+3 次评估后因 `AgentScope ReAct made no evaluation request` 失败，其恢复总控也已退出。
+上述未完成方法未进入本次配对评估。
+
+结果回填后执行 `pwsh -File scripts/check.ps1`：Ruff、格式、算子目录检查及
+1,343 项合成数据／模拟服务测试全部通过，pytest 179.96 秒。
+表格数值另与两个 `test.json` 逐项核对，配置、两个节点、列数及区间均一致。
+[检查日志](../../artifacts/comparisons/zk26_seeded_fold2_haiku55_all_300_20261106/check-ready-evaluation.log)。
+
+[配置与复跑入口](../../configs/experiments/zk26_seeded_fold2_haiku55_all_300_20261106/README.md)、
+[执行日志](../../artifacts/comparisons/zk26_seeded_fold2_haiku55_all_300_20261106/ready-evaluation.log)、
+[AlphaPROBE 配对结果](../../artifacts/comparisons/zk26_seeded_fold2_haiku55_all_300_20261106/alphaprobe/results.jsonl)、
+[V3 配对结果](../../artifacts/comparisons/zk26_seeded_fold2_haiku55_all_300_20261106/v3/results.jsonl)。
+两个结果目录同时保留 `fit.json`、`test.json` 和 `factors.jsonl`；逐行预测保存在
+Git 排除的 `data/comparisons/` 对应 scope 目录。
+
+## 2026-11-06 Haiku B26：变换后标签 WMSE 重算
+
+用户确认需要评价变换后的标签。本次复用 AlphaPROBE 和 AlphaAtlas V3 已保存的
+200／300 次预测，只重算 WMSE；原始标签 IC、模型、预测、因子和历史误差结果均保留。
+
+从原 MarketData 快照与 B26 定义重建共同 Train+Val 样本，得到 5,296,605 行、79 个品种。
+核对原预处理和样本数一致，重新计算的标签分位边界与模型保存值完全相同：
+`[-0.019304276275104854, 0.019190049003133047]`。对每个品种计算训练期裁剪后标签均值。
+Test 标签先用上述边界裁剪，再减这个训练均值；不使用 Test 分位点或均值。
+`product_offsets` 仍只作为预测的特征偏移使用，没有拿它代替标签均值。
+
+主结果保持原 86 个正权重品种与 2,429,676 行评分样本。12 个品种没有训练期样本：
+`AD`、`BZ`、`LG`、`L_F`、`OP`、`PD`、`PL`、`PP_F`、`PR`、`PS`、`PT`、`V_F`。
+本次诊断对它们明确采用零中心，只做冻结边界裁剪；这不是从 Test 估计的均值。
+另外报告原 IC 的固定 80 品种、2,401,248 行对照，其中 7 个品种也使用零中心。
+完整预测集合仍为 2,549,205 行，评分只使用原来有正权重的品种。
+
+公式为 `1 − WMSE(B26＋新增, 变换后标签) / WMSE(B26, 同一变换后标签)`。
+品种 √成交额权重沿用原结果，两个模型与基线使用同一标签变换。86 品种的 B26
+变换后 WMSE 为 Linear `2.6654542226772497e-05`、LightGBM `2.662291388275881e-05`。
+区间继续使用按年分层、全市场同步的 20 交易日块和 2,000 次重采样；16 组均有
+2,000 个有效重复。所有数值均为百分比，方括号为 95% 区间。
+
+| 方法 / 节点 | Linear：86 品种 | LightGBM：86 品种 | Linear：原 IC 80 品种 | LightGBM：原 IC 80 品种 |
+| --- | --- | --- | --- | --- |
+| AlphaPROBE / 200 | +0.012878% [−0.007629%, +0.040082%] | +0.029449% [+0.003366%, +0.063537%] | +0.016950% [−0.006646%, +0.041143%] | +0.032988% [+0.005230%, +0.065122%] |
+| AlphaPROBE / 300 | −0.011305% [−0.036378%, +0.019000%] | +0.018235% [−0.011208%, +0.050809%] | −0.005226% [−0.032283%, +0.021838%] | +0.020426% [−0.009940%, +0.052927%] |
+| AlphaAtlas V3 / 200 | −0.027373% [−0.058145%, +0.040152%] | −0.022325% [−0.089019%, +0.075176%] | −0.005589% [−0.052479%, +0.042681%] | −0.010696% [−0.086776%, +0.079406%] |
+| AlphaAtlas V3 / 300 | −0.013456% [−0.051998%, +0.054828%] | −0.022602% [−0.073499%, +0.077867%] | +0.014464% [−0.039397%, +0.060610%] | +0.005390% [−0.062932%, +0.085192%] |
+
+300 次主节点的四个全品种区间均含零。200 次 AlphaPROBE＋LightGBM 的变换后误差下降
+区间为正，但这是查看原始 Test 后追加的标签口径；200 次仍是补充节点，不据此选择
+预算、调整模型或宣称方法稳定优胜。原始标签与变换后标签的 WMSE 不混作同一指标。
+
+核验：用合成输入检查先裁剪再减训练均值、未见品种零中心，以及预测不变；
+再用 NumPy 按逐行 `品种权重 / 品种样本数` 独立重算，16 个误差比值均与公共评估函数一致。
+同时核对模型与 Test 规格相同，变换前后的预测列和 row_id 均一致。
+
+本次执行 `pwsh -File scripts/check.ps1`：Ruff、格式、算子目录检查及
+1,343 项合成数据／模拟服务测试全部通过，pytest 119.61 秒。
+[检查日志](../../artifacts/comparisons/zk26_seeded_fold2_haiku55_all_300_20261106/check-transformed-wmse.log)。
+
+[复跑脚本](../../artifacts/comparisons/zk26_seeded_fold2_haiku55_all_300_20261106/recompute_transformed_wmse.py)、
+[训练期标签统计](../../artifacts/comparisons/zk26_seeded_fold2_haiku55_all_300_20261106/transformed_target.json)、
+[全部变换后误差及区间](../../artifacts/comparisons/zk26_seeded_fold2_haiku55_all_300_20261106/transformed_wmse.json)、
+[执行日志](../../artifacts/comparisons/zk26_seeded_fold2_haiku55_all_300_20261106/transformed-wmse.log)。
+
+
+## 2026-11-06 B26 Luna：LightGBM 叶样本数与默认 L2 对照
+
+按用户要求重训 B26 Luna 表中六个冻结组合及配对 B26。第一轮仅将
+`min_data_in_leaf=2000` 改为 200，固定 `lambda_l2=1`；用户随后要求采用较好的
+叶样本数组，将 L2 改回 LightGBM 默认值。本机 LightGBM 4.7.0 的
+`LGBMRegressor.reg_lambda` 默认值核对为 0.0，第二轮固定 leaf200、改用 L2=0。
+50 轮、学习率 0.05、15 叶、深度 5、seed 42、4 线程及预处理保持不变。
+项目全局模型配置保持原值，两轮分别使用独立实验版本和输出目录。
+
+第一轮结束前说明的选择口径为六个 300 次组合的平均加权 Pearson IC，固定原 B26
+共同可评分的 80 个品种，不按单个方法最高值或相对不同 B26 的 ΔIC 选择。
+200 次前缀全部保留，不依据 Test 选择预算或因子。两个 AlphaSchema 是独立搜索，
+六行平均仅作本轮参数选择，不将它们视为独立统计重复。
+
+| 参数组 | 六行平均组合 IC | 相对上一组变化 | 同库 IC 上升 | 同库 WMSE 改善 |
+| --- | ---: | ---: | ---: | ---: |
+| leaf2000 / L2=1 | 0.014889916 | — | — | — |
+| leaf200 / L2=1 | 0.015362915 | +0.000472998 | 5/6 | 4/6 |
+| leaf200 / L2=0 | 0.015590073 | +0.000227159 | 5/6 | 2/6 |
+
+两轮各个库的参数 ΔIC 95% 区间均含零。第一轮 V3 的 IC 提升最多，AlphaProbe 回落；
+第二轮提升主要来自 V3 和 AlphaSchema（`fbac3f9a28`），V1 略降，V3 的 WMSE 同时变差。
+因此 leaf200/L2=0 的平均 IC 点估计最高，但尚无全面或稳定改善证据。
+最终六行 300 次 LightGBM 相对配对 B26 的 ΔIC 仅 MCTS-LLM 区间完全高于 0；
+六行 WMSE 点估计均未优于 B26，区间都含零。Linear 拟合和逐行预测与原表精确一致。
+
+每轮三个 scope 的全部 30 个配对模型在 Test 前保存，并记录文件摘要；读取 Test 后
+逐字节未变。独立 B26 普通拟合只提供配置来源，表内基准使用各 incremental scope 的
+配对 B26。各组的配对 B26 拟合和预测完全一致，因子身份、准入顺序、方向、预处理、
+Train+Val 行数和 Test 的 row_id／日期／品种／标签均与来源一致。Train+Val 为
+5,296,605 行，Test 共同样本为 2,549,205 / 2,558,829 行，覆盖率 99.623890%；
+IC 使用 80 品种、2,401,248 行，WMSE 使用 86 品种、2,429,676 行。
+固定预测使用按年分层、全市场同步的 20 交易日块，2000 次重采样全部有效。
+
+两轮均复用原冻结搜索，没有新增搜索或模型服务请求，结果不回传方法。第二轮叶样本数
+由第一轮已查看的历史 Test 点估计选定，因此两轮均为历史留出敏感性分析，不能作为
+新的盲测。V3 的残差反馈、提示词和并发差异沿用原实验的比较边界。
+
+已回填实验总览的 B26 Luna 表，保留 leaf2000 和第一轮 leaf200/L2=1 产物。
+第一轮单独报告包含 Linear／LightGBM、200／300 次的全部 24 行指标和区间。
+本轮执行 `pwsh -File scripts/check.ps1`：Ruff、格式、算子目录检查及 1343 项
+合成数据／模拟服务测试全部通过，pytest 135.37 秒；另核对参数、冻结模型、逐行预测
+及表格数值。测试需要的本地 loopback socket 已获执行权限。
+
+[第一轮完整结果](zookeeper26_fold2/luna_lgbm_sensitivity_20261106/leaf200_l2_1/report.md)、
+[两轮参数对照](zookeeper26_fold2/luna_lgbm_sensitivity_20261106/report.md)、
+[第一轮配置与复跑](../../configs/experiments/zk26_luna_leaf200_20261106/README.md)、
+[第二轮配置与复跑](../../configs/experiments/zk26_luna_l2zero_20261106/README.md)、
+[检查日志](../../artifacts/comparisons/zk26_luna_l2zero_20261106/check.log)。
+两轮的 scope、plan、版本、模型、因子、Test 结果和核验存于报告同目录的对应参数子目录；
+逐行预测保留于 Git 排除的 `data/comparisons/zk26_luna_*_20261106_*/predictions.parq`。
+
+## 2026-11-06 Haiku B26：AlphaSchema 配对评估与变换后 WMSE
+
+AlphaSchema（`8cc5576eb7`）完成 300 次并冻结后，按用户要求补充评估。
+单方法 scope `alphaschema_ready.json` 显式复用原运行、原版本与原配对计划；不新增搜索。
+200／300 次前缀分别新增 6／9 项，总库 32／35 项，全部列保留，Linear 满列秩。
+六个配对模型于 16:03:55（北京时间）前保存，随后读取历史 Test，于 16:06:37 完成。
+Linear OLS；LightGBM 50 轮、leaf2000/depth5、L2=1；其余配置保持原值。
+
+配对 B26 的完整拟合状态和模型配置与 AlphaPROBE 完全相同；共同 Train+Val 为
+5,296,605 行，Test 为 2,549,205／2,558,829 行，覆盖率 99.623890%。逐行 row_id、
+交易日、品种、原始标签和两种 B26 预测完全一致。IC 仍使用原始标签，固定 80 个品种、
+2,401,248 行；WMSE 为原 86 个正权重品种、2,429,676 行。各节点品种权重也一致。
+
+| 节点 | 模型 | 扩充加权 Pearson IC | ΔIC [95% 区间] | 原始标签 WMSE 下降 [95% 区间] |
+| --- | --- | ---: | --- | --- |
+| 200 | Linear | +0.015596 | +0.002890 [−0.003311, +0.007445] | +0.022289% [−0.006102%, +0.024864%] |
+| 200 | LightGBM | +0.015208 | +0.004562 [−0.001399, +0.009623] | +0.009949% [−0.015845%, +0.028786%] |
+| 300 | Linear | +0.017080 | +0.004374 [−0.002031, +0.009303] | +0.026488% [−0.001943%, +0.031655%] |
+| 300 | LightGBM | +0.015670 | +0.005024 [−0.000412, +0.010235] | +0.008404% [−0.013799%, +0.028515%] |
+
+变换后 WMSE 复用前两组已经恢复的 `transformed_target.json`：以原 Train+Val 的
+1%／99% 边界裁剪 Test 标签，再减去各品种训练期裁剪后标签均值。12 个训练期未见
+品种保持同一零中心规则；不使用 Test 统计，不改预测。下面均为相对配对 B26 的
+WMSE 下降百分比；正数表示误差更低，方括号为 95% 区间。
+
+| 节点 | Linear：86 品种 | LightGBM：86 品种 | Linear：原 IC 80 品种 | LightGBM：原 IC 80 品种 |
+| --- | --- | --- | --- | --- |
+| 200 | +0.019479% [−0.008484%, +0.023393%] | +0.015822% [−0.012348%, +0.036715%] | +0.012598% [−0.005740%, +0.019866%] | +0.014280% [−0.011840%, +0.037333%] |
+| 300 | +0.025227% [−0.004569%, +0.031184%] | +0.016515% [−0.007938%, +0.035621%] | +0.019832% [−0.000758%, +0.029294%] | +0.015695% [−0.007604%, +0.036811%] |
+
+两个节点的 ΔIC、原始及变换后 WMSE 下降区间均含零，尚无稳定改善证据。
+区间继续使用按年分层、全市场同步的 20 交易日块、2,000 次重采样，所有重复有效。
+AlphaSchema 的 8 项变换后结果追加到已有结果文件，前两组的 16 项保留；三组共 24 项
+均用 NumPy 按逐行 `品种权重 / 品种样本数` 独立重算，与公共评估函数一致。
+标签统计仍为原 79 个训练品种，不重新估计；预测列和 row_id 在变换前后不变。
+
+300 次继续作为主节点。历史 Test 已查看，标签变换后的 WMSE 是补充诊断，不用于
+选择因子、预算或参数；本次结果不回传仍在运行的方法。
+
+回填后执行 `pwsh -File scripts/check.ps1`：Ruff、格式、算子目录检查及
+1,349 项合成数据／模拟服务测试全部通过，pytest 131.00 秒。另核对 Haiku 表三行的
+300 次 IC、区间、变换后 WMSE 和列数，与保存结果一致；本次文档链接和锚点均有效。
+[检查日志](../../artifacts/comparisons/zk26_seeded_fold2_haiku55_all_300_20261106/check-alphaschema-evaluation.log)。
+
+[配置与复跑](../../configs/experiments/zk26_seeded_fold2_haiku55_all_300_20261106/README.md)、
+[阶段日志](../../artifacts/comparisons/zk26_seeded_fold2_haiku55_all_300_20261106/alphaschema-evaluation.log)、
+[原始配对结果](../../artifacts/comparisons/zk26_seeded_fold2_haiku55_all_300_20261106/alphaschema/results.jsonl)、
+[变换后误差及区间](../../artifacts/comparisons/zk26_seeded_fold2_haiku55_all_300_20261106/transformed_wmse.json)、
+[变换后评分日志](../../artifacts/comparisons/zk26_seeded_fold2_haiku55_all_300_20261106/alphaschema-transformed-wmse.log)。
+
+
+## 2026-11-06 Haiku B26：默认 leaf20／L2=0 结果核对
+
+按用户最终更正，Haiku 下游 LightGBM 使用默认叶节点最少样本数 20、L2=0。
+本机 LightGBM 4.7.0 的原生模型文本确认 `min_data_in_leaf: 20`、`lambda_l2: 0`；
+配置省略 `min_data_in_leaf`，实际保存的每个 LightGBM 模型均核对为 20。
+其余仍为 50 轮、学习率 0.05、15 叶、深度 5、seed 42、4 线程及原预处理。
+此前误按 200 新启动的三组在保存 fit/Test 前中断；日志与配置留在该次产物目录。
+
+复用工作区统一默认参数重训产物，核对 AlphaPROBE（`a99c2b066d`）、
+AlphaSchema（`8cc5576eb7`）和 V3（`61c42b9f7c`），并补齐刚完成冻结的
+MCTS-LLM（`64f65a23b9`）。全部使用原搜索的 200／300 次前缀和全部准入因子。
+MCTS 分别新增 3／5 项，29／31 列全部保留、Linear 满列秩；其余三组因子与列数不变。
+ReAct 在 3 次后失败，没有符合本表预算的冻结库。
+
+各组拟合保存并校验后才读取历史 Test。共同 Train+Val 为 5,296,605 行，Test 为
+2,549,205／2,558,829 行；IC 固定 80 品种、2,401,248 行，WMSE 固定 86 个正权重
+品种、2,429,676 行。配对 B26 LightGBM 模型与预测完全一致；Linear 和旧参数结果
+在相对 1e-12、绝对 1e-15 容差内一致。新 B26 的 Linear／LightGBM IC 为
+0.012705561／0.011675215，变换后 WMSE 为 2.6654542226772497e-05／
+2.6622061337248276e-05。
+
+下表为 300 次主节点的 LightGBM 结果，增量相对新参数下的配对 B26。
+
+| 方法 | 组合 IC | ΔIC [95% 区间] | 变换后 WMSE 下降 [95% 区间] |
+| --- | ---: | --- | --- |
+| AlphaPROBE | +0.015216 | +0.003541 [−0.002803, +0.012391] | +0.016936% [−0.015499%, +0.052332%] |
+| AlphaSchema | +0.014416 | +0.002740 [−0.002869, +0.008341] | +0.007224% [−0.021734%, +0.025757%] |
+| MCTS-LLM | +0.015497 | +0.003822 [−0.001657, +0.010988] | +0.009035% [−0.018295%, +0.036159%] |
+| AlphaAtlas V3 | +0.016040 | +0.004365 [−0.008760, +0.019353] | −0.022965% [−0.078095%, +0.077070%] |
+
+MCTS 的 300 次 Linear ΔIC 为 +0.001258 [−0.005839, +0.008628]，变换后 WMSE 下降
+为 −0.007583% [−0.027577%, +0.011036%]；原三组 Linear 表内数值保持不变。
+四组 300 次的 ΔIC 和变换后 WMSE 下降区间均含零。200 次前缀和两个模型的完整结果
+保存在统一结果文件，`cohort=Haiku` 共 16 行。
+
+WMSE 继续使用原共同 Train+Val 的 1%／99% 标签裁剪边界，再减训练期裁剪后品种
+均值；12 个未见评分品种使用零中心，不用 Test 统计。全部 16 项变换后 WMSE 均用
+NumPy 按逐行 `品种权重 / 品种样本数` 独立重算，与保存值一致。区间保持按年分层、
+全市场同步的 20 交易日块、2,000 次重采样，全部重复有效。历史 Test 已查看，本次
+为用户指定参数的诊断重训，不反馈搜索、不重选预算或成员。
+
+本次执行 `pwsh -File scripts/check.ps1`：Ruff、格式、算子目录检查及 1,349 项
+合成数据／模拟服务测试全部通过，pytest 132.92 秒。
+
+[配置与复跑](../../configs/experiments/zk26_lgbm_defaults_20261106/README.md)、
+[全部结果](../../artifacts/comparisons/zk26_lgbm_defaults_20261106/results.jsonl)、
+[训练与 Test 核验](../../artifacts/comparisons/zk26_lgbm_defaults_20261106/evaluation_audit.json)、
+[训练期标签统计](../../artifacts/comparisons/zk26_lgbm_defaults_20261106/transformed_target.json)、
+[检查日志](../../artifacts/comparisons/zk26_lgbm_defaults_20261106/check-haiku-table-update.log)。
+
+
+## 2026-11-06 B26 Luna / Haiku：默认叶样本数与基准统一重训
+
+按用户指定，B26 Luna、Haiku 两张表统一省略 `min_data_in_leaf`，使用锁定
+LightGBM 4.7.0 的默认值 20；`lambda_l2=0`。其余参数保持 50 轮、学习率 0.05、
+15 叶、最大深度 5、seed 42、4 线程及原预处理。公共模型校验只增加允许省略
+`min_data_in_leaf`，不向配置补值；显式值仍须为正整数，原有参数校验保留。
+实际保存模型的原生参数均确认是 leaf20／L2=0。
+
+实验版本为 `rq8_zk26_lgbm_defaults_20261106`。复用原冻结来源：Luna 六行与 Haiku
+四行；Haiku MCTS（`64f65a23b9`）在本轮期间完成原有 300 次搜索，新增 5 项、总计
+31 项，冻结后补入相同参数的评估。ReAct（`db9096e73d`）停在失败的 3/300，
+没有伪造对应 300 次结果。重训流程不新增搜索或模型服务请求。
+
+首批五个 scope 的 46 个配对模型全部保存并核验后才评估 Test；随后完成 Haiku MCTS
+scope 的 6 个模型，再读取该组 Test。共 52 个配对模型，40 行模型／200 或 300 次
+节点结果。每组保留原冻结因子、方向、顺序和全部准入成员，不按 Test 筛选。
+独立 B26 普通拟合提供配置和因子顺序；下表及所有增量使用同样本重拟合的配对 B26。
+
+| B26 模型 | 加权 Pearson IC | 原始目标 WMSE | 变换后目标 WMSE |
+| --- | ---: | ---: | ---: |
+| Linear | 0.012705561 | 4.0499655076e-05 | 2.6654542227e-05 |
+| LightGBM | 0.011675215 | 4.0473190501e-05 | 2.6622061337e-05 |
+
+WMSE 是绝对误差值，扩充库的下降百分比则使用同参数 B26 作分母。Luna 表继续采用
+原始目标 WMSE；Haiku 表继续采用变换后目标 WMSE，两种误差的绝对值与区间全部保留。
+标签变换复用已核验的共同 Train+Val 裁剪边界和 79 个训练品种的裁剪后标签均值，
+12 个训练期未见评分品种采用零中心，只裁剪；不使用 Test 的分位点或均值。
+IC 始终以原始目标评分。
+
+Luna 六个 300 次组合的平均 LightGBM IC 从 leaf200/L2=0 的 0.015590073 变为
+默认 leaf20/L2=0 的 0.015842580。3/6 行 IC 上升，3/6 行原始目标 WMSE 改善；
+各库参数 ΔIC 的 95% 区间均包含零，不能据此认定稳定改善。Haiku MCTS 的 300 次
+LightGBM IC 为 0.015497033，ΔIC 为 +0.003822，变换后 WMSE 下降 +0.009035%；
+区间均含零，完整数值见报告。
+
+各组 Train+Val 为 5,296,605 行，Test 为 2,549,205 / 2,558,829 行，覆盖率
+99.623890%。IC 固定为 80 品种、2,401,248 行，WMSE 为 86 品种、2,429,676 行。
+各组配对 B26 LightGBM 模型与逐行预测一致；已有旧评估的行，其 Linear 和预处理
+按 rtol=1e-12、atol=1e-15 核对。所有 fit 在 Test 前后逐字节未变，逐行身份、日期、
+品种、标签和权重保持一致。区间使用按年分层、全市场同步的 20 交易日块、2000 次
+重采样，全部重复有效。
+
+执行 `pwsh -File scripts/check.ps1`：Ruff、格式、算子目录及 1349 项离线测试通过，
+pytest 143.00 秒。新增覆盖省略叶样本数与显式默认 20 的拟合一致性，以及无效显式值。
+全部 40 行 IC、区间、原始 WMSE 与列数逐项核对保存结果；对新增 Haiku MCTS 另外用
+NumPy 按逐行「品种权重 / 品种行数」独立重算两种 WMSE，绝对误差差异至多
+1.44e-18，下降率差异至多 6.76e-14，均在约定数值容差内。表格链接及归档副本核验通过。
+
+本轮是用户指定参数的历史 Test 敏感性分析；此前已查看 2024–2025，不作为新的盲测，
+也不向仍在运行的方法反馈。旧参数结果与原搜索产物保留；执行源采用原 V3 Luna 保存源
+的独立副本，只同步允许省略叶样本数的公共校验改动。
+
+[默认参数完整报告](zookeeper26_fold2/lgbm_defaults_20261106/report.md)、
+[B26 绝对基准](zookeeper26_fold2/lgbm_defaults_20261106/summary.json)、
+[全部 40 行结果及区间](zookeeper26_fold2/lgbm_defaults_20261106/results.jsonl)、
+[模型与数值核验](zookeeper26_fold2/lgbm_defaults_20261106/evaluation_audit.json)、
+[配置及复跑](../../configs/experiments/zk26_lgbm_defaults_20261106/README.md)、
+[检查日志](../../artifacts/comparisons/zk26_lgbm_defaults_20261106/check.log)。
+
+
+## 2026-11-06 Haiku V3：固定 Val 末品种重算 WMSE
+
+按用户指定，以 Fold2 Val 截止日 2023-12-31 前最后交易日 2023-12-29 的 MarketData
+观测固定 79 个品种；不按 Test 值或截止日成交额筛选。名单先保存，再读取已存 Test 预测。
+Test 中 74 个品种有正权重，WMSE 为 2,348,430 行；73 个品种可计算配对 IC，
+为 2,326,761 行。所有评分品种均有原 Train+Val 标签中心，排除的 12 个有权重品种
+均不在 Val 末名单，包含此前误差诊断中的 PT、PD。
+
+复用 Haiku V3 `61c42b9f7c` 的 200／300 次冻结预测，Linear OLS，LightGBM
+原生 leaf20／L2=0；不重训模型。B26 与扩充库在相同保留样本上重算，继续使用原 Test
+品种 √成交额权重并重新归一化。标签沿用训练期 1%／99% 裁剪及品种均值，不拟合 Test 统计。
+
+300 次时，Linear 变换后 WMSE 下降从 −0.013456% 变为 +0.019690%，增加
+0.033146 个百分点；LightGBM 从 −0.022965% 变为 +0.011283%，增加 0.034248
+个百分点。对应 ΔIC 为 +0.007513／+0.005212。WMSE 与 ΔIC 的 95% 区间均跨零；
+LightGBM 分年误差增益为 2024 年 −0.011283%、2025 年 +0.039054%，不支持稳定改善结论。
+
+区间沿用按年分层、全市场同步 20 交易日块、2,000 次重采样，全部重复有效。
+四行结果的两种 WMSE 以 NumPy 逐行权重独立复核，最大绝对差 6.78e-21；原 86 品种
+结果复现，原 fit.json／test.json 字节不变。总览在 Haiku 表下新增独立口径对照，原表保留。
+`pwsh -File scripts/check.ps1` 的 Ruff、格式、算子目录和 1,349 项离线测试通过，
+pytest 用时 132.94 秒。
+本轮是在已查看 Test 后提出的评分范围敏感性分析，不作为新的盲测或模型重训收益。
+
+[完整结果与复跑](zookeeper26_fold2/haiku_v3_val_end_20261106/report.md)、
+[Val 末品种名单](../../artifacts/comparisons/zk26_haiku_v3_val_end_products_20261106/cohort.json)、
+[数值与配置核验](../../artifacts/comparisons/zk26_haiku_v3_val_end_products_20261106/summary.json)。
+
+
+## 2026-11-06 B26 Luna / Haiku：全部方法统一固定 Val 末品种
+
+按用户要求，将上一轮 Haiku V3 的 Val 末品种规则应用于 B26 两张表全部已完成方法。
+Luna 六个、Haiku 四个独立运行，共 40 行结果（200／300 次节点 × Linear／LightGBM）
+重新评分。ReAct 仍未完成 300 次冻结，未补造结果。复用同一份 2023-12-29 的 79 品种名单，
+各来源搜索的数据快照一致；Test 中 74 品种、2,348,430 行参与 WMSE，73 品种、
+2,326,761 行参与 IC。各方法使用相同样本和原 Test √成交额权重，在保留品种内归一化。
+
+52 个配对模型沿用原保存版本，实际 LightGBM leaf20／L2=0，其他配置及 5,296,605 行
+共同 Train+Val 不变。本次仅重算评分范围，原 fit.json／test.json 字节不变，未重新搜索、
+重训或调用模型服务。Luna 总表继续报告原始目标 WMSE，Haiku 继续报告变换后目标 WMSE；
+完整产物同时保留两种误差及区间。变换后标签沿用训练期裁剪和品种中心，所有评分品种均有中心。
+
+新口径的配对 B26 Linear／LightGBM IC 为 0.013115483／0.011616349，变换后 WMSE
+为 2.5432135635e-05／2.5398461117e-05。Haiku 300 次的变换后 WMSE 下降如下：
+
+| 方法 | Linear | LightGBM |
+| --- | ---: | ---: |
+| AlphaProbe | −0.005760% | +0.019564% |
+| AlphaSchema | +0.016298% | +0.004283% |
+| MCTS-LLM | −0.005445% | +0.012947% |
+| AlphaAtlas V3 | +0.019690% | +0.011283% |
+
+四种方法 LightGBM 的 WMSE 点估计均为正，区间均跨零；不能据此判定稳定优胜。
+Luna 六组平均 LightGBM IC 为 0.015761575。两张总表、配对基准、样本说明与结果链接
+均替换为新口径；此前 V3 单独对照移入历史报告，不再与统一表重复展示。
+
+40 行两种 WMSE 均以 NumPy 逐行「品种权重 / 品种行数」独立核验，最大绝对差
+1.36e-20。原预测行身份、标签、权重与配对 B26 预测逐组核对；全部区间沿用按年分层、
+全市场同步 20 交易日块、2,000 次重采样，全部重复有效。上一轮 Haiku V3 四行结果和
+区间全部复现。本轮仍为已查看历史 Test 后指定评分范围的敏感性分析，原 86 品种结果保留。
+执行 `pwsh -File scripts/check.ps1`：Ruff、格式、算子目录及 1,354 项离线测试通过，
+pytest 用时 141.00 秒，见[检查日志](../../artifacts/comparisons/zk26_val_end_products_20261106/check.log)。
+
+[统一结果与复跑](zookeeper26_fold2/val_end_products_20261106/report.md)、
+[40 行完整结果](zookeeper26_fold2/val_end_products_20261106/results.jsonl)、
+[名单与基准](zookeeper26_fold2/val_end_products_20261106/summary.json)、
+[逐组核验](zookeeper26_fold2/val_end_products_20261106/evaluation_audit.json)。
+
+
+## 2026-11-06 B26 Luna / Haiku：73 品种加权 Pearson／Spearman ΔIC 与区间
+
+按用户确认，B26 Luna、Haiku 两张表的 Pearson IC 与 Spearman IC 统一采用当前
+Val 末固定名单中的 73 个可评分品种、2,326,761 行；两种增量都减去相同品种范围和
+模型配置下的配对 B26。保留原 WMSE 下降列及全部数值：WMSE 仍使用 74 个正权重
+品种，包含原始目标恒定、无法计算 IC 的 WH。Luna 继续报告原始目标 WMSE，
+Haiku 继续报告变换后目标 WMSE。
+
+沿用原 300 次冻结因子、Linear OLS、LightGBM 原生 leaf20／L2=0 以及固定预测。
+Luna 六行、Haiku 四行的两个预测模型共 20 行全部补齐 ΔSpearman IC 的 95% 区间，
+原 ΔIC 列明确标为 ΔPearson IC；B26 基准表同时列出两种绝对 IC。
+B26 Linear 的 Pearson／Spearman IC 为 0.013115483／0.007821336，
+LightGBM 为 0.011616349／0.006326984。
+
+公共 `paired_block_bootstrap` 新增显式 `correlation="spearman"` 选项；原默认
+Pearson 行为保留。两种区间使用同一 seed 20261102、按年分层的全市场同步
+20 交易日块、2,000 次配对重采样。Spearman 每次在品种内对抽中的全期样本重新排名，
+并列值取平均秩；通过观测被抽中的次数累计秩，数值等价于展开重复行后重新排名。
+每次计算配对 IC 差，再按固定原 Test √总成交额权重聚合；样本不足或相关性未定义
+的品种从该次两组同时排除。未复用原样本的固定秩或 Pearson 区间。
+
+20 行原 Pearson 点估计与区间全部复现；新增 Spearman 区间均有 2,000 次有效重复。
+40 行 200／300 次节点结果补入 Spearman 点估计，新增区间仅覆盖 300 次主节点。
+总览与详细报告的表格逐项核对结果文件，原 WMSE 字段与表内数值保持不变。
+六个来源 scope 的 fit 和 test 产物保持原字节；本次没有模型重训、重新搜索或模型服务调用。
+
+此前聊天的 80 品种 IC 也已完成相同重采样并单独归档到原默认参数报告；当前总览只
+使用用户确认的 73 品种口径。两套基准和区间分别保存，不混用。区间描述冻结模型在
+已查看历史 Test 上的时间不确定性，不包含独立搜索 seed 的随机性。
+
+合成测试独立展开抽样原始行并重新排名，核对有／无并列值时的区间，并覆盖品种缺席、
+重采样后常量、相同预测的零增量。`pwsh -File scripts/check.ps1` 的 Ruff、格式、
+算子目录和 1,354 项离线测试全部通过，pytest 134.75 秒。
+
+[73 品种完整结果](zookeeper26_fold2/val_end_products_20261106/report.md)、
+[73 品种重采样结果](zookeeper26_fold2/val_end_products_20261106/spearman_intervals.json)、
+[原 80 品种结果](zookeeper26_fold2/lgbm_defaults_20261106/report.md)、
+[复算入口](../../configs/experiments/zk26_lgbm_defaults_20261106/spearman_intervals.py)、
+[检查日志](../../artifacts/comparisons/zk26_val_end_products_20261106/check-spearman.log)。
+
+## 2026-11-06 B26 AlphaAtlas V3：Haiku 与 Luna 第二次运行启动
+
+用户要求两组同时各增加一次独立运行，2026-11-06 17:20（Asia/Shanghai）已启动。
+均从初始 B26 开始，Fold2、seed 42、300 次新增尝试，保留 200 次前缀；沿用各自
+首轮的搜索版本、保存的 V3 源码、提示词和并发设置，不导入旧运行的新增成员。
+
+- Haiku 5.5：`futures_kernel_5m_full-all-fold2-v3_async-42-27dcf84074`。
+- Luna：`futures_kernel_5m_full-all-fold2-v3_async-42-5602cf6a24`。
+
+后台入口同时执行两组搜索；两组均冻结、全部配对模型保存后才读取历史 Test。
+下游沿用当前默认叶样本数 20、L2=0 的 LightGBM 与 Linear OLS，计算 73 品种
+Pearson／Spearman ΔIC 和 95% 区间，保留 74 品种 WMSE。完成后各追加至原 B26 表。
+这是用户指定的同 seed 历史诊断重复，结果不反馈搜索；当前尚无本轮最终结果。
+
+启动检查：两组均完成 26 个初始成员的 Train/Val 初始化并开始候选评估。
+`pwsh -File scripts/check.ps1` 在限制计算线程后通过，Ruff、格式、算子目录和
+1,354 项离线测试全部通过，pytest 197.93 秒；日志为
+`artifacts/comparisons/zk26_seeded_fold2_v3_repeat2_20261106/check-limited.log`。
+
+配置、恢复命令与日志位置见
+[运行说明](../../configs/experiments/zk26_seeded_fold2_v3_repeat2_20261106/README.md)。
+
+
+
+## 2026-11-06 B26 AlphaAtlas V3：Luna 第二次运行完成
+
+完成时间：2026-11-06T18:54:24+08:00。已评估 Luna，各 300 次，沿用 seed 42、初始 B26、原搜索配置和源码。
+各组在自身搜索和配对模型冻结后读取历史 Test；Luna 按用户要求先评估，结果不回传 Haiku。
+分别报告 73 品种 Pearson／Spearman ΔIC 及区间，保留 74 品种 WMSE。两种 WMSE 已用逐行权重独立复核；模型与原始 Test 产物保持不变。
+属于用户指定的历史诊断重复，不据此筛选因子或调整参数。
+
+[两组完整结果](zookeeper26_fold2/v3_repeat2_20261106/report.md)。
+
+
+## 2026-11-06 B26 AlphaAtlas V3：Luna、Haiku 第二次运行完成
+
+完成时间：2026-11-06T18:58:44+08:00。已评估 Luna、Haiku，各 300 次，沿用 seed 42、初始 B26、原搜索配置和源码。
+各组在自身搜索和配对模型冻结后读取历史 Test；Luna 按用户要求先评估，结果不回传 Haiku。
+分别报告 73 品种 Pearson／Spearman ΔIC 及区间，保留 74 品种 WMSE。两种 WMSE 已用逐行权重独立复核；模型与原始 Test 产物保持不变。
+属于用户指定的历史诊断重复，不据此筛选因子或调整参数。
+
+[两组完整结果](zookeeper26_fold2/v3_repeat2_20261106/report.md)。
+
+
+## 2026-11-06 B26 AlphaAtlas V3：Luna 第三次运行启动
+
+启动时间：2026-11-06T19:05:25+08:00。按用户要求，再从 B26 独立运行一次 Luna V3。
+运行：`futures_kernel_5m_full-all-fold2-v3_async-42-35fc379af6`。
+Fold2、seed 42、300 次尝试，保留 200 次前缀；计划／评估并发均为 8，Explorer 并发 3。
+搜索版本、提示词、保存源码和准入配置与前两次相同；自身搜索冻结、模型保存后立即评估，
+自动归档并向原 B26 Luna 表追加一行。下游仍为 Linear OLS 与默认叶样本数 20、L2=0 的 LightGBM，
+统一 73 品种 Pearson／Spearman ΔIC 及 95% 区间，保留 74 品种 WMSE。
+
+前两次分别新增 16、5 个成员；质量门槛拒绝 251、256 次，行为重复 13、12 次，
+低覆盖 10、14 次，常量 3、8 次。保持原门槛观察重复结果，既有 Test 不反馈搜索。
+同 seed 的在线模型调用及异步顺序可变；区块区间不包含搜索随机性。
+
+[配置、执行与恢复](../../configs/experiments/zk26_seeded_fold2_v3_luna_repeat3_20261106/README.md)。
+
+验证：新 scope 仅更换运行身份、计划引用和说明；方法配置与前两次保存值完全一致。
+填表入口使用临时目录和既有结果验证，保留全部旧行，重复执行不重复追加。
+`pwsh -File scripts/check.ps1` 在主机环境通过，1,354 项测试，149.28 秒；
+日志为 `artifacts/comparisons/zk26_seeded_fold2_v3_luna_repeat3_20261106/check-host.log`。
+此前沙箱内验证已中断，以这次完整检查为准。
+
+
+## 2026-11-06 B26 AlphaAtlas V3：Luna 第三次运行完成
+
+完成时间：2026-11-06T20:16:05+08:00。运行 `futures_kernel_5m_full-all-fold2-v3_async-42-35fc379af6`，300 次尝试，新增 17 个因子。
+沿用原搜索配置、B26 和 seed 42；自身搜索与配对模型冻结后评估并追加原 Luna 表。
+73 品种加权 Pearson／Spearman ΔIC、95% 区间；保留 74 品种 WMSE。
+两种 WMSE 已独立数值复核。属于历史诊断重复，不据此选择因子或调整参数。
+
+[完整结果](zookeeper26_fold2/v3_luna_repeat3_20261106/report.md)。
+
+## 2026-11-07 V3 取消回看跨度分档
+
+用户决定 V3 不再区分 intraday／1d_to_20d／over_20d（prompts 工作区，未提交）。
+
+- **证据**：fold2 全部 V1／V3 运行中，回看超过 5 日的尝试占 43%，入库率 7.0%，入库因子 Test IC 0.0039、Test/Val 中位数 0.43；回看不到 1 日的分别为 30%、3.9%、0.0059、0.82。三档各有试探预算，加上"未测档算新方向"，V3 Luna 无深挖／并行组 16–29% 的尝试回看超过 20 日，V1 Luna 只有 3%。用户提出的"统一建议回看大于 5 日"与此相反，暂不加入，可另设对照组。
+- **改动**：`scale_bands` 默认改为 `"none"`。Region 用全部尝试判定 probing／seabed／saturated／land（复用 `band_status`），`probe_attempts`=20 按 Region 计。Explorer 提示词删去 by_scale 段、"只由已测档推导 Region"和"未测档算新方向"两句。深挖规则改为"活动 Region 仍为 probing 或 land 时继续，关闭后转 breadth"。观测台对新运行显示 `v3_region` 规则，不显示分档表。
+- **旧运行**：记录了 `intraday_1d_20d` 的运行（v9、r2、r3 等）恢复时沿用分档和原提示词 `BAND_PROMPT`。前一条"回看跨度"措辞修改已在 `BAND_PROMPT` 中撤回，恢复为这些运行启动时的原文，因此 r3 如果续跑，提示词与 v9、r2 一致。
+
+## 2026-11-07 B26 AlphaAtlas V3 不分档：Luna 两组启动
+
+用户要求参考 `experiment_overview.md` 的 B26 Luna 表，再跑两组 V3。用当前 V3 不分档版本：新搜索版本 `rq8_zk26_seeded_fold2_v3async_luna_noband_20261107`，与前三次 V3（8142c2c849／5602cf6a24／35fc379af6）只差 `scale_bands = "none"`。搜索源码是 prompts 工作区快照 `artifacts/comparisons/zk26_seeded_fold2_v3_luna_noband_20261107_source/src`。Fold2、seed 42、300 次，保留 200 次前缀。下游配对评估、评分口径和自动填表复用第三次运行的流程。
+
+- 第一组：`configs/experiments/zk26_seeded_fold2_v3_luna_noband_r1_20261107/`，运行 `futures_kernel_5m_full-all-fold2-v3_async-42-60f742d873`。
+- 第二组：`configs/experiments/zk26_seeded_fold2_v3_luna_noband_r2_20261107/`，运行 `futures_kernel_5m_full-all-fold2-v3_async-42-34227b615a`。
+- 两组均不设代理启动。完成后各自向 B26 Luna 表追加"AlphaAtlas V3 不分档"和"AlphaAtlas V3 不分档重复"两行。
+- 不分档第二组（34227b615a）在第 126 次失败：Luna 网关返回带 error 字段的响应，错误码不在可重试列表里，平台按"chat model returned an error response"停止。为了不泄露内容，报错有意不带服务原文，因此不知道具体错误码。随后用最简请求探测网关，返回 200，判断为一次性错误。代码未改（曾尝试在报错中附带错误码，但违反现有脱敏测试，已撤回），用同一命令续跑同一 Run ID，旧日志另存为 `luna-search.log.fail126`。
+
+
+## 2026-11-07 B26 AlphaAtlas V3 不分档：Luna 第二次运行完成
+
+完成时间：2026-11-07T11:39:56+08:00。运行 `futures_kernel_5m_full-all-fold2-v3_async-42-34227b615a`，300 次尝试，新增 7 个因子。
+取消回看跨度分档，其余沿用原搜索配置、B26 和 seed 42；自身搜索与配对模型冻结后评估并追加原 Luna 表。
+73 品种加权 Pearson／Spearman ΔIC、95% 区间；保留 74 品种 WMSE。
+两种 WMSE 已独立数值复核。属于历史诊断重复，不据此选择因子或调整参数。
+
+[完整结果](zookeeper26_fold2/v3_luna_noband_r2_20261107/report.md)。
+
+
+## 2026-11-07 B26 AlphaAtlas V3 不分档：Luna 第一次运行完成
+
+完成时间：2026-11-07T11:46:38+08:00。运行 `futures_kernel_5m_full-all-fold2-v3_async-42-60f742d873`，300 次尝试，新增 6 个因子。
+取消回看跨度分档，其余沿用原搜索配置、B26 和 seed 42；自身搜索与配对模型冻结后评估并追加原 Luna 表。
+73 品种加权 Pearson／Spearman ΔIC、95% 区间；保留 74 品种 WMSE。
+两种 WMSE 已独立数值复核。属于历史诊断重复，不据此选择因子或调整参数。
+
+[完整结果](zookeeper26_fold2/v3_luna_noband_r1_20261107/report.md)。
+
+## 2026-11-07 B26 Luna：V3 不分档两组与分档三组对比
+
+两组不分档均完成 300 次并自动评估、填表：60f742d873 新增 6 个，34227b615a 新增 7 个。总表中两行已按第一次、第二次排序（第二组先完成，自动填表时追加在前）。相对 B26 的 ΔIC（300 次）均值：
+
+| 组 | 新增因子均值 | Linear ΔPearson | Linear ΔSpearman | LightGBM ΔPearson | LightGBM ΔSpearman |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| V3 分档 3 组（8142c2c849／5602cf6a24／35fc379af6） | 12.7 | +0.003974 | +0.011153 | +0.002252 | +0.013335 |
+| V3 不分档 2 组（60f742d873／34227b615a） | 6.5 | +0.001332 | +0.007363 | +0.005370 | +0.010236 |
+
+尝试的回看构成（<1 日／1–5 日／>5 日）：分档三组为 0.57–0.64／0.24–0.31／0.05–0.18；不分档两组为 0.72／0.24／0.03 和 0.80／0.14／0.06。不分档两组的 13 个新增因子全部回看不到 1 日；分档三组的新增中，1 日以上占 18/38。
+
+描述性判断：取消分档后，预算明显转向短回看，新增因子减半。LightGBM ΔPearson 均值升高、方差缩小（+0.0049／+0.0059，分档组为 −0.0016 到 +0.0081）；Linear ΔPearson 与两项 Spearman 均值下降。每组只有 2–3 次运行，单次区间大多跨 0，不足以判断优劣。
+
+
+## 2026-11-07 B26 AlphaAtlas V3 不分档：Luna 第三次运行完成
+
+完成时间：2026-11-07T15:04:08+08:00。运行 `futures_kernel_5m_full-all-fold2-v3_async-42-c8c6a17d46`，300 次尝试，新增 4 个因子。
+取消回看跨度分档，其余沿用原搜索配置、B26 和 seed 42；自身搜索与配对模型冻结后评估并追加原 Luna 表。
+73 品种加权 Pearson／Spearman ΔIC、95% 区间；保留 74 品种 WMSE。
+两种 WMSE 已独立数值复核。属于历史诊断重复，不据此选择因子或调整参数。
+
+[完整结果](zookeeper26_fold2/v3_luna_noband_r3_20261107/report.md)。
+
+## 2026-11-07 B26 Luna：V3 不分档与分档各三组对比
+
+按用户要求补跑不分档第三组 `c8c6a17d46`（配置同前两组，300 次）：新增 4 个，Linear ΔPearson +0.004204、
+ΔSpearman +0.011601，LightGBM ΔPearson +0.009347、ΔSpearman +0.015689，原始目标 WMSE 下降
++0.008033%／+0.036632%。三组对三组的均值（括号为组间标准差）：
+
+| 组 | 新增 | Linear ΔPearson | Linear ΔSpearman | LightGBM ΔPearson | LightGBM ΔSpearman | Linear WMSE 下降 | LightGBM WMSE 下降 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 分档 3 组 | 12.7 (6.7) | +0.003974 (0.0036) | +0.011153 (0.0025) | +0.002252 (0.0052) | +0.013335 (0.0038) | −0.0065% | −0.0025% |
+| 不分档 3 组 | 5.7 (1.5) | +0.002289 (0.0027) | +0.008776 (0.0040) | +0.006696 (0.0023) | +0.012053 (0.0039) | −0.0016% | +0.0155% |
+
+第三组尝试回看 <1d／1–5d／>5d 为 0.60／0.15／0.25，但入库 4 个仍全部 <1d；不分档三组共 17 个新增
+因子全部回看不足 1 天。不分档在 LightGBM ΔPearson 与两项 WMSE 上均值更好、组间更稳；Linear ΔIC 与
+两项 Spearman 均值略低，差距均小于组间标准差。每组 3 次，属于描述性对比，不足以判定优劣。
+
+## 2026-11-09 fold2 规模曲线：后期入库因子诊断（诊断性，已看 Test）
+
+按每 100 次尝试截取 fold2 1000 次运行的库前缀，用主表统一模型参数（50 轮、15 叶、`min_data_in_leaf=2000`、
+深度 5、`lambda_l2=1`）在 Train+Val 重拟合后评估 Test；23/24 个已完成运行的 1000 次端点与主表一致，
+Haiku V1 `531d4676f6` 的 LightGBM 为 0.010923，主表 0.012112（该行原用参数不同）。脚本与结果在会话临时目录，未入库。
+
+Luna V3 五组的 Linear 在 12–16 个因子（200–400 次）达到峰值，三组随后下降（`bf0c21a38d` 14.8→7.3、
+`22d7cdbc4f` 15.5→10.0、`af75f77310` 16.4→13.3，×1e-3），`8d95766cb7` 持平，`ea03683b78` 上升。
+下降对应两类后期入库：
+
+- 冗余簇：`bf0c21a38d` 第 15–23 个因子单因子 Test IC 多为 +5–10e-3，但与已有成员最大 |Spearman| 为 0.64–0.70，
+  紧贴 0.7 去重门槛；单因子有效，组合 Linear 仍从 14.8 降至 9.9，属于共线簇在 Train+Val 拟合的权重到 Test 不稳。
+- 新方向的 Val 假阳性：`22d7cdbc4f`、`af75f77310` 后期多个与库低相关（≤0.05）、回看 20–125 日的因子，
+  Val IC 5–8e-3，Test 接近 0 或为负。
+
+全部方法按入库时点分组（≤500 次 vs >500 次）：16 个方法×模型组中 13 组后期因子与已有库的最大相关上升，
+10 组 Test/Val 比下降。Luna V3 前后期 Test/Val 0.77→0.62，负 Test 占比 8%→16%，最大相关 0.39→0.50，
+回看 >5 日 40%→45%；Luna V1 后期反而更好（Test/Val 0.76、最大相关 0.38、无 >5 日因子），曲线持续上升。
+Luna AlphaPROBE、MCTS-LLM 500 次后仅新增 2、4 个因子，曲线走平源于不再入库。
+结论限于描述：准入只看 Val 单因子门槛与 0.7 相关门槛，后期入库的边际组合价值可为负。
+
+## 2026-11-09 V3 v10：库残差准入门槛，Luna 两组启动
+
+按用户要求，先将 `feature/prompt-cleanup` 当前版本提交为 `ce1ad8c`，再加入平台准入规则 `min_residual_ic`
+（须开启 `library_residual`）：候选库残差 IC 须严格大于该值，否则以 `residual_threshold` 拒绝，残差未测得
+同样拒绝；未设置时准入不变。v10 版本 `rq8_fold2_v3async_luna_p8_pe8_px3_avail_nodepth_residual_v10`（及 `_r2`）
+只在 v9 基础上设 `min_residual_ic=0`，仍为分档提示词，使对照只差这一条准入规则。
+按既有 Val 记录回放，五组 Luna V3 的入库因子中 19%（全部 V3 为 95/499）库残差 IC ≤ 0。
+动机来自已看 Test 的规模曲线诊断，属于看过 Test 后提出的改动；两组结果只能作为该规则的探索性对照，
+基线方法仍为原准入规则。目录 `artifacts/comparisons/v3async10_luna_residual_gate{,_r2}_fold2_20261109/`。
+
+按用户要求补第三组 `rq8_fold2_v3async_luna_p8_pe8_px3_avail_nodepth_residual_v10_r3`（配置同 v10），
+目录 `artifacts/comparisons/v3async10_luna_residual_gate_r3_fold2_20261109/`；三组完成后报告 500／1000 次均值。
+
+v10 r2 在 830/1000 次时进程被直接终止（无 traceback，run.json 仍为 running，非 interrupted），
+按同一命令从检查点恢复，日志另存 `run.log.killed830`，续跑从第 831 次开始。
+
+## 2026-11-09 V3 v10（库残差准入）Luna 三组结果
+
+三组 v10 均完成 1000 次：`1aa909d2ce`、`7a860211ae`、`63de96c0fc`，入库 31／21／25 个，
+Test Linear 0.007215／0.019512／0.012414，LightGBM 0.018351／0.012723／0.020969，已写入 fold2 主表。
+r1、r3 进程启动早于填表代码修正，填表在最后一步失败；修正后用同一 run.py 对冻结运行补填，工作区总览重置。
+填表代码改为当前表头（单因子 Spearman 均值／中位数位于“正 IC”前，方法名 AlphaAtlas V1／V2／V3）。
+
+按每 100 次截点统一重拟合（×1e-3，三组均值；V3 对照为 v8、v9、v9 r2 三组 `22d7cdbc4f`、`af75f77310`、`ea03683b78`）：
+
+| 组 | 截点 | 因子 | Linear P | Linear S | LightGBM P | LightGBM S | 累计入库残差（Val） |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| V3 | 500 | 20.0 | 13.65 | 19.08 | 14.87 | 18.58 | 84.9 |
+| V3 | 1000 | 31.3 | 12.59 | 17.69 | 13.01 | 17.48 | 105.7 |
+| V3 + 残差准入 | 500 | 17.0 | 12.80 | 14.45 | 14.59 | 14.16 | 78.5 |
+| V3 + 残差准入 | 1000 | 25.7 | 13.05 | 15.58 | 17.35 | 16.63 | 111.4 |
+
+残差准入组 500→1000 次 Linear P、LightGBM P 均上升（V3 组均下降），1000 次 LightGBM P 高 4.3e-3；
+两项 Spearman 低于 V3 组。组内差异大（Linear P 7.2–19.5），三组不足以下结论。基线 Luna 残差由同一评估器
+事后重算，V3 运行重算值与记录值一致到 1e-16。页面 `artifacts/comparisons/scaling_curves_fold2_20261109/luna.html`。
+
+## 2026-11-09 AlphaSchema + GPT6-luna fold2 三组重复启动
+
+按用户要求，为与 V3 三组对比，AlphaSchema Luna 1000 次另跑三组独立重复，配置文件逐字复制自
+`alphaschema_luna_fold2_20261102`（`7ce881f635`），使用当前 `feature/prompt-cleanup` 源码；
+目录 `artifacts/comparisons/alphaschema_luna_fold2_repeat{1,2,3}_20261109/`。
+用户改为只补两组（与原 `7ce881f635` 合计三组）：repeat3（`0776ed36e2`）在 22/1000 次时按用户要求以 SIGINT 停止，
+状态 interrupted，不续跑、不计入比较；repeat1（`a6956445a7`）、repeat2（`c671886153`）继续。
+
+AlphaSchema Luna 两组重复完成：`a6956445a7` 入库 17，Test Linear 0.011475、LightGBM 0.013346；
+`c671886153` 入库 15，0.014310、0.016211；500 次截点分别为 9／8 个因子，0.009257／0.009925 与
+0.010258／0.012536。主表与相似度表按方法分组归位并补 500 次行。与原 `7ce881f635` 合计三组均值：
+1000 次 Linear 0.011802、LightGBM 0.014504，入库 17.3 个，Val 累计残差 0.054674（V3 两组 0.105723／0.111410）。
+规模曲线图与总览“规模曲线：fold2 GPT6-luna”一节已改为 AlphaSchema 三组均值 ± 1 std。
+
+## 2026-11-09 AlphaPROBE、MCTS-LLM + GPT6-luna fold2 各补两组重复
+
+按用户要求补全 Luna 三组对比。配置取自 `mcts_llm_gpt6_luna_fold2_20261030` 工作区，使用当前
+`feature/prompt-cleanup` 源码，启动后逐项对照原运行 run.json（除 run_id、指纹、状态外）：
+MCTS-LLM `95df5036b7`、`bfc98b0bf4` 与原 `35c026f3fe` 一致。AlphaPROBE 首次启动的 `5a4af1a78d`、`77b8020d3e`
+误用该工作区的 Haiku 模型配置，发现后在约 5 次时停止（interrupted，不计入）；改回与原 `3656be6b77` 相同的
+Luna 模型、网关与密钥变量后重启为 `2e915baa0a`、`efb9a27cd6`，配置与原运行一致。
+目录 `artifacts/comparisons/{alphaprobe,mcts_llm}_luna_fold2_repeat{1,2}_20261109/`。
+
+AlphaPROBE、MCTS-LLM Luna 补跑完成：1000 次 AlphaPROBE `2e915baa0a` 8 个、`efb9a27cd6` 9 个；
+MCTS-LLM `95df5036b7` 8 个、`bfc98b0bf4` 7 个。四组自身模型配置沿用旧工作区（LightGBM `min_data_in_leaf=100`、
+无深度限制），与 fold2 主表统一参数不同；主表 500／1000 次 LightGBM 列改为统一参数重拟合值
+（`2e915baa0a` 0.010905／0.013387，`efb9a27cd6` 0.017780／0.016883，`95df5036b7` 0.008721／0.010060，
+`bfc98b0bf4` 0.008546／0.005873），Linear 列一致。AlphaSchema 与 v10 重复运行的自身模型配置即统一参数，结果一致。
+规模曲线五个方法均为 3 组均值 ± std；截点曲线文件移至 `artifacts/comparisons/scaling_curves_fold2_20261109/curves/`。
+
+## 2026-11-10 fold2 GPT6-luna 表格按方法合并
+
+按用户要求，`experiment_overview.md` 的“期货因子搜索：fold2”与“期货库内因子相似度：fold2”两表中，GPT6-luna
+各方法合并为一行：1000 次运行均值 ± 样本标准差（AlphaPROBE、MCTS-LLM、AlphaSchema、V3、V3 + 残差准入各 3 组，
+V2 2 组，V1 1 组）。V3 取 v8／v9／v9 r2，与规模曲线一致；V3 早期 `8d95766cb7`、`bf0c21a38d` 不入均值。
+原单次运行行（含 500 次截面）原样移至 `docs/records/scaling_fold2_luna_20261109/luna_runs.md`，链接已改为相对该文件。
+合并脚本 `artifacts/comparisons/scaling_curves_fold2_20261109/aggregate_luna_rows.py`。其他模型尚未合并。
+同日按用户要求，fold2 主表增加“Linear 加权 Spearman”“LightGBM 加权 Spearman”两列（组合预测 Test 品种 √成交额加权
+Spearman IC）；GPT6-luna 五个方法按统一参数截点结果填均值 ± std，其他模型暂以“—”表示；主表 GPT6-luna 暂去掉
+AlphaAtlas V1、V2 两行（单次运行仍在明细文件）。自动填表代码同步增加两列，未显示该两列的旧表（如 fold1）自动跳过。
+
+## 2026-11-05 至 11-10 入库指标能否预测 Test 表现（诊断性，已看 Test）
+
+问题：入库时已知的单因子指标（残差、Val IC、Train ICIR 等）能否预测因子在 Test 上的单因子 IC 和组合增量。
+样本为 fold2 上 15 个开启 `residual_ic_v1` 的 V2/V3 运行（Haiku、Luna、DeepSeek；截面只取每个主运行库最大的一版），
+共 573 个入库因子（单因子部分去重后 589 个）。组合增量用 Linear（主表规格，Train+Val 拟合），按入库顺序逐个加入
+（顺序增量）和留一两种口径；全库复算 Test IC 与 `model/test.json` 一致。统计为控制入库位置的偏秩相关，区间按运行聚类
+bootstrap。全部结果用了 Test 标签，不作为准入或奖励的设计依据。脚本在会话临时目录，未入库。
+
+- **残差 vs 单因子 Test IC**：秩相关 −0.06，控制 Val IC 和 library_r2 后 −0.09；残差五分位 Test IC>0 比例从 93%
+  降到 81%。残差高的因子在 Val 上的“独特信息”更多是噪声或时期特有成分。
+- **残差 vs 组合增量**：顺序 +0.089 [+0.01, +0.17]，留一 +0.083 [−0.00, +0.18]；效应集中在最高一档，区分度不足以
+  逐个挑因子。Val IC 对增量基本无预测力。
+- **Train ICIR**：带符号的 ICIR 无预测力。|ICIR| 在日内因子上有 +0.13–0.17，主要来自 ICIR < 0 的一侧，但这是从约
+  17 个指标 × 多种口径中事后挑出的结果。对 ChaoticTrader 因子库（998 个因子，2024–2025 检验）复现后，|ICIR| 只预测
+  单因子 Test IC（+0.28），不预测组合增量（+0.02 / +0.06）。
+- **ICIR 的机械效应**：按“交易日 × 品种”切块的 ICIR 只反映整期 IC 的日内成分。一天之内，“当前价格相对当天均价”与未来
+  收益天然负相关（随机游走 −0.54，真实期货 −0.48），因子日内 IC ≈ 0.0045 − 0.45 ×（因子与当天价格位置的日内相关），
+  R² 0.97。跟随价格的因子 ICIR 被压负，反转类被抬正；负 ICIR 的“预测力”是日间成分强的代理，控制日间成分后消失。
+  分解与模拟见 ChaoticTrader_Future `docs/factor_stability_screen_review_zh.md`。
+- **日频因子 ICIR 缺失**：日内常数的 `@1d` 因子日 IC 为 1e-19 量级浮点残差，通过有限值检查（`icir_days` 仍为 730）
+  但标准差 < 1e-12，ICIR 为 null（268 个日频常数因子中 212 个）。混合因子中日内恰为常数的“品种 × 日”也以约 0 的 IC
+  进入当日平均。两周切块可覆盖日频因子（与按日口径在日内因子上秩相关 0.90），但对增量同样无可靠预测力，块内去均值还
+  会把日频因子的块 IC 放大约 3 倍。未改代码。
+- **30m / 60m 逐年稳定性**（ChaoticTrader 库）：主要是开发期 IC 大小的代理，控制 IC 后对 Test 的偏相关 +0.02，对增量
+  在 ±0.06 内；按此剔除 176 个因子的回测与随机剔除相同数量没有区别。
+
+结论：现有单因子入库指标都不能可靠预测组合增量；残差最多有 +0.08 量级的弱信号，不应解读为“更可能外推”。日 ICIR 不宜当
+稳定性指标使用，如需日内稳定性诊断，应先扣除与当天价格位置相关的部分，或改为整段中心化后按块分解（需新增诊断版本，
+待定）。要把任何指标用进准入或奖励，须在开发期内切分（如 Val 2022 / 2023）重新验证。
+
+## 2026-11-10 V3 v10 主源码接入与冻结模型复核
+
+将 V3 Async、并发执行及 `min_residual_ic=0` 准入接入主源码，保留三组 v10 原版本配置。
+三组 `1aa909d2ce`、`7a860211ae`、`63de96c0fc` 的配置指纹、冻结库哈希、全部因子和算子
+身份及方法检查点通过核对；本机 MarketData 快照与运行记录一致。
+
+在临时副本中复用各组已保存的 Linear 和 LightGBM 拟合模型，重新计算 Test 评分，不重新
+搜索、拟合或请求 LLM。三组两种模型的加权／等权 Pearson 和 Spearman 均与原报告一致，
+最大绝对差为 `1.05e-17`；有效行、预测覆盖和各指标样本数一致。该复核不重算单因子 OOS，
+也不能保证在线 LLM 重新搜索得到相同候选；日志为 `logs/checks/v3-replay-20261110.log`。

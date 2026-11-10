@@ -115,9 +115,21 @@ def client(monkeypatch):
     )
 
 
-@pytest.mark.parametrize("status", [408, 429, 500, 502, 503, 504])
+@pytest.mark.parametrize(
+    "status,expected_waits",
+    [
+        (408, [1, 2, 4]),
+        (429, [30, 60, 120]),
+        (500, [1, 2, 4]),
+        (502, [1, 2, 4]),
+        (503, [30, 60, 120]),
+        (504, [1, 2, 4]),
+    ],
+)
 @pytest.mark.parametrize("kind", ["chat", "embedding"])
-def test_transient_http_retries_same_request_then_succeeds(client, monkeypatch, status, kind):
+def test_transient_http_retries_same_request_then_succeeds(
+    client, monkeypatch, status, expected_waits, kind
+):
     bodies, waits, retries, errors = [], [], [], []
     success = {"choices": [{"message": {"content": "{}"}}]} if kind == "chat" else {"ok": True}
 
@@ -134,7 +146,7 @@ def test_transient_http_retries_same_request_then_succeeds(client, monkeypatch, 
     client.on_retry = retries.append
     assert client._post(kind, "/synthetic", {"model": "synthetic"}) == success
     assert len(bodies) == 4 and len(set(bodies)) == 1
-    assert waits == ([30, 60, 120] if status == 429 else [1, 2, 4])
+    assert waits == expected_waits
     assert retries == [kind] * 3
     assert all(e.fp.closed for e in errors)
 
@@ -150,6 +162,8 @@ def test_transient_http_retries_same_request_then_succeeds(client, monkeypatch, 
         (429, "nan", 30),
         (429, "inf", 30),
         (503, "120", 120),
+        (503, "1", 30),
+        (503, "invalid private value", 30),
     ],
 )
 def test_http_retry_after_is_respected_without_logging_provider_data(
@@ -265,15 +279,17 @@ def test_explicit_empty_completion_failures_are_not_retried(
 
 @pytest.mark.parametrize("streaming", [False, True])
 @pytest.mark.parametrize(
-    "error_tag",
+    "error_tag,expected_wait",
     [
-        {"code": "server_is_overloaded"},
-        {"code": "service_unavailable_error"},
-        {"type": "service_unavailable_error"},
+        ({"code": "server_is_overloaded"}, 30),
+        ({"code": "service_unavailable_error"}, 30),
+        ({"type": "service_unavailable_error"}, 30),
+        ({"code": "rate_limit_exceeded"}, 30),
+        ({"code": "server_error"}, 1),
     ],
 )
 def test_in_band_overload_retries_but_permanent_error_is_redacted(
-    client, monkeypatch, streaming, error_tag, caplog
+    client, monkeypatch, streaming, error_tag, expected_wait, caplog
 ):
     calls, waits = [], []
     responses = [
@@ -296,7 +312,7 @@ def test_in_band_overload_retries_but_permanent_error_is_redacted(
         )
         with pytest.raises(RuntimeError, match="error response") as error:
             client.chat_messages([], on_delta=(lambda *args: None) if streaming else None)
-    assert len(calls) == 3 and waits == [1]
+    assert len(calls) == 3 and waits == [expected_wait]
     assert "private" not in str(error.value) + caplog.text
     assert "synthetic-key" not in caplog.text
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from collections import OrderedDict
 from dataclasses import asdict
 from pathlib import Path
@@ -31,12 +32,19 @@ class ArrowCache:
                 stat = path.stat()
                 files.append((stat.st_mtime_ns, path, stat.st_size))
         self._sizes = OrderedDict((path, size) for _, path, size in sorted(files))
+        # Concurrent evaluations and admissions share one budget index.
+        self._lock = threading.RLock()
         self._trim()
 
     def __contains__(self, path: Path) -> bool:
-        return path in self._sizes
+        with self._lock:
+            return path in self._sizes
 
     def _trim(self):
+        with self._lock:
+            self._trim_locked()
+
+    def _trim_locked(self):
         total = sum(self._sizes.values())
         while total > self.max_bytes:
             path = next(iter(self._sizes))
@@ -45,11 +53,16 @@ class ArrowCache:
 
     def read(self, path: Path) -> pl.DataFrame:
         frame = pl.read_ipc(path, memory_map=False)
-        if path in self._sizes:
-            self._sizes.move_to_end(path)
+        with self._lock:
+            if path in self._sizes:
+                self._sizes.move_to_end(path)
         return frame
 
     def write(self, path: Path, frame: pl.DataFrame) -> None:
+        with self._lock:
+            self._write(path, frame)
+
+    def _write(self, path: Path, frame: pl.DataFrame) -> None:
         temporary = path.with_suffix(".tmp")
         try:
             frame.write_ipc(temporary, compression="zstd")
@@ -62,7 +75,7 @@ class ArrowCache:
             temporary.replace(path)
             self._sizes[path] = size
             self._sizes.move_to_end(path)
-            self._trim()
+            self._trim_locked()
         finally:
             temporary.unlink(missing_ok=True)
 

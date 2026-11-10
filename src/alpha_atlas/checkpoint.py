@@ -77,7 +77,9 @@ class Checkpoint:
         return self.previous_seconds + time.perf_counter() - self.started
 
     def save(self, method, completed: int, attempts: int, library_version: int, pending=None):
-        self.factor_trial_index = pending["factor_trial_index"] if pending else completed
+        # pending is one trial, or the in-flight list of a concurrently evaluating run.
+        last = pending[-1] if isinstance(pending, list) and pending else pending
+        self.factor_trial_index = last["factor_trial_index"] if last else completed
         # Strict JSON: no pickle, implicit str conversion, or non-finite state values.
         state = json.loads(json.dumps(method.dump_state(), allow_nan=False))
         payload = {
@@ -99,12 +101,11 @@ class Checkpoint:
         if data["config_fingerprint"] != self.spec["config_fingerprint"]:
             raise ValueError("checkpoint configuration mismatch")
         pending = data["pending"]
-        if pending is not None and "trial_index" in pending:
+        if isinstance(pending, dict) and "trial_index" in pending:
             pending["factor_trial_index"] = pending.pop("trial_index")
         self.previous_seconds = max(self.previous_seconds, data["elapsed_seconds"])
-        self.factor_trial_index = (
-            data["pending"]["factor_trial_index"] if data["pending"] else data["completed"]
-        )
+        last = pending[-1] if isinstance(pending, list) and pending else pending
+        self.factor_trial_index = last["factor_trial_index"] if last else data["completed"]
         return data
 
     def status(self, status: str, **extra):

@@ -57,7 +57,7 @@ function renderRuns() {
       const live = liveness(r);
       const pct = r.attempts ? Math.min(100, (100 * r.completed) / r.attempts) : 0;
       return `<div class="run ${r.id === state.runId ? "active" : ""}" data-id="${esc(r.id)}">
-        <div class="row1"><span class="dot ${live}"></span>${esc(r.method)} · ${esc(r.model || "无模型")}${r.residual ? ' <span class="chip land">地图</span>' : ""}</div>
+        <div class="row1"><span class="dot ${live}"></span><span class="name" title="${esc(r.method)} · ${esc(r.model || "无模型")}">${esc(r.method)} · ${esc(r.model || "无模型")}</span></div>
         <div class="row2">${esc(r.fold || "")} · ${r.completed}/${r.attempts ?? "?"} · ${esc(STATUS_TEXT[live] || live)} · ${ago(r.last_activity)}</div>
         <div class="row2">${esc(r.version || r.asset || "")}</div>
         <div class="bar"><i style="width:${pct}%"></i></div></div>`;
@@ -123,6 +123,26 @@ async function refresh(force = false) {
     if (force && state.linkedDetail) {
       const link = state.linkedDetail;
       state.linkedDetail = null;
+      // Optional zoom: z=<factor>, centred on at=<x>,<y> (layout units) or the linked Region.
+      if (link.get("z") && map?.available) {
+        let [ax, ay] = link.get("at") ? link.get("at").split(",").map(Number) : [NaN, NaN];
+        if (!Number.isFinite(ay)) ax = NaN;
+        const members = map.points.filter((p) => p.region === link.get("region"));
+        if (!Number.isFinite(ax) && members.length) {
+          ax = members.reduce((s, p) => s + p.x, 0) / members.length;
+          ay = members.reduce((s, p) => s + p.y, 0) / members.length;
+        }
+        if (!Number.isFinite(ax)) [ax, ay] = [0.5, 0.5];
+        const k = clamp(Number(link.get("z")), 0.5, 12);
+        const S = Math.min(canvas.width, canvas.height);
+        const ox = (canvas.width - S) / 2, oy = (canvas.height - S) / 2;
+        state.view = {
+          k,
+          x: canvas.width / 2 - ox - (ax * S - S / 2) * k - S / 2,
+          y: canvas.height / 2 - oy - (ay * S - S / 2) * k - S / 2,
+        };
+        scheduleMap();
+      }
       if (link.get("plan")) showPlan(Number(link.get("plan")));
       else if (link.get("trial")) showTrial(Number(link.get("trial")));
       else if (link.get("region")) showRegion(link.get("region"));
@@ -139,18 +159,45 @@ function renderHeader() {
   const pill = $("#run-status");
   pill.className = `pill ${live}`;
   pill.textContent = STATUS_TEXT[live] || live;
+  const stop = $("#run-stop");
+  stop.hidden = s.status !== "running";
+  if (stop.dataset.run !== state.runId) {
+    stop.dataset.run = state.runId;
+    stop.disabled = false;
+    stop.textContent = "停止运行";
+  }
   $("#run-meta").innerHTML = [s.asset, s.fold, s.version, s.run_id].filter(Boolean).map((v) => `<span>${esc(v)}</span>`).join("");
   const info = s.curve.length ? s.curve[s.curve.length - 1].information : 0;
   $("#run-stats").innerHTML = [
     ["完成 / 预算", `${s.completed} / ${s.attempts ?? "?"}`],
     ["新增入库", s.admitted],
     ["库规模", s.library_size],
-    ["累计残差信息", s.residual ? fmt(info, 3) : "未开启"],
+    ["入库因子残差", s.residual ? fmt(info, 3) : "未开启"],
     ["最后活动", ago(s.last_activity, s.now)],
     ...(s.stop_reason ? [["提前结束", s.stop_reason]] : []),
   ].map(([k, v]) => `<div class="stat"><b>${esc(v)}</b><span>${k}</span></div>`).join("");
   $("#run-progress").style.width = `${s.attempts ? Math.min(100, (100 * s.completed) / s.attempts) : 0}%`;
 }
+
+$("#run-stop").addEventListener("click", async () => {
+  const button = $("#run-stop");
+  const id = state.runId;
+  if (!id || !confirm(`停止运行 ${id}？\n先发 Ctrl+C（SIGINT），约 20 秒未退出再发 SIGTERM；运行记为“已中断”，已提交的 trial 保留，之后可以 resume 继续。`)) return;
+  button.disabled = true;
+  button.textContent = "正在停止…（最多约 40 秒）";
+  try {
+    const response = await fetch(`/api/stop?id=${encodeURIComponent(id)}`, {
+      method: "POST", headers: { "X-Atlas-Action": "stop" },
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error || response.status);
+    button.textContent = `已停止（${body.signals.join(" → ")}）`;
+  } catch (error) {
+    alert(`停止失败：${error.message}`);
+    button.disabled = false;
+    button.textContent = "停止运行";
+  }
+});
 
 // ---------------------------------------------------------------- tabs
 function switchTab(tab) {
@@ -171,8 +218,6 @@ document.querySelectorAll("#tabs button").forEach((b) =>
 // ---------------------------------------------------------------- terrain
 const canvas = $("#map");
 const ctx = canvas.getContext("2d");
-const terrain = document.createElement("canvas");
-const tctx = terrain.getContext("2d");
 let frame = null;
 
 function hash(x, y) {
@@ -209,13 +254,19 @@ function ramp(stops, t) {
   }
   return stops[stops.length - 1][1];
 }
+// One palette for the whole map, after true-colour satellite imagery.
 const LAND = [
-  [0, [214, 199, 151]], [0.04, [168, 170, 112]], [0.12, [108, 142, 78]], [0.3, [84, 118, 62]],
-  [0.5, [128, 116, 80]], [0.68, [139, 120, 98]], [0.82, [150, 146, 140]], [0.94, [236, 238, 240]], [1, [252, 252, 252]],
+  [0, [198, 184, 144]], [0.012, [156, 152, 106]], [0.045, [96, 118, 64]], [0.25, [78, 100, 54]],
+  [0.5, [112, 106, 72]], [0.75, [136, 122, 96]], [1, [166, 160, 150]],
 ];
-const WATER = [[0, [118, 196, 200]], [0.18, [70, 158, 182]], [0.45, [34, 104, 148]], [0.75, [17, 62, 108]], [1, [8, 32, 62]]];
-const DRY = [181, 156, 108];
-const PEAK = 1.6;
+const ROCK = [132, 124, 114];
+const DRY = [176, 152, 104];
+const AMBIENT = [8, 14, 26]; // Blue sky light fills shadows.
+const SEABED = [196, 184, 146]; // Lit sand on explored ground.
+const OOZE = [70, 78, 84]; // Unexplored sea floor.
+const DEEP = [9, 30, 58];
+const ABSORB = [1.05, 0.5, 0.32]; // Per-depth-unit attenuation for red, green and blue.
+const HILL = 1.2; // Width of a factor's contribution to the land field, in layout sigmas.
 
 function visiblePoints() {
   if (!state.map?.available) return [];
@@ -263,109 +314,251 @@ function scheduleMap() {
   frame = requestAnimationFrame(() => { frame = null; drawMap(); });
 }
 
-function renderTerrain(points) {
-  const gw = Math.min(560, Math.ceil(canvas.width / 2.5));
-  const gh = Math.min(400, Math.ceil(canvas.height / 2.5));
-  terrain.width = gw; terrain.height = gh;
-  const density = new Float32Array(gw * gh), heightSum = new Float32Array(gw * gh), dry = new Float32Array(gw * gh);
-  const peak = new Float32Array(gw * gh).fill(-1e9);
-  const S = Math.min(canvas.width, canvas.height) * state.view.k;
-  const sigmaPx = Math.max(6, 0.032 * S) * (gw / canvas.width);
-  const reach = Math.ceil(sigmaPx * 3);
+// Terrain is rendered in world coordinates into an offscreen canvas and only redrawn with a
+// transform while panning or zooming. Noise fields do not depend on data, so they are cached
+// per world rectangle and resolution; the data pass is a few array sweeps.
+const noiseCache = { key: null };
+const baseLayer = { key: null, canvas: document.createElement("canvas"), rect: null };
+const detailLayer = { key: null, canvas: document.createElement("canvas"), rect: null };
+let detailTimer = null;
+const BASE_RECT = { x0: -0.1, y0: -0.1, x1: 1.1, y1: 1.1 };
+const OCEAN = "rgb(10, 40, 62)";
+
+// Ridged multifractal: sharp crests where the noise crosses zero, smoother valleys, and finer
+// octaves weighted by the coarser crest so peaks carry detail and lowlands stay calm.
+function ridged(x, y, octaves = 5) {
+  let total = 0, amp = 0.55, f = 1, weight = 1;
+  for (let o = 0; o < octaves; o++) {
+    let r = 1 - Math.abs(valueNoise(x * f, y * f) * 2 - 1);
+    r *= r * weight;
+    weight = clamp(r * 1.8, 0, 1);
+    total += r * amp;
+    f *= 2.07; amp *= 0.5;
+  }
+  return clamp(total / 0.95, 0, 1);
+}
+
+function noiseFields(rect, gw, gh, freq) {
+  const key = `${rect.x0},${rect.y0},${rect.x1},${rect.y1}|${gw}x${gh}|${freq}`;
+  if (noiseCache.key === key) return noiseCache;
+  const n = gw * gh;
+  const f = {
+    key, shiftX: new Float32Array(n), shiftY: new Float32Array(n), warpN: new Float32Array(n),
+    coast: new Float32Array(n), ridge: new Float32Array(n), ragged: new Float32Array(n),
+    fine: new Float32Array(n), grain: new Float32Array(n), swell: new Float32Array(n),
+    surf: new Float32Array(n), mount: new Float32Array(n),
+  };
+  for (let y = 0; y < gh; y++) {
+    for (let x = 0; x < gw; x++) {
+      const i = y * gw + x;
+      const wx = rect.x0 + ((x + 0.5) / gw) * (rect.x1 - rect.x0);
+      const wy = rect.y0 + ((y + 0.5) / gh) * (rect.y1 - rect.y0);
+      f.shiftX[i] = fbm(wx * freq + 31.7, wy * freq - 12.9, 4);
+      f.shiftY[i] = fbm(wx * freq - 7.1, wy * freq + 45.3, 4);
+      const warp = fbm(wx * 6 + 5.2, wy * 6 - 1.3, 4);
+      f.warpN[i] = fbm(wx * 11 + 2 * warp, wy * 11 - 2 * warp);
+      f.coast[i] = fbm(wx * 3.4 + 9.1, wy * 3.4 - 4.7, 4);
+      f.ridge[i] = 1 - Math.abs(fbm(wx * 8 + 1.7 * warp, wy * 8 - 1.7 * warp, 5));
+      f.ragged[i] = 0.55 * f.warpN[i] + 0.35 * fbm(wx * 27 - 3.3 * warp, wy * 27 + 3.3 * warp, 3);
+      f.fine[i] = fbm(wx * 34, wy * 34, 3);
+      f.grain[i] = fbm(wx * 90 + 3, wy * 90, 3);
+      f.swell[i] = fbm(wx * 2.2 + 17, wy * 2.2 - 5, 3);
+      f.surf[i] = valueNoise(wx * 300, wy * 300);
+      // Mountain crests sized to a few factor spacings, so each island gets its own peaks.
+      f.mount[i] = ridged(wx * freq * 2.3 + 2.9 * f.warpN[i], wy * freq * 2.3 - 2.9 * f.warpN[i]);
+    }
+  }
+  Object.assign(noiseCache, f);
+  return noiseCache;
+}
+
+function renderTerrain(points, rect, gw, gh, target) {
+  target.width = gw; target.height = gh;
+  const tc = target.getContext("2d");
+  const n = gw * gh;
+  const spacing = state.map.spacing || 0.032;
+  const ppw = gw / (rect.x1 - rect.x0); // grid cells per world unit
+  const fields = noiseFields(rect, gw, gh, 1 / (3.2 * spacing));
+  const density = new Float32Array(n), heightSum = new Float32Array(n), dry = new Float32Array(n);
+  // Land field: kernel-weighted coverage and elevation of factors above sea level. Summing
+  // (not taking a maximum of per-factor domes) keeps neighbouring factors one seamless massif.
+  const landW = new Float32Array(n), landE = new Float32Array(n), hills = new Float32Array(n);
+  const coreLand = new Uint8Array(n);
+  // Smoothing follows the layout's point spacing so Regions stay separate islands.
+  const sigmaPx = Math.max(1.2, 0.8 * spacing * ppw);
+  const reach = Math.ceil(sigmaPx * 4);
+  // Domain warp (below one sigma) gives irregular outlines; each factor's core stays land.
+  const warpPx = 0.75 * sigmaPx;
+  const inv = 1 / (2 * sigmaPx * sigmaPx), invHill = 1 / (2 * HILL * HILL * sigmaPx * sigmaPx);
+  const invKnoll = 1 / (2 * 0.6 * 0.6 * sigmaPx * sigmaPx);
   const status = {};
   for (const p of points) {
     const e = elevation(p);
     if (e === null) continue;
     if (p.region && !(p.region in status)) status[p.region] = regionStatus(p.region)?.status;
-    const [sx, sy] = toScreen(p.x, p.y);
-    const gx = (sx / canvas.width) * gw, gy = (sy / canvas.height) * gh;
+    const gx = (p.x - rect.x0) * ppw, gy = (p.y - rect.y0) * ppw;
+    if (gx < -reach || gy < -reach || gx > gw + reach || gy > gh + reach) continue;
     const saturated = status[p.region] === "saturated" ? 1 : 0;
     const x0 = Math.max(0, Math.floor(gx - reach)), x1 = Math.min(gw - 1, Math.ceil(gx + reach));
     const y0 = Math.max(0, Math.floor(gy - reach)), y1 = Math.min(gh - 1, Math.ceil(gy + reach));
     for (let y = y0; y <= y1; y++) {
       for (let x = x0; x <= x1; x++) {
-        const d2 = (x - gx) ** 2 + (y - gy) ** 2;
-        const w = Math.exp(-d2 / (2 * sigmaPx * sigmaPx));
         const i = y * gw + x;
+        const dx = x + warpPx * fields.shiftX[i] - gx, dy = y + warpPx * fields.shiftY[i] - gy;
+        const d2 = dx * dx + dy * dy;
+        const w = Math.exp(-d2 * inv);
         density[i] += w; heightSum[i] += w * e; dry[i] += w * saturated;
-        // Each factor also raises its own hill, so one strong factor is not averaged away
-        // by many ordinary neighbours; the hill falls below the mean within about one sigma.
-        const hill = e - PEAK * d2 / (sigmaPx * sigmaPx);
-        if (hill > peak[i]) peak[i] = hill;
+        if (e > 0) {
+          const g = Math.exp(-d2 * invHill);
+          landW[i] += g; landE[i] += g * e;
+          hills[i] += e * Math.exp(-d2 * invKnoll); // a knoll at each factor, summed: no seams
+          if ((x - gx) ** 2 + (y - gy) ** 2 < 0.25 * sigmaPx * sigmaPx) coreLand[i] = 1;
+        }
       }
     }
   }
-  const H = new Float32Array(gw * gh), explored = new Float32Array(gw * gh);
-  for (let y = 0; y < gh; y++) {
-    for (let x = 0; x < gw; x++) {
-      const i = y * gw + x;
-      const [wx, wy] = toWorld((x / gw) * canvas.width, (y / gh) * canvas.height);
-      // Domain-warped noise roughens coastlines and shelf edges; it is texture, not data.
-      const warp = fbm(wx * 6 + 5.2, wy * 6 - 1.3, 4);
-      const n = fbm(wx * 11 + 2 * warp, wy * 11 - 2 * warp);
-      const raw = 1 - Math.exp(-density[i] / 0.55);
-      const m = clamp(raw + 1.1 * n * raw * (1 - raw), 0, 1);
-      explored[i] = m;
-      const mean = density[i] > 1e-4 ? heightSum[i] / density[i] : -3;
-      const top = Math.max(mean, peak[i]);
-      const base = top + Math.log(Math.exp(4 * (mean - top)) + Math.exp(4 * (peak[i] - top))) / 4;
-      // Measured elevation inside explored areas; abyssal plain elsewhere. Noise is scaled by
-      // exploration so it never lifts unexplored sea above water.
-      H[i] = m * (base + (0.5 + 0.6 * (1 - m)) * n * m + 0.25 * fbm(wx * 34, wy * 34, 3) * m)
-        + (1 - m) * (-3.4 + 0.5 * n);
-    }
+  const H = new Float32Array(n), explored = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const nz = fields.warpN[i];
+    // Low-frequency noise only scales measured density: no explored area without attempts.
+    const raw = 1 - Math.exp(-density[i] / 0.55);
+    const m = smooth(0.16, 0.66, raw * (1 + 0.95 * fields.coast[i] + 0.35 * nz));
+    explored[i] = m;
+    const mean = density[i] > 1e-4 ? heightSum[i] / density[i] : -3;
+    // Where factors above sea level cover the cell, their weighted elevation replaces the
+    // all-attempt mean, so one strong factor is not averaged away by ordinary neighbours.
+    // Land rises toward where above-sea factors overlap most and slopes down to a gentle
+    // coast, so an island is a dome or a range rather than a flat plateau.
+    const cover = smooth(0.12, 1.1, landW[i]);
+    const dome = landW[i] > 1e-6
+      ? (landE[i] / landW[i]) * (0.4 + 0.6 * smooth(0.25, 3.5, landW[i])) + 0.35 * Math.log1p(landW[i])
+      : 0;
+    const base = cover > 0 ? mix(mean, dome, cover) : mean;
+    // Ragged shore inside a narrow band only; a factor's core is always land.
+    const band = 1 - smooth(0, 0.6, Math.abs(base));
+    let shore = base + 0.38 * fields.ragged[i] * band;
+    if (coreLand[i]) shore = Math.max(shore, 0.02);
+    // Relief rises toward dense cores with ridged spurs, fading to zero at the coast so
+    // texture never changes the sign of the measured elevation.
+    const core = 1 - Math.exp(-density[i] / 2.2);
+    const texture = clamp(
+      0.95 * (core - 0.55) + (shore > 0 ? 0.8 : 0.14) * (fields.ridge[i] - 0.55) + 0.06 * fields.fine[i],
+      -1, 1,
+    );
+    // Land: the dome carries ridged mountains and a knoll per factor. Every term is positive
+    // and scales with the dome, so relief vanishes at the coast and never moves it.
+    const h = shore > 0
+      ? shore * (0.45 + 1.5 * fields.mount[i]) + 0.55 * hills[i] * cover
+        + 0.12 * shore * fields.fine[i]
+      : shore + Math.min(0.85 * Math.abs(shore), 0.9) * texture;
+    H[i] = m * h + (1 - m) * (-3.4 + 0.5 * nz);
   }
-  const image = tctx.createImageData(gw, gh);
+  const image = tc.createImageData(gw, gh);
   const data = image.data;
-  const light = [-0.55, -0.65, 0.52];
+  // Satellite-style shading: one north-west light and one colour model for all terrain.
+  // Relief exaggeration scales with resolution so the map reads the same at any zoom.
+  const light = [-0.5, -0.6, 0.62];
+  const lightLen = Math.hypot(...light);
+  const exaggerate = 3.2 * ppw / 340;
   for (let y = 0; y < gh; y++) {
     for (let x = 0; x < gw; x++) {
       const i = y * gw + x;
       const h = H[i], m = explored[i];
       const hx = H[y * gw + Math.min(gw - 1, x + 1)] - H[y * gw + Math.max(0, x - 1)];
       const hy = H[Math.min(gh - 1, y + 1) * gw + x] - H[Math.max(0, y - 1) * gw + x];
-      const z = 3.2;
-      const nx = -hx * z, ny = -hy * z, nz = 1;
-      const len = Math.hypot(nx, ny, nz);
-      const shade = clamp((nx * light[0] + ny * light[1] + nz * light[2]) / len, 0, 1);
-      const [wx, wy] = toWorld((x / gw) * canvas.width, (y / gh) * canvas.height);
-      let c;
+      const nx = -hx * exaggerate, ny = -hy * exaggerate;
+      const len = Math.hypot(nx, ny, 1);
+      const shade = clamp((nx * light[0] + ny * light[1] + light[2]) / (len * lightLen), 0, 1);
+      const slope = clamp(Math.hypot(nx, ny) / 2.5, 0, 1);
+      let r, g, b;
       if (h >= 0) {
-        c = ramp(LAND, h / 4.2);
-        const d = density[i] > 1e-4 ? dry[i] / density[i] : 0;
-        if (d > 0) c = [mix(c[0], DRY[0], d * 0.75), mix(c[1], DRY[1], d * 0.75), mix(c[2], DRY[2], d * 0.75)];
-        const relief = 0.5 + 0.75 * shade;
-        c = c.map((v) => v * relief);
-        const contour = Math.abs(((h / 0.6) % 1) - 0.5);
-        if (h > 0.3 && contour > 0.47) c = c.map((v) => v * 0.86);
-        if (h < 0.07) c = c.map((v, k) => mix(v, [92, 82, 58][k], 0.35 * (1 - h / 0.07)));
+        // Land: beach, vegetated lowland, brown upland and bare rock by height and slope.
+        let c = ramp(LAND, h / 3);
+        const dryness = density[i] > 1e-4 ? dry[i] / density[i] : 0;
+        const dryMix = 0.7 * dryness * smooth(0.05, 0.3, h);
+        const rockMix = 0.55 * slope * smooth(0.2, 1, h);
+        const relief = 0.38 + 0.82 * shade;
+        const tint = 1 + 0.06 * fields.grain[i];
+        [r, g, b] = c.map((v, k) => {
+          const dried = mix(v, DRY[k], dryMix);
+          return (mix(dried, ROCK[k], rockMix) * relief + (1 - shade) * AMBIENT[k]) * tint;
+        });
       } else {
-        c = ramp(WATER, -h / 3.6);
-        // Explored seabed keeps visible bathymetric relief; open sea stays smooth.
-        const relief = 0.82 + 0.32 * shade * m;
-        c = c.map((v) => v * relief);
-        if (h > -0.28 && m > 0.15) {
-          const foam = (1 + h / 0.28) * 0.38 * (0.75 + 0.25 * valueNoise(wx * 260, wy * 260));
-          c = c.map((v) => mix(v, 236, foam));
-        }
-        const ripple = 0.03 * fbm(wx * 60 + 3, wy * 60) ;
-        c = c.map((v) => v * (1 + ripple));
+        // Water: the floor (lit sand on explored ground, dark sediment elsewhere) attenuated
+        // per channel with depth, red first, blending into deep-ocean blue.
+        const depth = -h;
+        const floorLit = 0.45 + 0.75 * shade;
+        const swell = 1 + 0.035 * fields.swell[i];
+        const surf = h > -0.12 && m > 0.15 ? (1 + h / 0.12) * 0.5 * (0.7 + 0.3 * fields.surf[i]) : 0;
+        [r, g, b] = SEABED.map((v, k) => {
+          const t = Math.exp(-ABSORB[k] * depth);
+          const water = (mix(OOZE[k], v, m) * floorLit * t + DEEP[k] * (1 - t)) * swell;
+          return mix(water, 238, surf);
+        });
       }
-      // Fog of war: drifting cloud banks over unexplored sea, thinning toward explored water.
-      const unexplored = smooth(0.32, 0.02, m);
-      const cloud = smooth(-0.08, 0.38, fbm(wx * 4.2 + 11, wy * 4.2 - 7, 5) + 0.12 * fbm(wx * 17, wy * 17, 3));
-      const fog = unexplored * (0.08 + 0.5 * cloud);
-      c = [mix(c[0], 222, fog), mix(c[1], 228, fog), mix(c[2], 234, fog)];
       const o = i * 4;
-      data[o] = c[0]; data[o + 1] = c[1]; data[o + 2] = c[2]; data[o + 3] = 255;
+      data[o] = r; data[o + 1] = g; data[o + 2] = b; data[o + 3] = 255;
     }
   }
-  tctx.putImageData(image, 0, 0);
+  tc.putImageData(image, 0, 0);
+}
+
+function terrainKey() {
+  return `${state.runId}|${state.time}|${state.map.last_trial}|${state.map.spacing}`;
+}
+
+function visibleRect() {
+  const [x0, y0] = toWorld(0, 0);
+  const [x1, y1] = toWorld(canvas.width, canvas.height);
+  return { x0, y0, x1, y1 };
+}
+
+function drawLayer(layer) {
+  const [sx0, sy0] = toScreen(layer.rect.x0, layer.rect.y0);
+  const [sx1, sy1] = toScreen(layer.rect.x1, layer.rect.y1);
+  ctx.drawImage(layer.canvas, sx0, sy0, sx1 - sx0, sy1 - sy0);
+}
+
+function scheduleDetail() {
+  // A sharp re-render of the visible area once zooming or panning pauses.
+  clearTimeout(detailTimer);
+  if (state.view.k < 1.4) return;
+  detailTimer = setTimeout(() => {
+    const rect = visibleRect();
+    const key = `${terrainKey()}|${rect.x0.toFixed(4)},${rect.y0.toFixed(4)},${rect.x1.toFixed(4)}`;
+    if (detailLayer.key === key) return;
+    const gw = Math.min(800, Math.ceil(canvas.width / 2));
+    const gh = Math.max(1, Math.round(gw * (rect.y1 - rect.y0) / (rect.x1 - rect.x0)));
+    renderTerrain(visiblePoints(), rect, gw, gh, detailLayer.canvas);
+    detailLayer.key = key; detailLayer.rect = rect; detailLayer.base = terrainKey();
+    scheduleMap();
+  }, 180);
+}
+
+function drawTerrain(points) {
+  const key = terrainKey();
+  if (baseLayer.key !== key) {
+    const size = Math.min(900, Math.ceil(Math.min(canvas.width, canvas.height) / 1.3));
+    renderTerrain(points, BASE_RECT, size, size, baseLayer.canvas);
+    baseLayer.key = key; baseLayer.rect = BASE_RECT;
+  }
+  ctx.fillStyle = OCEAN;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  drawLayer(baseLayer);
+  if (state.view.k >= 1.4 && detailLayer.rect && detailLayer.base === key) drawLayer(detailLayer);
+  scheduleDetail();
 }
 
 function regionLabel(id) {
-  const text = state.plans?.regions?.[id] || state.map?.regions?.find((r) => r.id === id)?.hypothesis || id || "";
-  return text.length > 26 ? `${text.slice(0, 25)}…` : text;
+  const known = state.plans?.regions?.[id] || state.map?.regions?.find((r) => r.id === id) || {};
+  if (known.name) return known.name;
+  // Runs without mechanism names: the hypothesis' lead clause, when it has one, reads as a name.
+  let text = known.hypothesis || id || "";
+  const colon = text.indexOf(":");
+  if (colon > 0 && colon <= 48) text = text.slice(0, colon);
+  return text.length > 30 ? `${text.slice(0, 29)}…` : text;
 }
 
 function regionAnchors(points) {
@@ -394,26 +587,24 @@ function drawMap() {
     return;
   }
   empty.classList.add("hidden");
+  renderCensus();
   $("#map-note").textContent = state.map.note + (state.map.unplaced ? ` 另有 ${state.map.unplaced} 个未完成测量的尝试不定位。` : "");
   const points = visiblePoints();
-  renderTerrain(points);
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(terrain, 0, 0, canvas.width, canvas.height);
+  drawTerrain(points);
   const dpr = window.devicePixelRatio || 1;
   // Region labels and survey rings.
   ctx.textAlign = "center";
-  for (const a of regionAnchors(points)) {
+  const placed = [];
+  const anchors = regionAnchors(points).sort((a, b) => b.count - a.count);
+  for (const a of anchors) {
     const status = a.status?.status;
-    if (status === "probing") {
-      ctx.setLineDash([5 * dpr, 4 * dpr]);
-      ctx.strokeStyle = "rgba(190,160,240,.9)";
-      ctx.lineWidth = 1.4 * dpr;
-      ctx.beginPath(); ctx.arc(a.cx, a.cy, a.radius + 10 * dpr, 0, Math.PI * 2); ctx.stroke();
-      ctx.setLineDash([]);
-    }
     const label = regionLabel(a.id);
     ctx.font = `600 ${12 * dpr}px "Noto Serif SC", Georgia, serif`;
+    // Skip labels that would overlap a larger Region's label; hovering still names them.
+    const half = ctx.measureText(label).width / 2 + 4 * dpr;
+    const top = a.cy - a.radius - 22 * dpr, bottom = a.cy - a.radius + 10 * dpr;
+    if (placed.some((b) => a.cx - half < b[2] && a.cx + half > b[0] && top < b[3] && bottom > b[1])) continue;
+    placed.push([a.cx - half, top, a.cx + half, bottom]);
     ctx.lineWidth = 3.5 * dpr;
     ctx.strokeStyle = "rgba(10,16,22,.75)";
     ctx.fillStyle = "#f3ead2";
@@ -421,7 +612,7 @@ function drawMap() {
     ctx.strokeText(label, a.cx, y); ctx.fillText(label, a.cx, y);
     if (status) {
       ctx.font = `${10.5 * dpr}px system-ui, sans-serif`;
-      const text = `${MAP_STATUS[status]} · ${a.status.attempts} 次 · 均值 ${fmt(a.status.mean_residual_ic, 4)}`;
+      const text = `${MAP_STATUS[status]} · ${a.status.attempts} 次 · 均值 ${fmt(residualInfo(a.status), 4)}`;
       ctx.strokeText(text, a.cx, y + 13 * dpr);
       ctx.fillStyle = { land: "#bfe39b", saturated: "#e6cd98", seabed: "#9fd4f0", probing: "#d2bdf5" }[status];
       ctx.fillText(text, a.cx, y + 13 * dpr);
@@ -430,25 +621,23 @@ function drawMap() {
   // Points: admitted factors last so they stay visible.
   const latest = points.reduce((m, p) => Math.max(m, p.trial), 0);
   const order = [...points].sort((a, b) => (a.kind === "admitted") - (b.kind === "admitted"));
+  const showCandidates = state.view.k >= 2;
   for (const p of order) {
     const [x, y] = toScreen(p.x, p.y);
     if (x < -20 || y < -20 || x > canvas.width + 20 || y > canvas.height + 20) continue;
     if (p.kind === "admitted") {
-      const r = 5.5 * dpr;
-      ctx.beginPath(); ctx.moveTo(x, y - r); ctx.lineTo(x + r, y); ctx.lineTo(x, y + r); ctx.lineTo(x - r, y); ctx.closePath();
-      ctx.fillStyle = "#f2c14e"; ctx.fill(); ctx.lineWidth = 1.2 * dpr; ctx.strokeStyle = "#3b2a08"; ctx.stroke();
+      // Admitted factors: a small gold dot with a dark ring, quiet even when clustered.
+      ctx.beginPath(); ctx.arc(x, y, 3.2 * dpr, 0, Math.PI * 2);
+      ctx.fillStyle = "#f2c14e"; ctx.fill();
+      ctx.lineWidth = 1.1 * dpr; ctx.strokeStyle = "rgba(40,28,6,.85)"; ctx.stroke();
     } else if (p.kind === "initial") {
-      const r = 3.6 * dpr;
+      const r = 2.8 * dpr;
       ctx.fillStyle = "#f4f6f8"; ctx.strokeStyle = "#1d2630"; ctx.lineWidth = 1 * dpr;
       ctx.fillRect(x - r, y - r, 2 * r, 2 * r); ctx.strokeRect(x - r, y - r, 2 * r, 2 * r);
-    } else {
-      const above = (p.residual ?? -1) >= state.map.sea_level;
-      ctx.beginPath(); ctx.arc(x, y, (above ? 2.8 : 2.1) * dpr, 0, Math.PI * 2);
-      ctx.fillStyle = p.offshore ? "rgba(30,40,52,.0)" : above ? "rgba(255,255,255,.92)" : "rgba(24,36,48,.78)";
-      ctx.fill();
-      ctx.lineWidth = 1 * dpr;
-      ctx.strokeStyle = p.offshore ? "rgba(40,55,70,.85)" : above ? "rgba(30,40,30,.8)" : "rgba(220,235,245,.55)";
-      ctx.stroke();
+    } else if (showCandidates) {
+      // Other attempts live in the terrain; only zoomed in do they appear, as faint specks.
+      ctx.beginPath(); ctx.arc(x, y, 1.3 * dpr, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(235,242,248,.35)"; ctx.fill();
     }
     if (p.trial === latest && latest > 0 && state.live) {
       ctx.beginPath(); ctx.arc(x, y, 9 * dpr, 0, Math.PI * 2);
@@ -503,9 +692,10 @@ canvas.addEventListener("pointermove", (e) => {
   const hit = hitTest(e);
   state.hover = hit;
   const tip = $("#tooltip");
-  if (!hit) { tip.classList.add("hidden"); return; }
+  const region = hit ? null : hoverRegion(e);
+  if (!hit && !region) { tip.classList.add("hidden"); return; }
   const r = canvas.getBoundingClientRect();
-  tip.innerHTML = tooltipHtml(hit);
+  tip.innerHTML = hit ? tooltipHtml(hit) : regionStatusHtml(region);
   tip.style.left = `${Math.min(r.width - 350, e.clientX - r.left + 14)}px`;
   tip.style.top = `${e.clientY - r.top + 14}px`;
   tip.classList.remove("hidden");
@@ -557,12 +747,77 @@ function hitRegion(e) {
   const sx = e.offsetX * dpr, sy = e.offsetY * dpr;
   return regionAnchors(visiblePoints()).find((a) => Math.hypot(a.cx - sx, a.cy - a.radius - 8 * dpr - sy) < 60 * dpr && Math.abs(a.cy - a.radius - 8 * dpr - sy) < 14 * dpr)?.id;
 }
+function hoverRegion(e) {
+  if (!state.map?.available) return null;
+  const dpr = window.devicePixelRatio || 1;
+  const sx = e.offsetX * dpr, sy = e.offsetY * dpr;
+  const anchors = regionAnchors(visiblePoints());
+  const inside = anchors.filter((a) => Math.hypot(a.cx - sx, a.cy - sy) < a.radius + 6 * dpr)
+    .sort((a, b) => a.radius - b.radius)[0];
+  return inside?.id || hitRegion(e);
+}
 function tooltipHtml(p) {
   if (p.kind === "initial") return `<b>初始库成员</b><br>${esc(p.name || "")}`;
   return `<b>#${p.trial} ${esc(p.name || "")}</b><br>
-    ${esc(REASON_TEXT[p.reason] || p.reason)} · 区域 ${esc(p.region || "—")}<br>
+    ${esc(REASON_TEXT[p.reason] || p.reason)}<br>
     Val IC ${signed(p.val)} · 残差 ${signed(p.residual)} · 库解释 ${fmt(p.library_r2, 2)}
-    ${p.offshore ? "<br><i>外海：与全库相关性低，位置仅按机制分组</i>" : ""}`;
+    ${p.region ? `<hr>${regionStatusHtml(p.region)}` : ""}`;
+}
+
+// The full map state of one Region at the current time: its own state and every band.
+function regionStatusHtml(id) {
+  const s = regionStatus(id);
+  const head = `<b>${esc(regionLabel(id))}</b>`;
+  if (!s) return `${head}<br><span class="note">当前时刻尚无尝试</span>`;
+  const rows = Object.entries(s.by_scale || {}).map(([key, b]) => {
+    const label = SCALE_LABELS[key] || key;
+    const chip = b.status && b.attempts ? `<span class="chip ${b.status}">${MAP_STATUS[b.status]}</span>` : '<span class="note">未测</span>';
+    return `<tr><td>${label}</td><td>${chip}</td><td>${b.attempts}</td><td>${b.attempts ? signed(residualInfo(b)) : "—"}</td><td>${b.attempts ? bestOrAdmitted(b) : "—"}</td></tr>`;
+  }).join("");
+  return `${head} <span class="chip ${s.status}">${MAP_STATUS[s.status]}</span><br>
+    尝试 ${s.attempts} · 残差信息/次 ${signed(residualInfo(s))} · ${bestOrAdmitted(s)}
+    ${s.by_scale ? `<table class="scales"><tr><th>跨度</th><th>状态</th><th>尝试</th><th>残差/次</th><th>最佳/入库</th></tr>${rows}</table>` : ""}`;
+}
+
+const RULE_TEXT = {
+  v2: { land: "曾有尝试残差高于海平面", saturated: "陆地，但最近尝试都低于海平面", seabed: "试满后无尝试高于海平面", probing: "尝试次数不足" },
+  v3: { land: "该档有残差为正的入库因子；区域任一已测档为陆地", saturated: "陆地，但最近一轮尝试没有新入库", seabed: "试满后无此类入库；区域需已测各档全部关闭，未测档不计", probing: "尝试次数不足；区域有已测但未试满的档即为勘探中" },
+  v3_region: { land: "区域有残差为正的入库因子", saturated: "陆地，但最近一轮尝试没有新入库", seabed: "试满后无此类入库", probing: "尝试次数不足" },
+  v3_legacy: { land: "该档有残差为正的入库因子；区域任一档为陆地", saturated: "陆地，但最近一轮尝试没有新入库", seabed: "试满后无此类入库；区域需三档全部关闭", probing: "尝试次数不足；区域有未测完的档即为勘探中" },
+};
+
+// Census of Region and band states at the current time; hovering a chip lists its Regions.
+function renderCensus() {
+  const box = $("#map-census");
+  if (!state.map?.available) { box.innerHTML = ""; return; }
+  const rule = RULE_TEXT[state.map.rule] || RULE_TEXT.v2;
+  document.querySelectorAll(".legend [data-rule]").forEach((el) => { el.textContent = rule[el.dataset.rule]; });
+  const regions = {}, bands = {};
+  let open = 0;
+  for (const r of state.map.regions) {
+    const s = regionStatus(r.id);
+    if (!s) continue;
+    (regions[s.status] ||= []).push(regionLabel(r.id));
+    // Under the V3 rule an untested band does not keep a closed Region open.
+    const statuses = Object.values(s.by_scale || {})
+      .filter((b) => b.attempts || state.map.rule !== "v3")
+      .map((b) => (b.attempts ? b.status : "probing"));
+    for (const [key, b] of Object.entries(s.by_scale || {})) {
+      const status = b.attempts ? b.status : "untested";
+      (bands[status] ||= []).push(`${regionLabel(r.id)} · ${SCALE_LABELS[key] || key}`);
+    }
+    if ((s.status === "seabed" || s.status === "saturated") && statuses.some((x) => x === "probing" || x === "land")) open += 1;
+  }
+  const chips = (groups, labels) => Object.entries(labels).filter(([k]) => groups[k]).map(([k, label]) => {
+    const names = groups[k];
+    const title = names.slice(0, 40).join("\n") + (names.length > 40 ? `\n… 另 ${names.length - 40} 个` : "");
+    return `<span class="chip ${k}" title="${esc(title)}">${label} ${names.length}</span>`;
+  }).join(" ");
+  const total = Object.values(regions).reduce((a, l) => a + l.length, 0);
+  box.innerHTML = `<b>当前地图状态</b> <span class="note">第 ${state.time} 次 · 悬停查看名单</span><br>
+    区域 ${total}：${chips(regions, MAP_STATUS)}<br>
+    分档：${chips(bands, { ...MAP_STATUS, untested: "未测" })}
+    ${open ? `<br><span class="note" title="区域层已关闭，但仍有勘探中或陆地分档">区域已关闭但分档未关闭：${open}</span>` : ""}`;
 }
 
 // ---------------------------------------------------------------- timeline
@@ -632,9 +887,20 @@ $("#detail-body").addEventListener("click", (e) => {
   else if (link.dataset.region) showRegion(link.dataset.region);
 });
 
+// Same rows as the terminal: amount-weighted Pearson (primary, listed first) and Spearman.
+function icTable(t) {
+  const metrics = (t.feedback?.report?.metrics || []).filter((m) => m.name.includes("_weighted_"));
+  const names = [...new Set(metrics.map((m) => m.name))];
+  if (!names.length) return "";
+  const value = (name, split) => metrics.find((m) => m.name === name && m.split === split)?.value;
+  return `<table class="scales"><tr><th>√成交额加权</th><th>Train IC（原始）</th><th>Val IC（已定向）</th></tr>
+    ${names.map((name, i) => `<tr><td>${name.includes("pearson") ? "Pearson" : "Spearman"}${i ? "" : " *"}</td>
+      <td>${signed(value(name, "train"))}</td><td>${signed(value(name, "val"))}</td></tr>`).join("")}</table>
+    <div class="note">* 主指标</div>`;
+}
+
 function metricsGrid(t) {
-  return `<div class="metrics">
-    <div><b>${signed(t.val)}</b><span>Val IC（已定向）</span></div>
+  return `${icTable(t)}<div class="metrics">
     <div><b>${signed(t.residual)}</b><span>残差 IC</span></div>
     <div><b>${fmt(t.library_r2, 3)}</b><span>库解释比例 R²</span></div>
     <div><b>${fmt(t.max_abs_corr, 3)}</b><span>最大库相关</span></div>
@@ -648,15 +914,13 @@ async function showTrial(n) {
   if (point) { state.selected = point; scheduleMap(); }
   const plan = state.plans?.plans.find((p) => p.trials.some((x) => x.trial === n));
   const candidate = t.feedback.candidate || {};
-  const train = (t.feedback.report?.metrics || []).find((m) => m.split === "train");
   openDetail(`<h2>#${n} ${esc(t.name || "未命名候选")}</h2>
     <div>${t.accepted ? '<span class="chip ok">已入库</span>' : '<span class="chip no">未入库</span>'}
       ${plan ? ` <span class="link" data-plan="${plan.research_plan_index}">计划 #${plan.research_plan_index}</span> · <span class="link" data-region="${esc(plan.region_id)}">${esc(regionLabel(plan.region_id))}</span>` : ""}</div>
     <h4>表达式</h4><div class="expr">${esc(t.expression || "—")}</div>
     ${metricsGrid(t)}
     <h4>假说</h4><div>${esc(candidate.hypothesis || "—")}</div>
-    <h4>其他</h4><div class="kv"><span>Train IC</span><span>${signed(train?.value)}</span>
-      <span>生成耗时</span><span>${fmt(t.generation_seconds, 1)} 秒</span>
+    <h4>其他</h4><div class="kv"><span>生成耗时</span><span>${fmt(t.generation_seconds, 1)} 秒</span>
       <span>评估耗时</span><span>${fmt(t.elapsed_seconds, 1)} 秒</span>
       <span>失败原因</span><span>${esc(t.feedback.report?.failure_reason || "—")}</span></div>`);
 }
@@ -694,6 +958,23 @@ function showPlan(index) {
       <span>之后的活动区域</span><span>${esc(a.active_region_after)}</span></div>` : ""}`);
 }
 
+// V3 states count admitted residual per attempt and admissions; V2 states the mean and best.
+const residualInfo = (s) => s.admitted_residual_per_attempt ?? s.mean_residual_ic;
+const bestOrAdmitted = (s) => (s.admitted !== undefined ? `入库 ${s.admitted}` : signed(s.best_residual_ic));
+const SCALE_LABELS = {
+  up_to_1h: "≤1 小时", "1h_to_1d": "1 小时–1 天", over_1d: "＞1 天",
+  intraday: "日内（≤1 天）", "1d_to_20d": "1–20 天", over_20d: "＞20 天",
+};
+function scaleTable(bands) {
+  const rows = Object.entries(bands).map(([key, b]) => {
+    const label = SCALE_LABELS[key] || key;
+    const chip = b.status && b.attempts ? `<span class="chip ${b.status}">${MAP_STATUS[b.status]}</span>` : '<span class="note">未测</span>';
+    return `<tr><td>${label}</td><td>${chip}</td><td>${b.attempts}</td><td>${b.attempts ? signed(residualInfo(b)) : "—"}</td><td>${b.attempts ? bestOrAdmitted(b) : "—"}</td></tr>`;
+  }).join("");
+  return `<h4>按特征跨度分档 <small class="note">因子读取的交易时长，一天按 240 分钟</small></h4>
+    <table class="scales"><tr><th>跨度</th><th>状态</th><th>尝试</th><th>残差信息/次</th><th>最佳/入库</th></tr>${rows}</table>`;
+}
+
 function showRegion(id) {
   const region = state.map?.regions?.find((r) => r.id === id);
   const status = regionStatus(id);
@@ -701,11 +982,12 @@ function showRegion(id) {
   const timeline = region?.timeline || [];
   const w = 380, h = 90;
   const sea = state.map?.sea_level ?? 0.005;
-  const maxAbs = Math.max(sea * 2, ...timeline.map((s) => Math.abs(s.mean_residual_ic)));
-  const pts = timeline.map((s, i) => `${(i / Math.max(1, timeline.length - 1)) * w},${h / 2 - (s.mean_residual_ic / maxAbs) * (h / 2 - 4)}`).join(" ");
+  const maxAbs = Math.max(sea * 2, ...timeline.map((s) => Math.abs(residualInfo(s))));
+  const pts = timeline.map((s, i) => `${(i / Math.max(1, timeline.length - 1)) * w},${h / 2 - (residualInfo(s) / maxAbs) * (h / 2 - 4)}`).join(" ");
   openDetail(`<h2>${esc(regionLabel(id))}</h2><div class="note">${esc(id)}</div>
-    ${status ? `<span class="chip ${status.status}">${MAP_STATUS[status.status]}</span> 尝试 ${status.attempts} · 平均残差 ${signed(status.mean_residual_ic)} · 最佳 ${signed(status.best_residual_ic)}` : '<span class="note">当前时刻尚无尝试</span>'}
+    ${status ? `<span class="chip ${status.status}">${MAP_STATUS[status.status]}</span> 尝试 ${status.attempts} · 残差信息/次 ${signed(residualInfo(status))} · ${bestOrAdmitted(status)}` : '<span class="note">当前时刻尚无尝试</span>'}
     ${region?.hypothesis ? `<h4>机制假说</h4><div>${esc(region.hypothesis)}</div>` : ""}
+    ${status?.by_scale ? scaleTable(status.by_scale) : ""}
     <h4>平均残差信息的变化</h4>
     <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:${h}px"><line x1="0" x2="${w}" y1="${h / 2}" y2="${h / 2}" stroke="#2c3b4b"/>
       <polyline points="${pts}" fill="none" stroke="#e8b84a" stroke-width="2"/></svg>
@@ -772,7 +1054,7 @@ function renderMonitor() {
   const maxInfo = Math.max(1e-6, ...curve.map((c) => Math.abs(c.information)));
   lineChart($("#chart-growth"), [
     { label: `入库 ${s.admitted}`, color: "#f2c14e", points: curve.map((c) => [c.trial, c.admitted / maxAdmitted]) },
-    ...(s.residual ? [{ label: `累计残差信息 ${fmt(curve.at(-1)?.information, 3)}`, color: "#7cc1e6", points: curve.map((c) => [c.trial, c.information / maxInfo]) }] : []),
+    ...(s.residual ? [{ label: `入库因子残差 ${fmt(curve.at(-1)?.information, 3)}`, color: "#7cc1e6", points: curve.map((c) => [c.trial, c.information / maxInfo]) }] : []),
   ], { yLabel: "归一化（各自最大值为 1）" });
   if (s.residual) {
     lineChart($("#chart-residual"), [{
