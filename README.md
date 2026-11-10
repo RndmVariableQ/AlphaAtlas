@@ -117,13 +117,7 @@ uv run atlas audit-data --asset ashare
 
 依赖只向下：上层读取下层的结果，下层不感知上层。
 
-```text
-结论层  runs/<id>/report.md → experiment_overview.md → docs/records/
-实验层  runner（单次运行） · experiment（单次收尾） · incremental（多运行配对比较）
-方法层  methods/*：只负责生成候选与奖励，经 SearchSession 访问公共工具
-平台层  DSL／算子 · 评估 · 因子库准入 · 预算 · 原子 trial 与恢复
-数据层  assets/ → MarketData · configs/versions/ 冻结数据版本 · 参考因子库
-```
+[![Alpha Atlas 共享研究架构](docs/figures/architecture.svg)](docs/figures/architecture.svg)
 
 | 层 | 位置 | 权威内容 |
 | --- | --- | --- |
