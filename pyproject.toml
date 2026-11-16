@@ -16,6 +16,7 @@ dependencies = [
     "numba>=0.63,<0.66",
     "lightgbm>=4.6,<5",
     "agentscope>=2.0.4.post1,<3",
+    "scipy>=1.16,<2",
 ]
 
 [project.optional-dependencies]

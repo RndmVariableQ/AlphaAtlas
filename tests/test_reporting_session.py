@@ -207,7 +207,7 @@ def test_report_rebuild_only_reads_records_and_renders_members_and_failed_oos(
 
     monkeypatch.setattr("alpha_atlas.evaluation.EvaluationService.evaluate", forbid)
     monkeypatch.setattr("alpha_atlas.runner.ParqMarketData.load_features", forbid)
-    monkeypatch.setattr("alpha_atlas.runner.execute", forbid)
+    monkeypatch.setattr("alpha_atlas.runner.compute_factor_values", forbid)
     report = write_report(path).read_text(encoding="utf-8")
     trial_directory = "trials" if legacy_directory else "factor_trials"
     assert f"[因子评估记录]({trial_directory}/)" in report

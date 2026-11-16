@@ -105,7 +105,7 @@ class SearchSession:
             remaining_attempts=self.remaining_budget(),
             asset=spec.get("asset"),
             frequency=profile.get("frequency"),
-            target=TargetDefinition(profile["price_field"], profile["target_horizon_bars"]),
+            target=TargetDefinition.from_profile(profile),
             metric=profile["metric"],
             panel=profile.get("panel", "contract"),
         )
@@ -264,8 +264,23 @@ class SearchSession:
         """Explicit research rules only, without dates, data or internal run configuration."""
         rules = self._library._rules
         minimum = self._evaluator.profile.get("min_train_val_ic")
+        target_transform = self._evaluator.profile.get("target_transform")
         return {
             "primary_metric": self._context.metric,
+            **(
+                {
+                    "target_transform": {
+                        **target_transform,
+                        "semantics": "Winsorize and center completed forward returns within "
+                        "each signal date and gsector in the eligible scoring split. "
+                        "sector_zscore also divides by the sample standard deviation. "
+                        "Primary IC and admission use the transformed label. "
+                        "Metrics prefixed raw_return_ are diagnostics against original returns.",
+                    }
+                }
+                if target_transform is not None
+                else {}
+            ),
             "panel": self._context.panel,
             "panel_semantics": (
                 "Factor windows group by exchange and product, continuing across dominant-contract "

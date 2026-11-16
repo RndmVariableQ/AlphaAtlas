@@ -29,12 +29,14 @@ from alpha_atlas.evaluation import (
     FUTURES_METRICS,
     EvaluationService,
     apply_clipping,
-    build_targets,
+    build_scoring_targets,
+    compute_factor_values,
     metrics,
     product_weights,
+    raw_return_metrics,
     split_panel,
 )
-from alpha_atlas.expressions import compile_factor, execute
+from alpha_atlas.expressions import compile_factor
 from alpha_atlas.library import FactorLibrary
 from alpha_atlas.methods import make_method
 from alpha_atlas.methods.baselines import default_regions
@@ -126,6 +128,7 @@ def run(
     runtime=None,
     version: str | None = None,
     run_key: str | None = None,
+    target_horizon: int | None = None,
 ) -> Path:
     experiment_version = None
     if version is not None:
@@ -150,17 +153,24 @@ def run(
         profile = asset_config(root, asset)
         fold = load_fold(root, fold_id)
         rules = load_toml(root / "configs/benchmark.toml")
+    if target_horizon is not None:
+        if type(target_horizon) is not int or target_horizon < 1:
+            raise ValueError("target horizon must be a positive integer")
+        if experiment_version is not None and target_horizon != profile["target_horizon_bars"]:
+            raise ValueError("target horizon override conflicts with experiment version")
+        profile = {**profile, "target_horizon_bars": target_horizon}
     limit = attempts if attempts is not None else rules["max_attempts"]
     if limit <= 0:
         raise ValueError("attempt budget must be positive")
     universe = universe or profile["default_universe"]
     if universe not in profile["universes"]:
         raise ValueError(f"unsupported universe {universe}")
-    fields = (
-        list(field_names)
-        if experiment_version is not None
-        else list(dict.fromkeys([profile["price_field"], *(field_names or [])]))
-    )
+    if experiment_version is not None:
+        fields = list(field_names)
+    elif profile.get("target_return_field"):
+        fields = list(dict.fromkeys(field_names or ()))
+    else:
+        fields = list(dict.fromkeys([profile["price_field"], *(field_names or [])]))
     options = (
         load_toml(root / f"configs/{method_name}.toml")
         if experiment_version is None
@@ -244,6 +254,8 @@ def run(
         spec["method_config"] = method.configuration
     if experiment_version is not None:
         spec["experiment_version"] = experiment_version
+    elif target_horizon is not None:
+        spec["target_horizon_override"] = target_horizon
     with run_lock(directory), tracked_run(directory, spec) as progress:
         progress.status("running")
         progress.stage = "load_data"
@@ -684,6 +696,11 @@ def run_model(root: Path, directory: Path, *, test: bool = False) -> dict:
             "config": config,
             "fold": spec["fold"],
             "primary_metric": profile["metric"],
+            **(
+                {"target_transform": profile["target_transform"]}
+                if profile.get("target_transform") is not None
+                else {}
+            ),
             "versions": {name: version(name) for name in ("numpy", "polars", "lightgbm")},
         }
         if fitted is not None and fitted["spec"] != model_spec:
@@ -862,6 +879,8 @@ def check_config(root, spec):
     if json.loads(json.dumps(asdict(fold), default=str)) != spec["fold"]:
         raise ValueError("fold configuration changed after search")
     profile = asset_config(root, spec["asset"])
+    if "target_horizon_override" in spec:
+        profile["target_horizon_bars"] = spec["target_horizon_override"]
     if json.loads(json.dumps(profile, default=str)) != spec["profile"]:
         raise ValueError("asset configuration changed after search")
     if load_toml(root / "configs/benchmark.toml") != spec["rules"]:
@@ -922,9 +941,10 @@ def _frozen_scores(spec, item, panel):
 
 def _frozen_factor_result(spec, item, panel, weights):
     coverage = panel["value"].is_finite().fill_null(False).mean() if panel.height else None
-    measured = metrics(
-        _frozen_scores(spec, item, panel), spec["profile"]["metric"], "test", weights=weights
-    )
+    scored = _frozen_scores(spec, item, panel)
+    metric_name = spec["profile"]["metric"]
+    measured = metrics(scored, metric_name, "test", weights=weights)
+    measured += raw_return_metrics(scored, metric_name, "test", weights=weights)
     return {
         "expression_id": item["compiled"]["factor_id"],
         "status": "success",
@@ -982,7 +1002,7 @@ def _test_frozen(root: Path, directory: Path) -> dict:
             raise ValueError("cached OOS report fingerprint mismatch")
         terminal_progress("OOS 缓存命中", 成员=len(cached["results"]), 报告=directory / "report.md")
         return cached
-    targets = build_targets(features, profile["price_field"], profile["target_horizon_bars"])
+    targets = build_scoring_targets(features, profile, fold.test)
     weights = product_weights(features, fold.test) if profile["metric"] in FUTURES_METRICS else None
     results = []
     for index, item in enumerate(frozen["factors"], 1):
@@ -999,12 +1019,8 @@ def _test_frozen(root: Path, directory: Path) -> dict:
             )
             if compiled.factor_id != item["compiled"]["factor_id"]:
                 raise ValueError("frozen operator dependency identity mismatch")
-            values = execute(
-                compiled,
-                features,
-                set(spec["fields"]),
-                registry,
-                panel=profile.get("panel", "contract"),
+            values = compute_factor_values(
+                compiled, features, set(spec["fields"]), registry, profile
             )
             panel = features.join(targets, on="row_id", validate="1:1").join(
                 values, on="row_id", validate="1:1"

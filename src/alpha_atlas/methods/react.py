@@ -115,9 +115,9 @@ DSL_GUIDE = """### 5.1 Syntax and numerical conventions
 - **Cross-sectional operators:** use eligible finite inputs at the same timestamp.
   `CS_SCALE` divides by the sum of absolute values.
 - **Missing values:** unknown conditions stay unknown. Filling an expression does not change
-  market eligibility or target validity. Targets stay within their actual contract and
-  continuity segment. Factor windows follow the configured panel; product-panel futures windows
-  continue across dominant-contract changes and reset at known product gaps or invalid bars.
+  market eligibility or target validity. Targets stay within one instrument and follow the
+  continuity rule in `target.boundary`. Factor windows follow the configured panel; product-panel
+  futures windows continue across dominant-contract changes and reset at known gaps or invalid bars.
   Windows using a later-maturity contract also reset when that leg changes actual contract.
 """
 
@@ -132,10 +132,13 @@ PROPERTY_MEANINGS = {
         "How the configured panel groups factor windows and continuity; auxiliary-leg windows "
         "reset on that leg's contract change."
     ),
-    "target.price_field": "Price input used by the platform to calculate forward returns.",
+    "target.price_field": "Input column used by the platform to calculate forward returns.",
     "target.horizon_bars": "Forward return horizon in native bars, not wall-clock time.",
-    "target.return_type": "Return definition; log_return means ln(future price / current price).",
-    "target.boundary": "The target's start and end must share an instrument and continuity segment.",
+    "target.return_type": (
+        "log_return uses ln(future price / current price). compounded_return uses the product of "
+        "one plus each future session's return, minus one."
+    ),
+    "target.boundary": "Required continuity of the forward return window for the same instrument.",
     "metric": "Primary score used to choose direction and judge factor quality; see scoring rules.",
     "initial_library.members": "Number of pre-existing baseline members in the run library.",
     "prepared_fields.description": "Definition of this published input feature.",

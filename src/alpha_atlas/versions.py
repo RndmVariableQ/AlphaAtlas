@@ -34,7 +34,10 @@ def load_version(root, name):
         raise ValueError("version universe/profile mismatch")
     if not value["fields"] or len(set(value["fields"])) != len(value["fields"]):
         raise ValueError("version requires distinct feature fields")
-    if value["profile"]["price_field"] not in value["fields"]:
+    if target_return := value["profile"].get("target_return_field"):
+        if target_return in value["fields"]:
+            raise ValueError("version target return field cannot be a feature")
+    elif value["profile"]["price_field"] not in value["fields"]:
         raise ValueError("version must include its target price field")
     for source in value["data"]["sources"].values():
         path = root / source["path"]

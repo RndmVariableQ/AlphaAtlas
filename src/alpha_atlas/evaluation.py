@@ -24,10 +24,37 @@ from alpha_atlas.contracts import (
     Fold,
     Metric,
     fingerprint,
+    validate_target_transform,
 )
 from alpha_atlas.expressions import GROUP, compile_factor, execute
+from alpha_atlas.factor.metrics import compute_forward_returns
 from alpha_atlas.operators import OperatorRegistry
 from alpha_atlas.storage import ArrowCache
+
+
+def compute_factor_values(compiled, features, fields, registry, profile) -> pl.DataFrame:
+    values = execute(compiled, features, fields, registry, panel=profile.get("panel", "contract"))
+    options = profile.get("factor_transform")
+    if options is None:
+        return values
+
+    from alpha_atlas.factor.transform import transform_factor
+
+    groups = options["groupby"]
+    metadata = features.select("row_id", "trading_day", "eligible", *groups)
+    inputs = values.join(
+        metadata, on="row_id", how="left", validate="1:1", maintain_order="left"
+    ).with_columns(pl.when(pl.col("eligible")).then(pl.col("value")).alias("value"))
+    return transform_factor(
+        inputs,
+        "value",
+        "value",
+        date_col="trading_day",
+        asset_col="row_id",
+        groupby=groups,
+        method=options["method"],
+        winsor_limits=tuple(options["winsor_limits"]),
+    ).select("row_id", "value")
 
 
 def build_targets(frame: pl.DataFrame, price: str, horizon: int) -> pl.DataFrame:
@@ -50,12 +77,74 @@ def build_targets(frame: pl.DataFrame, price: str, horizon: int) -> pl.DataFrame
     )
 
 
+def build_profile_targets(frame: pl.DataFrame, profile: dict) -> pl.DataFrame:
+    horizon = profile["target_horizon_bars"]
+    if not (return_field := profile.get("target_return_field")):
+        return build_targets(frame, profile["price_field"], horizon)
+
+    returns = compute_forward_returns(
+        frame.select("row_id", "trading_day", *GROUP, return_field),
+        [horizon],
+        return_col=return_field,
+        date_col="trading_day",
+        asset_col=GROUP,
+    )
+    target = pl.col(f"forward_return_{horizon}")
+    return returns.select(
+        "row_id",
+        target.alias("target"),
+        pl.when(target.is_finite())
+        .then(pl.col("trading_day").shift(-horizon).over(GROUP))
+        .alias("target_end"),
+    )
+
+
 def split_panel(frame: pl.DataFrame, period: DateRange) -> pl.DataFrame:
     return frame.filter(
         pl.col("eligible").fill_null(False)
         & pl.col("trading_day").is_between(period.start, period.end)
         & pl.col("target_end").is_between(period.start, period.end)
         & pl.col("target").is_finite().fill_null(False)
+    )
+
+
+def build_scoring_targets(
+    features: pl.DataFrame, profile: dict, *periods: DateRange
+) -> pl.DataFrame:
+    """Apply the target transform to completed returns in eligible signal-date cohorts."""
+    transform = profile.get("target_transform")
+    if transform is None:
+        return build_profile_targets(features, profile)
+    validate_target_transform(transform)
+    if not periods or "gsector" not in features.columns:
+        raise ValueError("target_transform requires scoring splits and signal-date gsector")
+
+    from alpha_atlas.factor.transform import transform_factor
+
+    targets = build_profile_targets(features, profile)
+    sector = pl.col("gsector")
+    known_sector = (
+        sector.is_finite() if features.schema["gsector"].is_float() else sector.is_not_null()
+    )
+    panel = features.select("row_id", "trading_day", "eligible", "gsector").filter(known_sector)
+    panel = panel.join(targets, on="row_id", validate="1:1")
+    sample = pl.concat([split_panel(panel, period) for period in periods])
+    relative = transform_factor(
+        sample,
+        "target",
+        "target",
+        date_col="trading_day",
+        asset_col="row_id",
+        groupby=["gsector"],
+        method="demean" if transform["method"] == "sector_demean" else "std",
+        winsor_limits=tuple(transform["clip_quantiles"]),
+    )
+    return targets.rename({"target": "target_raw"}).join(
+        relative.select("row_id", "target"),
+        on="row_id",
+        how="left",
+        validate="1:1",
+        maintain_order="left",
     )
 
 
@@ -179,6 +268,18 @@ def metrics(
                 Metric(label, split, value, int(observed["n"].sum()), label, observed.height)
             )
     return tuple(output)
+
+
+def raw_return_metrics(frame, name, split, *, weights=None) -> tuple[Metric, ...]:
+    """Benchmark the same scores on the eligible sample using untransformed returns."""
+    if "target_raw" not in frame.columns:
+        return ()
+    raw = frame.filter(pl.col("target").is_finite()).with_columns(
+        pl.col("target_raw").alias("target")
+    )
+    return tuple(
+        replace(m, name=f"raw_return_{m.name}") for m in metrics(raw, name, split, weights=weights)
+    )
 
 
 def metric(frame: pl.DataFrame, name: str, split: str, *, correlation=None, weights=None) -> Metric:
@@ -806,9 +907,7 @@ class EvaluationService:
         )
         self.registry = registry or OperatorRegistry()
         self.compile_options = dict(compile_options or {})
-        self.targets = build_targets(
-            features, profile["price_field"], profile["target_horizon_bars"]
-        )
+        self.targets = build_scoring_targets(features, profile, fold.train, fold.val)
         target_panel = features.select("row_id", "trading_day", "eligible").join(
             self.targets, on="row_id", validate="1:1"
         )
@@ -874,7 +973,7 @@ class EvaluationService:
             raise ValueError("training statistic factor identity mismatch")
         # Rebuild only requested missing values, using the existing MarketData panel.
         features = self.features.filter(pl.col("trading_day") <= self.fold.train.end)
-        values = execute(compiled, features, self.fields, self.registry, panel=self.panel)
+        values = compute_factor_values(compiled, features, self.fields, self.registry, self.profile)
         panel = features.join(self.targets, on="row_id", validate="1:1").join(
             values, on="row_id", validate="1:1"
         )
@@ -1035,7 +1134,9 @@ class EvaluationService:
             elapsed = time.perf_counter() - started
             return replace(report, cache_hit=True, elapsed_seconds=elapsed), observation
         try:
-            values = execute(compiled, self.features, self.fields, self.registry, panel=self.panel)
+            values = compute_factor_values(
+                compiled, self.features, self.fields, self.registry, self.profile
+            )
             keys = ["row_id", "trading_day", "exchange", "instrument_id", "eligible"]
             if self.diagnostics:
                 segment = "product_segment_id" if self.panel == "product" else "segment_id"
@@ -1061,10 +1162,14 @@ class EvaluationService:
                 self._remember_training(compiled.factor_id, train)
             train_metrics = metrics(
                 train, self.profile["metric"], "train", weights=self.weights.get("train")
+            ) + raw_return_metrics(
+                train, self.profile["metric"], "train", weights=self.weights.get("train")
             )
             train_ic = train_metrics[0]
             direction = None if train_ic.value is None else -1 if train_ic.value < 0 else 1
             raw_metrics = metrics(
+                valid, self.profile["metric"], "val_raw", weights=self.weights.get("val")
+            ) + raw_return_metrics(
                 valid, self.profile["metric"], "val_raw", weights=self.weights.get("val")
             )
             directed_metrics = tuple(

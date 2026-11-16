@@ -58,6 +58,13 @@ def write_report(directory: Path) -> Path:
         max((t["cumulative_seconds"] for t in trials), default=0),
     )
     fold, profile, warmup = spec["fold"], spec["profile"], spec.get("warmup", {})
+    horizon = profile["target_horizon_bars"]
+    target_return = profile.get("target_return_field")
+    target = (
+        f"{target_return}，未来 {horizon} 个交易日复合收益"
+        if target_return
+        else f"{profile['price_field']}，未来 {horizon} Bar 对数收益"
+    )
     lines = [f"# 运行报告：{_cell(spec['run_id'])}", ""]
     lines += _table(
         ["项目", "记录"],
@@ -91,9 +98,11 @@ def write_report(directory: Path) -> Path:
                 "窗口规则",
                 "以该运行版本的 DSL 规则为准；预热日期仅用于数据加载",
             ),
-            (
-                "目标",
-                f"{profile['price_field']}，未来 {profile['target_horizon_bars']} Bar 对数收益",
+            ("目标", target),
+            *(
+                [("目标变换", profile["target_transform"])]
+                if profile.get("target_transform") is not None
+                else []
             ),
             ("主指标", profile["metric"]),
             *(
@@ -743,11 +752,12 @@ def write_model_report(directory: Path, fitted: dict, tested: dict | None = None
     spec = fitted["spec"]
     preprocessing = fitted["fitted"]["preprocessing"]
     clipping = preprocessing.get("clip_quantiles")
+    target_transform = spec.get("target_transform")
     preprocessing_note = (
         f"特征与训练标签按拟合区间全局 P{clipping[0] * 100:g}–"
-        f"P{clipping[1] * 100:g} 裁剪；特征以裁剪后的均值和标准差处理，test 标签保持原值。"
+        f"P{clipping[1] * 100:g} 裁剪。特征以裁剪后的均值和标准差处理。"
         if clipping is not None
-        else "特征与标签使用原值；特征按拟合区间均值和标准差处理。"
+        else "模型预处理不额外裁剪。特征按拟合区间均值和标准差处理。"
     )
     centering_note = (
         "Linear 对特征和标签按品种在整个拟合区间去均值，并冻结预测偏移；"
@@ -776,6 +786,14 @@ def write_model_report(directory: Path, fitted: dict, tested: dict | None = None
         "",
         "缺失值按训练均值填补；训练常量／全缺失列移除；所有有效因子均缺失的行不预测。",
         preprocessing_note,
+        *(
+            [
+                f"目标变换为 `{target_transform['method']}`，分组为信号日 × gsector。"
+                "主 IC 使用变换后的标签，`raw_return_` IC 使用同一预测和未变换的收益。"
+            ]
+            if target_transform is not None
+            else []
+        ),
         centering_note,
         "训练目标按样本等权拟合，指标聚合沿用资产主指标；两者权重口径不同。",
         "",

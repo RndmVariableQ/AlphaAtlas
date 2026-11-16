@@ -40,7 +40,7 @@ uv run atlas data-status
 
 数据保存在 `data/`，不随 Git 分发。当前支持 RiceQuant 原生 A 股日线和期货 5 分钟数据：
 A 股使用历史逐日股票池；期货使用真实合约，标签不跨合约或连续段，因子窗口按资产 profile 设置。
-美股演示材料为合成数据，正式资产适配和 PIT 尚未验证。数据口径与限制见[研究协议](docs/research_protocol.md)。
+美股支持导入本地 CRSP/Compustat 日线快照。数据口径与限制见[研究协议](docs/research_protocol.md)。
 
 如需自行采集数据，先安装 `uv sync --extra ricequant`，再显式执行对应命令，凭据文件放在仓库外：
 
@@ -53,6 +53,21 @@ uv run atlas audit-data --asset futures
 A 股审计将资产名换成 `ashare`。采集与审计结果见数据目录的 `manifest.json` 和 `audit.json`；
 正式运行默认要求数据完整。历史版本固定数据快照，必须准备版本指定的原快照，普通采集不会
 自动重建历史 Kernel 快照。LLM 方法还需要对应的模型服务配置。
+
+### 美股本地数据
+
+从仓库根目录运行以下命令。参数指向包含 `part-YYYY-MM.parquet` 文件的 `atlas_data` 目录。
+省略该参数时使用当前目录下的 `atlas_data`。
+
+```bash
+uv run python scripts/import_us_equity.py /path/to/atlas_data
+uv run atlas audit-data --asset us_equity
+uv run atlas run --asset us_equity --fold us_equity --target-horizon 21 --method random --attempts 10 --search-only
+```
+
+导入保留源文件并写入 `data/us_equity`。`us_equity` fold 使用 2009 年预热、2010–2020 年训练、
+2021–2022 年验证、2023–2025 年测试。因子使用行情和基本面字段。标签复合未来交易日的 CRSP
+`total_return`，`--target-horizon` 默认使用资产配置中的 21 个交易日。审计报告包含各列的空值与非有限值计数。
 
 ## 统一实验入口
 

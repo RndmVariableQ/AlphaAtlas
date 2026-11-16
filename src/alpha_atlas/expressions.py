@@ -27,6 +27,10 @@ STRUCTURAL = {
     "product_segment_id",
     "snapshot_id",
     "bar_interval_minutes",
+    "gsector",
+    "ggroup",
+    "gind",
+    "gsubind",
 }
 STRUCTURAL.update(
     f"{name}_p{leg}"

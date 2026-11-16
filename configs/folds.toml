@@ -13,3 +13,9 @@ train = [2019-01-01, 2021-12-31]
 val = [2022-01-01, 2023-12-31]
 test = [2024-01-01, 2025-12-31]
 note = "Folds are independent, not a sequential live backtest."
+
+[[folds]]
+id = "us_equity"
+train = [2010-01-01, 2020-12-31]
+val = [2021-01-01, 2022-12-31]
+test = [2023-01-01, 2025-12-31]

@@ -1,0 +1,17 @@
+asset_id = "us_equity"
+frequency = "1d"
+provider = "crsp_compustat"
+data_dir = "data/us_equity"
+default_universe = "all"
+universes = ["all"]
+timezone = "America/New_York"
+bar_time_label = "end"
+target_return_field = "total_return"
+target_horizon_bars = 21
+metric = "cross_sectional_spearman"
+fundamentals = true
+
+[factor_transform]
+groupby = ["gsector"]
+method = "std"
+winsor_limits = [0.01, 0.99]

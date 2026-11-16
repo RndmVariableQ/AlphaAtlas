@@ -9,6 +9,7 @@ __pycache__/
 /tmp/
 .env
 /logs/
+/atlas_data/
 data/**
 !data/.gitkeep
 artifacts/**
@@ -16,3 +17,5 @@ artifacts/**
 *.duckdb
 *.duckdb.wal
 *.log
+
+/.idea/

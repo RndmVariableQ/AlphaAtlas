@@ -132,6 +132,7 @@ dependencies = [
     { name = "polars" },
     { name = "pyarrow" },
     { name = "python-dotenv" },
+    { name = "scipy" },
 ]
 
 [package.optional-dependencies]
@@ -158,6 +159,7 @@ requires-dist = [
     { name = "pyarrow", specifier = ">=19" },
     { name = "python-dotenv", specifier = ">=1" },
     { name = "rqdatac", marker = "extra == 'ricequant'", specifier = "==3.6.3" },
+    { name = "scipy", specifier = ">=1.16,<2" },
 ]
 provides-extras = ["ricequant"]
 

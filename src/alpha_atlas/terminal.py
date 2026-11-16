@@ -491,6 +491,8 @@ def terminal_oos(report, directory):
 
 
 def metric_label(name):
+    if name.startswith("raw_return_"):
+        return f"原始收益 {metric_label(name.removeprefix('raw_return_'))}"
     if "_weighted_" in name or name.endswith("sqrt_amount"):
         return "√成交额加权"
     if "_equal_" in name or name.endswith("equal_product"):

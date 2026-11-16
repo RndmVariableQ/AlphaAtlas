@@ -11,6 +11,7 @@ import duckdb
 import polars as pl
 
 from alpha_atlas.assets.common import KEYS
+from alpha_atlas.assets.us_equity import US_EQUITY_NON_FACTOR_FIELDS
 from alpha_atlas.expressions import STRUCTURAL
 
 
@@ -19,6 +20,7 @@ class ParqMarketData:
         self.directory = directory
         self.universe = universe
         self.manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+        self._us_equity = self.manifest.get("asset_id") == "us_equity"
         if self.manifest["status"] != "complete" and not allow_incomplete:
             raise ValueError("dataset is incomplete; inspect manifest before formal experiments")
         self._db = duckdb.connect(":memory:")
@@ -43,6 +45,8 @@ class ParqMarketData:
             "vwap_clamped_bars",
             "vwap_no_trade_bars",
         }
+        if self._us_equity:
+            metadata.update(US_EQUITY_NON_FACTOR_FIELDS)
         schema = self._db.execute("SELECT * FROM bars LIMIT 0").pl().schema
         return tuple(
             name
@@ -60,7 +64,8 @@ class ParqMarketData:
             if path.exists():
                 with path.open("rb") as stream:
                     metadata.append((name, hashlib.file_digest(stream, "sha256").hexdigest()))
-        payload = json.dumps(["market-quality-v2", self.manifest["snapshot_id"], parts, metadata])
+        quality_version = "us-equity-market-quality-v3" if self._us_equity else "market-quality-v2"
+        payload = json.dumps([quality_version, self.manifest["snapshot_id"], parts, metadata])
         return hashlib.sha256(payload.encode()).hexdigest()
 
     def load_features(
@@ -68,10 +73,20 @@ class ParqMarketData:
     ) -> pl.DataFrame:
         if any(f.startswith(("label", "target")) for f in fields):
             raise ValueError("targets are not feature fields")
+        if self._us_equity and (
+            excluded := (US_EQUITY_NON_FACTOR_FIELDS | STRUCTURAL).intersection(fields)
+        ):
+            raise ValueError(
+                f"US equity factor fields exclude metadata and daily returns: {sorted(excluded)}"
+            )
         missing = set(fields) - self.columns
         if missing:
             raise ValueError(f"unsupported fields: {sorted(missing)}")
-        extra = ["product"] if "product" in self.columns else []
+        extra = [name for name in ("product", "gsector") if name in self.columns]
+        if self._us_equity:
+            if "total_return" not in self.columns:
+                raise ValueError("US equity data requires total_return for forward targets")
+            extra.append("total_return")
         flags = [f"in_{self.universe}"] if self.universe != "all" else []
         trading_flags = [c for c in ["is_st", "is_suspended"] if c in self.columns]
         quality_fields = [c for c in ["open", "high", "low", "close"] if c in self.columns]
@@ -118,18 +133,29 @@ class ParqMarketData:
             eligible = eligible & (~pl.col(flag).cast(pl.Boolean).fill_null(True))
         valid_bar = pl.lit(True)
         if len(quality_fields) == 4:
-            opening, high, low, closing = quality_fields
+            prices = [pl.col(name) for name in quality_fields]
+            if self._us_equity:
+                prices = [pl.when(price.is_finite()).then(price) for price in prices]
+            opening, high, low, closing = prices
+            consistent = (high >= pl.max_horizontal(opening, closing, low)) & (
+                low <= pl.min_horizontal(opening, closing, high)
+            )
             valid_bar = (
-                pl.all_horizontal(pl.col(quality_fields).is_finite())
-                & (pl.col(high) >= pl.max_horizontal(opening, closing, low))
-                & (pl.col(low) <= pl.min_horizontal(opening, closing, high))
-            ).fill_null(False)
+                consistent.fill_null(True)
+                if self._us_equity
+                else (pl.all_horizontal(pl.col(quality_fields).is_finite()) & consistent).fill_null(
+                    False
+                )
+            )
         result = result.with_columns(valid_bar.alias("valid_bar"))
         result = result.with_columns((eligible & pl.col("valid_bar")).alias("eligible"))
+        if self._us_equity:
+            result = result.drop([name for name in quality_fields if name not in fields])
+        masked_fields = fields if self._us_equity else fields + quality_fields
         result = result.with_columns(
             [
                 pl.when(pl.col("valid_bar")).then(pl.col(name)).otherwise(None).alias(name)
-                for name in set(fields + quality_fields)
+                for name in set(masked_fields)
             ]
         )
         result = self._continuity(result, end)

@@ -39,7 +39,7 @@ def _main() -> None:
         help="Named frozen experiment configuration under configs/versions",
     )
     run.add_argument("--asset")
-    run.add_argument("--fold", choices=["fold1", "fold2"])
+    run.add_argument("--fold", choices=["fold1", "fold2", "us_equity"])
     run.add_argument(
         "--method",
         choices=[
@@ -62,6 +62,7 @@ def _main() -> None:
     )
     run.add_argument("--seed", type=int, default=42)
     run.add_argument("--attempts", type=int)
+    run.add_argument("--target-horizon", type=int, help="Forward horizon in native trading bars")
     run.add_argument("--universe")
     run.add_argument(
         "--fields",
@@ -144,9 +145,10 @@ def _main() -> None:
     elif args.command == "config":
         from dataclasses import asdict
 
-        from alpha_atlas.config import load_fold
+        from alpha_atlas.config import load_fold, load_toml
 
-        result = {name: asdict(load_fold(root, name)) for name in ["fold1", "fold2"]}
+        fold_ids = [item["id"] for item in load_toml(root / "configs/folds.toml")["folds"]]
+        result = {name: asdict(load_fold(root, name)) for name in fold_ids}
     elif args.command == "data-status":
         result = {}
         configured = sorted(path.stem for path in (root / "configs/assets").glob("*.toml"))
@@ -200,6 +202,7 @@ def _main() -> None:
             args.allow_incomplete,
             args.fields.split(",") if args.fields else None,
             version=args.version,
+            target_horizon=args.target_horizon,
         )
         result = {"run_dir": str(path)}
         if not args.search_only:

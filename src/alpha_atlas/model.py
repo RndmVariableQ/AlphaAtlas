@@ -10,13 +10,16 @@ import polars as pl
 from alpha_atlas.contracts import Expression
 from alpha_atlas.evaluation import (
     FUTURES_METRICS,
-    build_targets,
+    build_scoring_targets,
+    compute_factor_values,
     metrics,
     product_weights,
+    raw_return_metrics,
     split_panel,
 )
-from alpha_atlas.expressions import compile_factor, execute
+from alpha_atlas.expressions import compile_factor
 from alpha_atlas.terminal import terminal_progress
+from alpha_atlas.versions import fold_from_version
 
 
 def validate_config(config):
@@ -89,7 +92,11 @@ def factor_panel(features, frozen, spec, registry):
     metadata = ["row_id", "trading_day", "eligible"]
     if profile["metric"] in FUTURES_METRICS:
         metadata.append("product")
-    targets = build_targets(features, profile["price_field"], profile["target_horizon_bars"])
+    periods = ()
+    if profile.get("target_transform") is not None:
+        fold = fold_from_version(spec)
+        periods = (fold.train, fold.val, fold.test)
+    targets = build_scoring_targets(features, profile, *periods)
     panel = features.select(metadata).join(targets, on="row_id", validate="1:1")
     identities = []
     for index, item in enumerate(frozen["factors"]):
@@ -108,9 +115,9 @@ def factor_panel(features, frozen, spec, registry):
         if compiled.factor_id in identities or item["report"]["direction"] not in {-1, 1}:
             raise ValueError("invalid frozen factor identity or direction")
         identities.append(compiled.factor_id)
-        values = execute(
-            compiled, features, fields, registry, panel=profile.get("panel", "contract")
-        ).select("row_id", (pl.col("value") * item["report"]["direction"]).alias(f"factor_{index}"))
+        values = compute_factor_values(compiled, features, fields, registry, profile).select(
+            "row_id", (pl.col("value") * item["report"]["direction"]).alias(f"factor_{index}")
+        )
         panel = panel.join(values, on="row_id", how="left", validate="1:1")
     return panel, identities
 
@@ -268,12 +275,9 @@ def evaluate_models(panel, fitted, profile, features, period, split, config):
             )
             if not np.isfinite(predictions[valid]).all():
                 raise ValueError(f"{name} returned nonfinite predictions")
-        measured = metrics(
-            scored.with_columns(pl.Series("value", predictions)),
-            profile["metric"],
-            split,
-            weights=weights,
-        )
+        prediction_panel = scored.with_columns(pl.Series("value", predictions))
+        measured = metrics(prediction_panel, profile["metric"], split, weights=weights)
+        measured += raw_return_metrics(prediction_panel, profile["metric"], split, weights=weights)
         reports[name] = {
             "metrics": [asdict(m) for m in measured],
             "eligible_rows": scored.height,

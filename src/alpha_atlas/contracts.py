@@ -21,6 +21,27 @@ class DateRange:
             raise ValueError("start must not exceed end")
 
 
+def validate_target_transform(transform: dict | None) -> None:
+    if transform is None:
+        return
+    if (
+        not isinstance(transform, dict)
+        or set(transform) != {"method", "clip_quantiles"}
+        or transform["method"] not in ("sector_demean", "sector_zscore")
+    ):
+        raise ValueError(
+            "target_transform requires sector_demean or sector_zscore and clip_quantiles"
+        )
+    quantiles = transform["clip_quantiles"]
+    if (
+        not isinstance(quantiles, (list, tuple))
+        or len(quantiles) != 2
+        or any(type(q) not in {int, float} for q in quantiles)
+        or not 0 <= quantiles[0] < quantiles[1] <= 1
+    ):
+        raise ValueError("target_transform.clip_quantiles must satisfy 0 <= lower < upper <= 1")
+
+
 @dataclass(frozen=True)
 class AssetProfile:
     """Common asset capabilities; provider-specific options remain in adapter configuration."""
@@ -31,18 +52,23 @@ class AssetProfile:
     default_universe: str
     universes: tuple[str, ...]
     timezone: str
-    price_field: str
+    price_field: str | None
     target_horizon_bars: int
     metric: str
     panel: str = "contract"
+    target_return_field: str | None = None
 
     @classmethod
     def from_mapping(cls, value: dict) -> AssetProfile:
+        validate_target_transform(value.get("target_transform"))
         names = cls.__dataclass_fields__
         fields = {name: value[name] for name in names if name in value}
         fields.setdefault("panel", "contract")
+        fields.setdefault("price_field", None)
         fields["universes"] = tuple(fields["universes"])
         result = cls(**fields)
+        if not (result.price_field or result.target_return_field):
+            raise ValueError("asset profile requires a target price or return field")
         if (
             result.default_universe not in result.universes
             or result.target_horizon_bars < 1
@@ -201,6 +227,18 @@ class TargetDefinition:
     horizon_bars: int
     return_type: str = "log_return"
     boundary: str = "same_instrument_and_continuity_segment"
+
+    @classmethod
+    def from_profile(cls, profile: dict) -> TargetDefinition:
+        horizon = profile["target_horizon_bars"]
+        if return_field := profile.get("target_return_field"):
+            return cls(
+                return_field,
+                horizon,
+                return_type="compounded_return",
+                boundary="same_instrument_and_consecutive_trading_days",
+            )
+        return cls(profile["price_field"], horizon)
 
 
 @dataclass(frozen=True)
