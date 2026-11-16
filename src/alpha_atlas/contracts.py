@@ -26,13 +26,15 @@ def validate_target_transform(transform: dict | None) -> None:
         return
     if (
         not isinstance(transform, dict)
-        or set(transform) != {"method", "clip_quantiles"}
-        or transform["method"] not in ("sector_demean", "sector_zscore")
+        or set(transform) - {"method", "clip_quantiles"}
+        or transform.get("method") not in ("sector_demean", "sector_demedian", "sector_zscore")
     ):
         raise ValueError(
-            "target_transform requires sector_demean or sector_zscore and clip_quantiles"
+            "target_transform requires sector_demean, sector_demedian or sector_zscore"
         )
-    quantiles = transform["clip_quantiles"]
+    quantiles = transform.get("clip_quantiles")
+    if quantiles is None:
+        return
     if (
         not isinstance(quantiles, (list, tuple))
         or len(quantiles) != 2
@@ -61,6 +63,13 @@ class AssetProfile:
     @classmethod
     def from_mapping(cls, value: dict) -> AssetProfile:
         validate_target_transform(value.get("target_transform"))
+        groups = value.get("transform_groupby", [])
+        if (
+            not isinstance(groups, list)
+            or any(not isinstance(name, str) or not name for name in groups)
+            or len(set(groups)) != len(groups)
+        ):
+            raise ValueError("transform_groupby must be a list of distinct column names")
         names = cls.__dataclass_fields__
         fields = {name: value[name] for name in names if name in value}
         fields.setdefault("panel", "contract")

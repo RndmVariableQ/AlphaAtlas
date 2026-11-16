@@ -82,7 +82,11 @@ class ParqMarketData:
         missing = set(fields) - self.columns
         if missing:
             raise ValueError(f"unsupported fields: {sorted(missing)}")
-        extra = [name for name in ("product", "gsector") if name in self.columns]
+        extra = [
+            name
+            for name in ("product", "gsector", "ggroup", "gind", "gsubind")
+            if name in self.columns
+        ]
         if self._us_equity:
             if "total_return" not in self.columns:
                 raise ValueError("US equity data requires total_return for forward targets")

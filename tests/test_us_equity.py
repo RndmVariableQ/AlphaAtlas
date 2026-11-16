@@ -171,6 +171,7 @@ def test_import_then_search_and_score_us_equity(tmp_path, requested_horizon):
         features = market.load_features(fields=["at", "open"], end=date(2009, 1, 1))
         first = features.row(0, named=True)
         assert first["instrument_id"] == "1000" and first["gsector"] == 10
+        assert first["ggroup"] == 1000
         assert first["timestamp"] == datetime(2009, 1, 1, 21, tzinfo=UTC)
         assert "close" not in features.columns
         assert first["open"] == 25.0

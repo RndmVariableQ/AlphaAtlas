@@ -16,12 +16,12 @@
     "target_return_field": "total_return",
     "target_horizon_bars": 21,
     "metric": "cross_sectional_spearman",
+    "transform_groupby": [
+      "gsector"
+    ],
     "factor_transform": {
-      "groupby": [
-        "gsector"
-      ],
-      "method": "std",
-      "winsor_limits": [
+      "method": "z_score",
+      "clip_quantiles": [
         0.01,
         0.99
       ]

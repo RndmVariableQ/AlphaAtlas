@@ -3,7 +3,7 @@ from math import isclose
 from typing import Literal
 from itertools import accumulate
 from collections.abc import Sequence
-from stats import (
+from alpha_atlas.factor.stats import (
     winsorize, standardize, percentile_rank, t_score,
     cs_rank, weighted_demean, solve_betas, QUANTILE_PRECISION
 )
@@ -52,14 +52,14 @@ def transform_factor(
         bucket_sizes: Sequence[float] | None = None,
         higher_is_better: bool = True,
         method: Literal[
-            'demean', 'demedian', 'std', 'iqr', 'mad', 'rank', 't'
-        ] = 'std',
-        winsor_limits: tuple[float, float] | None = None,
+            'demean', 'demedian', 'z_score', 'iqr', 'mad', 'rank', 't'
+        ] = 'z_score',
+        clip_quantiles: tuple[float, float] | None = None,
 ) -> pl.DataFrame:
     """
     demean:   optional winsorization -> subtract the group mean
     demedian: optional winsorization -> subtract the group median
-    std:      optional winsorization -> mean/std standardization
+    z_score:  optional winsorization -> mean/std standardization
     iqr:      optional winsorization -> median/IQR standardization
     mad:      optional winsorization -> median/MAD standardization
     rank:     cross-sectional rank   -> [-scale, scale]
@@ -80,9 +80,9 @@ def transform_factor(
 
     x = pl.when(valid).then(signed)
 
-    if method in {'demean', 'demedian', 'std', 'iqr', 'mad'}:
-        if winsor_limits is not None:
-            lower, upper = winsor_limits
+    if method in {'demean', 'demedian', 'z_score', 'iqr', 'mad'}:
+        if clip_quantiles is not None:
+            lower, upper = clip_quantiles
             x_winsorized = winsorize(x, partition_by, lower, upper)
 
         else:
@@ -90,9 +90,9 @@ def transform_factor(
 
         factor = standardize(x_winsorized, partition_by, method)
 
-    elif winsor_limits is not None:
+    elif clip_quantiles is not None:
         raise ValueError(
-            f'winsor_limits is not applicable when method={method!r}'
+            f'clip_quantiles is not applicable when method={method!r}'
         )
 
     elif method == 'rank':
@@ -125,7 +125,7 @@ def neutralize_factor(
         groupby: list[str] | None = None,
         risk_factors: Sequence[str] = (),
         weight_col: str | None = None,
-        winsor_limits: tuple[float, float] | None = None,
+        clip_quantiles: tuple[float, float] | None = None,
 ) -> pl.DataFrame:
     r"""
     y = D \alpha + X \beta + \epsilon
@@ -172,8 +172,8 @@ def neutralize_factor(
         pl.when(valid).then(weight).alias('_w'),
     ])
 
-    if winsor_limits is not None:
-        lower, upper = winsor_limits
+    if clip_quantiles is not None:
+        lower, upper = clip_quantiles
         lf = lf.with_columns(
             winsorize(pl.col('_y'), partition_by, lower, upper).alias('_y')
         )

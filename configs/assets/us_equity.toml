@@ -10,8 +10,12 @@ target_return_field = "total_return"
 target_horizon_bars = 21
 metric = "cross_sectional_spearman"
 fundamentals = true
+transform_groupby = ["gsector"]  # Shared by factor and target transforms.
 
 [factor_transform]
-groupby = ["gsector"]
-method = "std"
-winsor_limits = [0.01, 0.99]
+method = "z_score"
+clip_quantiles = [0.01, 0.99]
+
+[target_transform]
+method = "sector_demean"  # Or sector_demedian, sector_zscore.
+clip_quantiles = [0.01, 0.99]  # Omit to disable; independent of factor clipping.

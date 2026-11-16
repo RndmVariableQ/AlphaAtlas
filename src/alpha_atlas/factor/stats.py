@@ -13,7 +13,7 @@ def winsorize(
         x: pl.Expr, partition_by: list[str], lower: float, upper: float,
 ) -> pl.Expr:
     if not 0 <= lower < upper <= 1:
-        raise ValueError('winsor_limits must satisfy 0 <= lower < upper <= 1')
+        raise ValueError('clip_quantiles must satisfy 0 <= lower < upper <= 1')
 
     lower_bound = x.quantile(lower).over(partition_by)
     upper_bound = x.quantile(upper).over(partition_by)
@@ -24,19 +24,21 @@ def winsorize(
 def standardize(
         x: pl.Expr,
         partition_by: list[str],
-        method: Literal['demean', 'demedian', 'std', 'iqr', 'mad'] = 'std',
+        method: Literal[
+            'demean', 'demedian', 'z_score', 'iqr', 'mad'
+        ] = 'z_score',
 ) -> pl.Expr:
     """
     demean:   x - mean
     demedian: x - median
-    std:      (x - mean) / std
+    z_score:  (x - mean) / std
     iqr:      (x - median) / (IQR / 1.349)
     mad:      (x - median) / (MAD / 0.6745)
     """
-    if method not in {'demean', 'demedian', 'std', 'iqr', 'mad'}:
+    if method not in {'demean', 'demedian', 'z_score', 'iqr', 'mad'}:
         raise ValueError(f'Unknown standardization method: {method!r}')
 
-    center = x.mean() if method in {'demean', 'std'} else x.median()
+    center = x.mean() if method in {'demean', 'z_score'} else x.median()
     centered = x - center.over(partition_by)
 
     if method in {'demean', 'demedian'}:
@@ -45,7 +47,7 @@ def standardize(
     has_variance = x.drop_nulls().n_unique().over(partition_by) > 1
 
     scale = {
-        'std': x.std(ddof=1),
+        'z_score': x.std(ddof=1),
         'iqr': (x.quantile(0.75) - x.quantile(0.25)) / 1.349,
         'mad': (x - x.median()).abs().median() / 0.6745,
     }[method].over(partition_by)

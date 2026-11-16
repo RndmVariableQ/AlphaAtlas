@@ -788,7 +788,8 @@ def write_model_report(directory: Path, fitted: dict, tested: dict | None = None
         preprocessing_note,
         *(
             [
-                f"目标变换为 `{target_transform['method']}`，分组为信号日 × gsector。"
+                f"目标变换为 `{target_transform['method']}`，"
+                f"分组为信号日 × {spec.get('transform_groupby', ['gsector'])}。"
                 "主 IC 使用变换后的标签，`raw_return_` IC 使用同一预测和未变换的收益。"
             ]
             if target_transform is not None

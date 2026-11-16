@@ -697,7 +697,14 @@ def run_model(root: Path, directory: Path, *, test: bool = False) -> dict:
             "fold": spec["fold"],
             "primary_metric": profile["metric"],
             **(
-                {"target_transform": profile["target_transform"]}
+                {
+                    "target_transform": profile["target_transform"],
+                    **(
+                        {"transform_groupby": profile["transform_groupby"]}
+                        if "transform_groupby" in profile
+                        else {}
+                    ),
+                }
                 if profile.get("target_transform") is not None
                 else {}
             ),

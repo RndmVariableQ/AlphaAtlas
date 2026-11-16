@@ -271,9 +271,12 @@ class SearchSession:
                 {
                     "target_transform": {
                         **target_transform,
-                        "semantics": "Winsorize and center completed forward returns within "
-                        "each signal date and gsector in the eligible scoring split. "
-                        "sector_zscore also divides by the sample standard deviation. "
+                        "groupby": self._evaluator.profile.get("transform_groupby", ["gsector"]),
+                        "semantics": "Center completed forward returns within each signal date "
+                        "and configured group in the eligible scoring split. "
+                        "Clip only when clip_quantiles is configured. "
+                        "sector_demean subtracts the mean; sector_demedian subtracts the median; "
+                        "sector_zscore subtracts the mean and divides by sample standard deviation. "
                         "Primary IC and admission use the transformed label. "
                         "Metrics prefixed raw_return_ are diagnostics against original returns.",
                     }

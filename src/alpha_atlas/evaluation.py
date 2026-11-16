@@ -40,7 +40,7 @@ def compute_factor_values(compiled, features, fields, registry, profile) -> pl.D
 
     from alpha_atlas.factor.transform import transform_factor
 
-    groups = options["groupby"]
+    groups = profile.get("transform_groupby", options.get("groupby", []))
     metadata = features.select("row_id", "trading_day", "eligible", *groups)
     inputs = values.join(
         metadata, on="row_id", how="left", validate="1:1", maintain_order="left"
@@ -53,7 +53,7 @@ def compute_factor_values(compiled, features, fields, registry, profile) -> pl.D
         asset_col="row_id",
         groupby=groups,
         method=options["method"],
-        winsor_limits=tuple(options["winsor_limits"]),
+        clip_quantiles=options.get("clip_quantiles"),
     ).select("row_id", "value")
 
 
@@ -116,17 +116,21 @@ def build_scoring_targets(
     if transform is None:
         return build_profile_targets(features, profile)
     validate_target_transform(transform)
-    if not periods or "gsector" not in features.columns:
-        raise ValueError("target_transform requires scoring splits and signal-date gsector")
+    groups = profile.get("transform_groupby", ["gsector"])
+    if not periods or set(groups) - set(features.columns):
+        raise ValueError(
+            "target_transform requires scoring splits and signal-date grouping columns"
+        )
 
     from alpha_atlas.factor.transform import transform_factor
 
     targets = build_profile_targets(features, profile)
-    sector = pl.col("gsector")
-    known_sector = (
-        sector.is_finite() if features.schema["gsector"].is_float() else sector.is_not_null()
-    )
-    panel = features.select("row_id", "trading_day", "eligible", "gsector").filter(known_sector)
+    panel = features.select("row_id", "trading_day", "eligible", *groups)
+    for name in groups:
+        group = pl.col(name)
+        panel = panel.filter(
+            group.is_finite() if features.schema[name].is_float() else group.is_not_null()
+        )
     panel = panel.join(targets, on="row_id", validate="1:1")
     sample = pl.concat([split_panel(panel, period) for period in periods])
     relative = transform_factor(
@@ -135,9 +139,13 @@ def build_scoring_targets(
         "target",
         date_col="trading_day",
         asset_col="row_id",
-        groupby=["gsector"],
-        method="demean" if transform["method"] == "sector_demean" else "std",
-        winsor_limits=tuple(transform["clip_quantiles"]),
+        groupby=groups,
+        method={
+            "sector_demean": "demean",
+            "sector_demedian": "demedian",
+            "sector_zscore": "z_score",
+        }[transform["method"]],
+        clip_quantiles=transform.get("clip_quantiles"),
     )
     return targets.rename({"target": "target_raw"}).join(
         relative.select("row_id", "target"),
