@@ -426,7 +426,7 @@ def test_all_react_tools_round_trip_through_json_dispatch(tmp_path):
         "library_stats",
     }
     context = by_tool["get_context"]
-    assert len(context["fields"]) == 24 and len(context["operators"]) == 66
+    assert len(context["fields"]) == 24 and len(context["operators"]) == 67
     assert context["frequency"] == "5m"
     assert all(op["description"] for op in context["operators"])
     assert context["expression_rules"]["timeframes"]["suffixes"] == [

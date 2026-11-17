@@ -14,6 +14,7 @@ EPS = 1e-12
 def build_expression(op: str, args: list[pl.Expr], params: list, group: list[str]) -> pl.Expr:
     a = args[0]
     b = args[1] if len(args) > 1 else None
+
     unary = {
         "NEG": lambda: -a,
         "ABS": a.abs,
@@ -27,13 +28,14 @@ def build_expression(op: str, args: list[pl.Expr], params: list, group: list[str
     }
     if op in unary:
         return unary[op]()
+
     binary = {
         "ADD": lambda: a + b,
         "SUBTRACT": lambda: a - b,
         "MULTIPLY": lambda: a * b,
         "DIVIDE": lambda: pl.when(b.abs() > EPS).then(a / b),
-        "MIN": lambda: pl.when(a.is_not_null() & b.is_not_null()).then(pl.min_horizontal(a, b)),
-        "MAX": lambda: pl.when(a.is_not_null() & b.is_not_null()).then(pl.max_horizontal(a, b)),
+        "MIN": lambda: pl.when(a.is_not_null() & b.is_not_null()).then(pl.min_horizontal([a, b])),
+        "MAX": lambda: pl.when(a.is_not_null() & b.is_not_null()).then(pl.max_horizontal([a, b])),
         "LT": lambda: a < b,
         "LE": lambda: a <= b,
         "GT": lambda: a > b,
@@ -46,14 +48,43 @@ def build_expression(op: str, args: list[pl.Expr], params: list, group: list[str
     }
     if op in binary:
         return binary[op]()
+
     if op == "IF_THEN_ELSE":
         return pl.when(a.is_not_null()).then(pl.when(a).then(b).otherwise(args[2]))
+
     if op == "CLIP":
         return a.clip(*params)
+
     if op in {"POWER", "SIGNED_POWER"}:
         p = params[0]
         result = a.pow(p) if op == "POWER" else a.sign() * a.abs().pow(p)
         return pl.when((a != 0) | (p > 0)).then(result)
+
+    if op == "CS_RESID":
+        valid = (
+            pl.col("eligible").fill_null(False)
+            & a.is_finite().fill_null(False)
+            & b.is_finite().fill_null(False)
+        )
+        y = pl.when(valid).then(a)
+        x = pl.when(valid).then(b)
+
+        dx = x - x.min()
+        dy = y - y.min()
+
+        dx = dx - dx.mean()
+        dy = dy - dy.mean()
+
+        scale = dx.abs().max()
+        normalized = dx / pl.when(scale > 0).then(scale)
+
+        energy = (normalized * normalized).sum()
+        slope = (normalized * dy).sum() / pl.when(energy > 0).then(energy)
+
+        return (
+            pl.when((x.count() >= 2) & (energy > 0)).then(dy - slope * normalized).over("timestamp")
+        )
+
     if op.startswith("CS_"):
         x = pl.when(pl.col("eligible").fill_null(False)).then(a)
         count = x.count().over("timestamp")
@@ -72,21 +103,21 @@ def build_expression(op: str, args: list[pl.Expr], params: list, group: list[str
             lo = x.quantile(params[0], interpolation="linear").over("timestamp")
             hi = x.quantile(params[1], interpolation="linear").over("timestamp")
             return x.clip(lo, hi)
+
     n = int(params[0])
     if op == "OBS_LAG":
         return a.shift(n).over(group)
+
     if op in {"DELAY", "DELTA", "RETURN"}:
-        lag = a.shift(n).over(group)
-        # Interior missing values also break a lag/return's declared history.
-        complete = a.is_not_null().cast(pl.Int32).rolling_sum(n + 1).over(group) == n + 1
-        result = (
-            lag
-            if op == "DELAY"
-            else a - lag
-            if op == "DELTA"
-            else pl.when(lag.abs() > EPS).then(a / lag - 1)
-        )
-        return pl.when(complete).then(result)
+        lag = a.shift(n)
+        value = {
+            "DELAY": lag,
+            "DELTA": a - lag,
+            "RETURN": a / pl.when(lag.abs() > EPS).then(lag) - 1,
+        }[op]
+        complete = a.is_not_null().rolling_sum(n + 1) == n + 1
+        return pl.when(complete).then(value).over(group)
+
     options = {"window_size": n, "min_samples": n}
     rolling = {
         "TS_SUM": lambda: a.rolling_sum(**options),
@@ -102,8 +133,6 @@ def build_expression(op: str, args: list[pl.Expr], params: list, group: list[str
         "TS_KURT": lambda: a.rolling_kurtosis(n, fisher=True, bias=False, min_samples=n),
         "TS_SKEW_POP": lambda: a.rolling_skew(n, bias=True, min_samples=n),
         "TS_KURT_POP": lambda: a.rolling_kurtosis(n, fisher=True, bias=True, min_samples=n),
-        # Polars weighted rolling panics on null arrays. NaN propagates within the
-        # affected windows; materialize() converts those results back to null.
         "TS_LINEAR_DECAY": lambda: a.fill_null(float("nan")).rolling_mean(
             **options, weights=list(range(1, n + 1))
         ),
@@ -113,21 +142,30 @@ def build_expression(op: str, args: list[pl.Expr], params: list, group: list[str
         if op in {"TS_SKEW", "TS_KURT"}:
             return pl.when(a.rolling_std(**options).over(group) > EPS).then(result)
         return result
+
     if op == "TS_ZSCORE":
         mean = a.rolling_mean(**options).over(group)
         std = a.rolling_std(**options, ddof=1).over(group)
         return pl.when(std > EPS).then((a - mean) / std)
+
     if op in {"TS_CORR", "TS_COV"}:
-        finite = a.is_not_null() & b.is_not_null()
-        x, y = pl.when(finite).then(a), pl.when(finite).then(b)
-        function = pl.rolling_corr if op == "TS_CORR" else pl.rolling_cov
-        result = function(x, y, **options, ddof=1).over(group)
-        return result.clip(-1, 1) if op == "TS_CORR" else result
+        valid_pair = a.is_not_null() & b.is_not_null()
+        x = pl.when(valid_pair).then(a)
+        y = pl.when(valid_pair).then(b)
+        if op == "TS_COV":
+            return pl.rolling_cov(x, y, **options, ddof=1).over(group)
+        r = pl.rolling_corr(x, y, **options).over(group)
+        return pl.when(r.is_finite()).then(r.clip(-1, 1))
+
     if op in {"TS_COUNT", "TS_RATE", "TS_ANY", "TS_ALL"}:
-        count = a.cast(pl.Float64).rolling_sum(**options).over(group)
-        return {"TS_COUNT": count, "TS_RATE": count / n, "TS_ANY": count > 0, "TS_ALL": count == n}[
-            op
-        ]
+        count = a.rolling_sum(**options).over(group)
+        return {
+            "TS_COUNT": count,
+            "TS_RATE": count / n,
+            "TS_ANY": count > 0,
+            "TS_ALL": count == n,
+        }[op]
+
     raise ValueError(f"operator implementation missing: {op}")
 
 

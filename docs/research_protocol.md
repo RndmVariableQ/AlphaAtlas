@@ -13,7 +13,7 @@
 | 期货 | RiceQuant 原生 5m、rule=0 主力映射           | 主力对应的真实合约及日期                    |
 | 期货 Kernel 派生数据 | 用户指定的 Research Kernel 复权 1m 聚合为 5m | 主力真实合约；独立快照                      |
 
-- 默认请求区间为 2015-01-01 至 2026-09-01，含端点。时区为 Asia/Shanghai，Bar 标记结束时刻；
+- RiceQuant 默认请求区间为 2015-01-01 至 2026-09-01，含端点。时区为 Asia/Shanghai，Bar 标记结束时刻；
   期货交易日使用供应商 `trading_date`。非交易日不制造 Bar。
 - A 股成员按历史当日确定；保留入选前数据用于预热，仅当日成员参与评价。退市记录保留，
   ST／停牌观测保留并排除评分。`union1800` 不表示整个历史只有 1800 个证券。
@@ -95,9 +95,9 @@ run 配置并参与冻结；恢复沿用原列表，不重新扩展。
 因子方法由 `factor_transform.method` 决定，默认 `z_score`。收益可设置 `target_transform.method` 为
 `sector_demean`（减均值）、`sector_demedian`（减中位数）或 `sector_zscore`（均值／样本标准差）。
 两种变换分别读取各自的 `clip_quantiles`；省略或设为 null 表示该变换不缩尾，配置分位对则先缩尾。
-收益变换只在标签终点落入当前 split 的 eligible 信号日分组内计算，分组缺失时为 null；
+收益变换只在标签终点落入当前 split 的 eligible 信号日分组内计算，分组缺失或非有限时为 null；
 缺少 `target_transform` 时使用原始收益。该变换与下述训练期评分裁剪独立。
-默认因子在行业内做 1%–99% 缩尾再标准化，行业缺失或组内值恒定时为 null。
+默认因子在行业内做 1%–99% 缩尾再标准化，行业缺失、非有限或组内值恒定时为 null。
 搜索、冻结后的 OOS 和模型输入均使用同一配置。
 标准实验使用连续因子值。仅指定 `quantile_col` 时计算分位桶，默认使用五个等比例桶。
 美股标签按全市场观测日历，从下一交易日起复合 `total_return`。`atlas run --target-horizon` 可设定

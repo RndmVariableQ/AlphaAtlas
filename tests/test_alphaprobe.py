@@ -462,7 +462,7 @@ class QueryModels(FakeModels):
                 raise KeyboardInterrupt("after lookup")
             results = payload["query_results"][0]["results"]
             assert "adj_close" in results[0]["fields"]
-            assert len(results[0]["operators"]) == 66
+            assert len(results[0]["operators"]) == 67
             assert results[0]["expression_rules"]["max_nodes"] == 100
             assert "members" in results[1] and "results" in results[2] and "error" in results[3]
             assert set(payload["context"]) == {

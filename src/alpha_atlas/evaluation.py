@@ -42,9 +42,15 @@ def compute_factor_values(compiled, features, fields, registry, profile) -> pl.D
 
     groups = profile.get("transform_groupby", options.get("groupby", []))
     metadata = features.select("row_id", "trading_day", "eligible", *groups)
+    valid = pl.col("eligible").fill_null(False)
+    for name in groups:
+        group = pl.col(name)
+        valid = valid & (
+            group.is_finite() if features.schema[name].is_float() else group.is_not_null()
+        )
     inputs = values.join(
         metadata, on="row_id", how="left", validate="1:1", maintain_order="left"
-    ).with_columns(pl.when(pl.col("eligible")).then(pl.col("value")).alias("value"))
+    ).with_columns(pl.when(valid).then(pl.col("value")).alias("value"))
     return transform_factor(
         inputs,
         "value",

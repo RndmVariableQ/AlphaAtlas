@@ -101,6 +101,11 @@ BUILTIN_DESCRIPTIONS = {
     "TS_RATE": "Fraction of true conditions over n bars. Any unknown invalidates the window.",
     "TS_ANY": "Whether any condition is true over n bars. Requires a fully known window.",
     "TS_ALL": "Whether all conditions are true over n bars. Requires a fully known window.",
+    "CS_RESID": (
+        "Residual y - (alpha + beta*x) from same-timestamp OLS with intercept. "
+        "Arguments: y, x. Uses eligible jointly finite pairs; requires at least two pairs "
+        "and nonconstant x. Invalid rows or unidentified fits return null."
+    ),
     "CS_RANK": "Ascending average rank / count among eligible finite values at the same timestamp.",
     "CS_ZSCORE": (
         "Cross-sectional (x - mean) / sample std among eligible finite values. "
@@ -180,6 +185,7 @@ def builtin_specs() -> dict[str, OperatorSpec]:
     )
     add("TS_COUNT TS_RATE", ("condition", "window"), "ts", history="window")
     add("TS_ANY TS_ALL", ("condition", "window"), "ts", "condition", history="window")
+    add("CS_RESID", ("series", "series"), "cs")
     add("CS_RANK CS_ZSCORE CS_DEMEAN CS_SCALE", ("series",), "cs")
     add("CS_WINSORIZE", ("series", "float", "float"), "cs", defaults=(0.01, 0.99))
     return specs

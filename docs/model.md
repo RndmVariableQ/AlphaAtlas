@@ -64,7 +64,9 @@ uv run python scripts/evaluate_snapshot.py <运行ID或实验版本> --attempts 
   正整数表示最大深度。`min_data_in_leaf` 可省略，省略时直接使用锁定 LightGBM 的
   默认值（当前为 20），不会补入项目其他配置；显式值必须为正整数。
   版本固定在依赖锁中，不承诺跨版本或硬件逐位一致。
-- 监督目标沿用资产配置的未来对数收益；在真实合约／连续段内生成，目标终点不能跨 split。
+- 监督目标沿用资产配置：价格标签为未来对数收益，日收益标签为未来交易日复合收益。
+  目标遵循资产连续性规则，终点不能跨 split。美股因子和目标变换复用
+  [公共评估规则](research_protocol.md#统一评估与准入)，目标分别在各 split 内变换。
   PIT eligibility、字段、高周期特征、预热和缺失规则复用公共 MarketData／DSL。
 - 因子列顺序采用冻结库顺序；每列乘原训练方向。通过 row_id 对齐计算结果，不按数组位置拼接。
   输入仅包含因子列，不把 instrument_id、product、日期或 target 当作模型特征。
@@ -72,7 +74,8 @@ uv run python scripts/evaluate_snapshot.py <运行ID或实验版本> --attempts 
   `product_demean = true`。各特征和标签分别使用 train+val 合并拟合区间的全局分位边界；
   特征先裁剪，再拟合均值和标准差。标签边界独立于各因子的缺失，不按 test 重新估计。
   这是模型自身的预处理，区别于单因子评估只在 train 拟合的裁剪边界。
-  Test 特征复用模型冻结边界；Test 标签和组合预测的 IC 仍使用原始目标。
+  Test 特征复用模型冻结边界；Test 标签不应用模型训练期裁剪，主 IC 使用资产配置的评分目标。
+  配置目标变换时，另报 `raw_return_` IC，使用相同预测和未变换收益，不参与搜索准入。
 - 仅对符合 train+val 标签和 eligibility 规则的合并观测拟合各列均值、总体标准差。
   全缺失、非有限统计或标准差不超过 `1e-12` 的列移除；移除规则不看 test。
   所有列移除、有效训练行不足两行或目标为常量时明确失败。

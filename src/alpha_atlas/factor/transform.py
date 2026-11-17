@@ -1,17 +1,26 @@
-import polars as pl
+from collections.abc import Sequence
+from itertools import accumulate
 from math import isclose
 from typing import Literal
-from itertools import accumulate
-from collections.abc import Sequence
+
+import polars as pl
+
 from alpha_atlas.factor.stats import (
-    winsorize, standardize, percentile_rank, t_score,
-    cs_rank, weighted_demean, solve_betas, QUANTILE_PRECISION
+    QUANTILE_PRECISION,
+    cs_rank,
+    percentile_rank,
+    solve_betas,
+    standardize,
+    t_score,
+    weighted_demean,
+    winsorize,
 )
 
 
 def quantize_factor(
-        x: pl.Expr, partition_by: list[str],
-        bucket_sizes: Sequence[float] | None = None,
+    x: pl.Expr,
+    partition_by: list[str],
+    bucket_sizes: Sequence[float] | None = None,
 ) -> pl.Expr:
     """
     (0, edge_1]          -> 1
@@ -23,17 +32,13 @@ def quantize_factor(
     if bucket_sizes is None:
         bucket_sizes = (0.2,) * 5
 
-    if (
-            any(size <= 0 for size in bucket_sizes)
-            or not isclose(sum(bucket_sizes), b=1.0, rel_tol=0.0, abs_tol=1e-9)
+    if any(size <= 0 for size in bucket_sizes) or not isclose(
+        sum(bucket_sizes), b=1.0, rel_tol=0.0, abs_tol=1e-9
     ):
-        raise ValueError('bucket_sizes must be positive and sum to 1')
+        raise ValueError("bucket_sizes must be positive and sum to 1")
 
     pct = percentile_rank(x, partition_by).round(QUANTILE_PRECISION)
-    edges = (
-        round(edge, QUANTILE_PRECISION)
-        for edge in accumulate(bucket_sizes[:-1], initial=0.0)
-    )
+    edges = (round(edge, QUANTILE_PRECISION) for edge in accumulate(bucket_sizes[:-1], initial=0.0))
 
     return sum(
         ((pct > edge).cast(pl.Int8) for edge in edges),
@@ -42,19 +47,17 @@ def quantize_factor(
 
 
 def transform_factor(
-        factor_data: pl.DataFrame | pl.LazyFrame,
-        factor_col: str,
-        output_col: str,
-        quantile_col: str | None = None,
-        date_col: str = 'date',
-        asset_col: str = 'key',
-        groupby: list[str] | None = None,
-        bucket_sizes: Sequence[float] | None = None,
-        higher_is_better: bool = True,
-        method: Literal[
-            'demean', 'demedian', 'z_score', 'iqr', 'mad', 'rank', 't'
-        ] = 'z_score',
-        clip_quantiles: tuple[float, float] | None = None,
+    factor_data: pl.DataFrame | pl.LazyFrame,
+    factor_col: str,
+    output_col: str,
+    quantile_col: str | None = None,
+    date_col: str = "date",
+    asset_col: str = "key",
+    groupby: list[str] | None = None,
+    bucket_sizes: Sequence[float] | None = None,
+    higher_is_better: bool = True,
+    method: Literal["demean", "demedian", "z_score", "iqr", "mad", "rank", "t"] = "z_score",
+    clip_quantiles: tuple[float, float] | None = None,
 ) -> pl.DataFrame:
     """
     demean:   optional winsorization -> subtract the group mean
@@ -68,19 +71,13 @@ def transform_factor(
     groupby = groupby or []
     partition_by = [date_col, *groupby]
 
-    signed = (
-            pl.col(factor_col).cast(pl.Float64)
-            * (1.0 if higher_is_better else -1.0)
-    )
+    signed = pl.col(factor_col).cast(pl.Float64) * (1.0 if higher_is_better else -1.0)
 
-    valid = (
-            signed.is_finite()
-            & pl.all_horizontal(pl.col(partition_by).is_not_null())
-    )
+    valid = signed.is_finite() & pl.all_horizontal(pl.col(partition_by).is_not_null())
 
     x = pl.when(valid).then(signed)
 
-    if method in {'demean', 'demedian', 'z_score', 'iqr', 'mad'}:
+    if method in {"demean", "demedian", "z_score", "iqr", "mad"}:
         if clip_quantiles is not None:
             lower, upper = clip_quantiles
             x_winsorized = winsorize(x, partition_by, lower, upper)
@@ -91,18 +88,16 @@ def transform_factor(
         factor = standardize(x_winsorized, partition_by, method)
 
     elif clip_quantiles is not None:
-        raise ValueError(
-            f'clip_quantiles is not applicable when method={method!r}'
-        )
+        raise ValueError(f"clip_quantiles is not applicable when method={method!r}")
 
-    elif method == 'rank':
+    elif method == "rank":
         factor = cs_rank(x, partition_by)
 
-    elif method == 't':
+    elif method == "t":
         factor = t_score(x, partition_by)
 
     else:
-        raise ValueError(f'Unknown transformation method: {method!r}')
+        raise ValueError(f"Unknown transformation method: {method!r}")
 
     columns = [date_col, asset_col, *groupby, factor.alias(output_col)]
 
@@ -117,15 +112,15 @@ def transform_factor(
 
 
 def neutralize_factor(
-        factor_data: pl.DataFrame | pl.LazyFrame,
-        factor_col: str,
-        output_col: str,
-        date_col: str = 'date',
-        asset_col: str = 'key',
-        groupby: list[str] | None = None,
-        risk_factors: Sequence[str] = (),
-        weight_col: str | None = None,
-        clip_quantiles: tuple[float, float] | None = None,
+    factor_data: pl.DataFrame | pl.LazyFrame,
+    factor_col: str,
+    output_col: str,
+    date_col: str = "date",
+    asset_col: str = "key",
+    groupby: list[str] | None = None,
+    risk_factors: Sequence[str] = (),
+    weight_col: str | None = None,
+    clip_quantiles: tuple[float, float] | None = None,
 ) -> pl.DataFrame:
     r"""
     y = D \alpha + X \beta + \epsilon
@@ -151,71 +146,68 @@ def neutralize_factor(
     )
 
     valid = (
-            pl.all_horizontal(
-                pl.col([
-                    factor_col, *risk_factors
-                ]).cast(pl.Float64).is_finite()
-            )
-            & pl.all_horizontal(pl.col(partition_by).is_not_null())
-            & weight.is_finite() & (weight > 0)
+        pl.all_horizontal(pl.col([factor_col, *risk_factors]).cast(pl.Float64).is_finite())
+        & pl.all_horizontal(pl.col(partition_by).is_not_null())
+        & weight.is_finite()
+        & (weight > 0)
     )
 
-    lf = factor_data.lazy().select([
-        date_col, asset_col, *groupby,
-        *(
-            pl.when(valid)
-            .then(pl.col(factor).cast(pl.Float64))
-            .alias(factor)
-            for factor in risk_factors
-        ),
-        pl.when(valid).then(y).alias('_y'),
-        pl.when(valid).then(weight).alias('_w'),
-    ])
+    lf = factor_data.lazy().select(
+        [
+            date_col,
+            asset_col,
+            *groupby,
+            *(
+                pl.when(valid).then(pl.col(factor).cast(pl.Float64)).alias(factor)
+                for factor in risk_factors
+            ),
+            pl.when(valid).then(y).alias("_y"),
+            pl.when(valid).then(weight).alias("_w"),
+        ]
+    )
 
     if clip_quantiles is not None:
         lower, upper = clip_quantiles
-        lf = lf.with_columns(
-            winsorize(pl.col('_y'), partition_by, lower, upper).alias('_y')
-        )
+        lf = lf.with_columns(winsorize(pl.col("_y"), partition_by, lower, upper).alias("_y"))
 
     lf = lf.with_columns(
-        weighted_demean(pl.col(col), pl.col('_w'), partition_by).alias(col)
-        for col in ['_y', *risk_factors]
+        weighted_demean(pl.col(col), pl.col("_w"), partition_by).alias(col)
+        for col in ["_y", *risk_factors]
     )
 
     if not risk_factors:
-        return (
-            lf.select([
-                date_col, asset_col, *groupby, pl.col('_y').alias(output_col),
-            ])
-            .collect()
-        )
+        return lf.select(
+            [
+                date_col,
+                asset_col,
+                *groupby,
+                pl.col("_y").alias(output_col),
+            ]
+        ).collect()
 
     df = lf.collect()
 
     moments = df.group_by(date_col).agg(
         *(
-            (pl.col('_w') * pl.col(i) * pl.col(j))
-            .sum().alias(f'_xx_{i}*{j}')
+            (pl.col("_w") * pl.col(i) * pl.col(j)).sum().alias(f"_xx_{i}*{j}")
             for i in risk_factors
             for j in risk_factors
         ),
         *(
-            (pl.col('_w') * pl.col(i) * pl.col('_y'))
-            .sum().alias(f'_xy_{i}*y') for i in risk_factors
+            (pl.col("_w") * pl.col(i) * pl.col("_y")).sum().alias(f"_xy_{i}*y")
+            for i in risk_factors
         ),
     )
 
     betas = solve_betas(moments, risk_factors, date_col)
 
-    fitted = pl.sum_horizontal(
-        pl.col(f'_b_{i}') * pl.col(i) for i in risk_factors
-    )
+    fitted = pl.sum_horizontal(pl.col(f"_b_{i}") * pl.col(i) for i in risk_factors)
 
-    return (
-        df.join(betas, on=date_col, how='left')
-        .select([
-            date_col, asset_col, *groupby,
-            (pl.col('_y') - fitted).alias(output_col),
-        ])
+    return df.join(betas, on=date_col, how="left").select(
+        [
+            date_col,
+            asset_col,
+            *groupby,
+            (pl.col("_y") - fitted).alias(output_col),
+        ]
     )

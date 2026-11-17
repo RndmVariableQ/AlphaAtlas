@@ -1,15 +1,22 @@
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import numpy as np
 import polars as pl
 import pytest
 
-from alpha_atlas.config import asset_config
-from alpha_atlas.contracts import AssetProfile, DateRange, validate_target_transform
-from alpha_atlas.evaluation import build_scoring_targets, compute_factor_values
+from alpha_atlas.config import asset_config, load_toml
+from alpha_atlas.contracts import AssetProfile, DateRange, Fold, validate_target_transform
+from alpha_atlas.evaluation import (
+    EvaluationService,
+    build_scoring_targets,
+    compute_factor_values,
+)
 from alpha_atlas.expressions import compile_factor
+from alpha_atlas.library import FactorLibrary
 from alpha_atlas.operators import OperatorRegistry
+from alpha_atlas.session import SearchSession
+from alpha_atlas.storage import RunStore
 
 
 @pytest.fixture
@@ -111,3 +118,50 @@ def test_invalid_transform_groups(groups):
     profile = asset_config(Path(__file__).resolve().parents[1], "us_equity")
     with pytest.raises(ValueError, match="transform_groupby"):
         AssetProfile.from_mapping(profile | {"transform_groupby": groups})
+
+
+@pytest.mark.parametrize("missing", [None, float("nan"), float("inf")])
+def test_factor_transform_excludes_nonfinite_groups(transform_market, missing):
+    frame, raw, period, profile = transform_market
+    frame = frame.with_columns(
+        pl.when(pl.col("row_id") % 10 >= 5)
+        .then(pl.col("ggroup").cast(pl.Float64))
+        .otherwise(pl.lit(missing, dtype=pl.Float64))
+        .alias("ggroup")
+    )
+    registry = OperatorRegistry()
+    factors = compute_factor_values(
+        compile_factor("$signal", {"signal"}, registry), frame, {"signal"}, registry, profile
+    ).sort("row_id")
+    assert factors.filter(pl.col("row_id") % 10 < 5)["value"].null_count() == 10
+    expected = (raw[5:] - raw[5:].mean()) / raw[5:].std(ddof=1)
+    assert factors.filter(pl.col("row_id") % 10 >= 5)["value"].to_numpy() == pytest.approx(
+        np.tile(expected, 2)
+    )
+    targets = build_scoring_targets(frame, profile, period)
+    assert targets.filter(pl.col("row_id") % 10 < 5)["target"].null_count() == 10
+
+
+def test_research_context_explains_factor_and_target_transforms(transform_market, tmp_path):
+    frame, _, period, profile = transform_market
+    profile = profile | {"metric": "cross_sectional_spearman", "frequency": "1d"}
+    profile["factor_transform"]["clip_quantiles"] = [0.01, 0.99]
+    next_day = period.end + timedelta(days=1)
+    fold = Fold(
+        "synthetic",
+        DateRange(period.start, period.start),
+        DateRange(period.end, period.end),
+        DateRange(next_day, next_day),
+    )
+    evaluator = EvaluationService(frame, fold, profile, {"signal"})
+    rules = load_toml(Path(__file__).resolve().parents[1] / "configs/benchmark.toml")
+    session = SearchSession(evaluator, FactorLibrary(rules), RunStore(tmp_path), 1)
+    context = session.research_context()
+    factor = context["evaluation_rules"]["factor_transform"]
+    target = context["evaluation_rules"]["target_transform"]
+    assert factor["method"] == "z_score"
+    assert factor["clip_quantiles"] == [0.01, 0.99]
+    assert factor["groupby"] == target["groupby"] == ["ggroup"]
+    assert "every expression" in factor["semantics"]
+    assert "remaining_attempts" not in context
+    assert "synthetic" not in str(context)

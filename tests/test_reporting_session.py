@@ -31,7 +31,7 @@ def test_context_is_immutable_current_and_run_local(project):
             context = session.get_context()
             snapshots.append(context)
             catalog_before = session.list_operators()
-            assert len(catalog_before) == 66
+            assert len(catalog_before) == 67
             assert session.get_fields() == ("adj_close", "volume")
             assert set(asdict(context)) == {
                 "asset",
@@ -74,7 +74,7 @@ def test_context_is_immutable_current_and_run_local(project):
             assert registration.accepted
             assert not session.register_operator(recipe).accepted
             catalog = {o["name"]: session.get_operator(o["name"]) for o in session.list_operators()}
-            assert len(catalog) == 67 and len(catalog_before) == 66
+            assert len(catalog) == 68 and len(catalog_before) == 67
             custom = catalog["MEAN_TWICE"]
             assert custom["version"] == registration.operator_id
             assert custom["kind"] == "composite" and custom["history"] == "expanded"
@@ -137,7 +137,7 @@ def test_context_describes_code_operator_history_and_excludes_rejected(
     bad = replace(submitted, name="bad_name")
     assert not session.register_operator(bad).accepted
     catalog = {o["name"]: session.get_operator(o["name"]) for o in session.list_operators()}
-    assert len(catalog) == 67 and "bad_name" not in catalog
+    assert len(catalog) == 68 and "bad_name" not in catalog
     operator = catalog[submitted.name]
     assert operator["kind"] == "group_batch" and operator["scope"] == scope
     assert operator["output"] == "series" and operator["version"] == feedback.operator_id

@@ -243,7 +243,7 @@ def test_order_statistics_against_independent_reference():
 
 
 def test_catalog_includes_six_reusable_monthly_recipe_operators():
-    assert len(OperatorRegistry().catalog()) == 66
+    assert len(OperatorRegistry().catalog()) == 67
     assert parse("# comment\n$x").op == "field"
 
 

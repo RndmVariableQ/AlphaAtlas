@@ -265,8 +265,26 @@ class SearchSession:
         rules = self._library._rules
         minimum = self._evaluator.profile.get("min_train_val_ic")
         target_transform = self._evaluator.profile.get("target_transform")
+        factor_transform = self._evaluator.profile.get("factor_transform")
         return {
             "primary_metric": self._context.metric,
+            **(
+                {
+                    "factor_transform": {
+                        **factor_transform,
+                        "groupby": self._evaluator.profile.get(
+                            "transform_groupby", factor_transform.get("groupby", [])
+                        ),
+                        "semantics": "Transform every expression's output within each signal "
+                        "date and configured group using eligible finite factor values. "
+                        "Clip only when clip_quantiles is configured, before transformation. "
+                        "Missing or nonfinite groups yield null. Search, frozen OOS and model "
+                        "inputs use the same transformation.",
+                    }
+                }
+                if factor_transform is not None
+                else {}
+            ),
             **(
                 {
                     "target_transform": {

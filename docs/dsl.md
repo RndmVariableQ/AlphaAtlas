@@ -66,6 +66,10 @@ profile 的 `panel` 决定。
   DSL 调用使用位置参数。要求 `0 <= lo < hi <= 1`。
 - 条件缺失保持未知；`IS_FINITE(null)` 为 false，`IF_THEN_ELSE(null,...)` 为 null。
   `FILLNA` 不改变成员资格、行情质量或目标有效性。
+- `CS_RESID(y,x)` 在每个 timestamp 的 eligible 且两列均有限的样本上，拟合带截距的
+  一元 OLS，返回 `y - (alpha + beta*x)`。至少需要两个有效样本且 x 不为常量；
+  不合格行、缺失输入或无法识别的回归返回 null。两个不同 x 的有效样本可产生零残差。
+  回归按整个当前截面计算，不自动按行业分组；最终配置的因子变换仍在其后执行。
 - 截面只使用当前 timestamp 的 eligible 有限值。`CS_SCALE` 除以绝对值之和；
   截面标准差用 ddof=1，零分母返回 null。
 - TS 的 contract panel 按 `(exchange,instrument_id,segment_id)` 分组；product panel 按
@@ -81,6 +85,17 @@ coverage 范围 `(0,1]`，tail_fraction 范围 `(0,0.5]`。缺失持仓计入覆
 排名成员替换；通过覆盖后对仍有报价的固定持仓等权重算。组合收益广播给当前截面所有行。
 输入必须是历史可知的特征收益，不允许标签字段；月频 BGR 配方使用上一自然月持仓。
 在普通 5m 表达式中，“上一时间戳”就是上一面板 5m 时刻，不自动变成上月。
+
+例如，账面市值比对 ROE 的对数截面回归残差可以写为：
+
+```text
+log_bp = LOG($be / $market_cap)
+log_roe = LOG($ib / $be)
+CS_RESID(log_bp, log_roe)
+```
+
+这里以 `ib/be` 作为 ROE 的简化示例，正式研究须明确利润和权益口径；非正比值的对数
+返回 null，该行不参与拟合。字段仍须在当前版本允许清单内。
 
 基础清单见 [算子目录](operators.md)。版本可固定允许的规范算子及语义版本；未列入的算子
 不能通过别名调用。排名和极值等需要专用计算时使用有界数组批处理，

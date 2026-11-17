@@ -1,6 +1,6 @@
 # 基础算子目录
 
-共 66 个规范名称；别名不重复计数。
+共 67 个规范名称；别名不重复计数。
 由 `uv run python scripts/operator_catalog.py` 生成。数值与扩展协议见 [DSL](dsl.md)。
 
 | 名称 | 参数类型 | 输出 | 作用域 | 历史规则 | 含义 |
@@ -13,6 +13,7 @@
 | `CS_LAGGED_MEAN` | series, condition, window, float | series | panel | previous_timestamp | Current mean return of members selected at the previous panel timestamp. Arguments: return, membership condition, minimum holdings, coverage in (0,1]. Missing holdings count against coverage; observed holdings are equally reweighted. |
 | `CS_LAGGED_SPREAD` | series, series, condition, float, float | series | panel | previous_timestamp | Current top-minus-bottom return using previous-timestamp signal and membership. Arguments: return, signal, membership condition, tail fraction in (0,0.5], coverage. Floor(N*fraction) holdings per tail; ties use exchange/instrument identity. Missing holdings are never replaced; each tail must meet coverage independently. |
 | `CS_RANK` | series | series | cs | none | Ascending average rank / count among eligible finite values at the same timestamp. |
+| `CS_RESID` | series, series | series | cs | none | Residual y - (alpha + beta*x) from same-timestamp OLS with intercept. Arguments: y, x. Uses eligible jointly finite pairs; requires at least two pairs and nonconstant x. Invalid rows or unidentified fits return null. |
 | `CS_SCALE` | series | series | cs | none | Divide x by sum(abs(x)) among eligible finite values. Null if total <= 1e-12. |
 | `CS_WINSORIZE` | series, float=0.01, float=0.99 | series | cs | none | Clamp eligible x to same-timestamp lower/upper quantiles (linear interpolation). |
 | `CS_ZSCORE` | series | series | cs | none | Cross-sectional (x - mean) / sample std among eligible finite values. Null if std <= 1e-12. |

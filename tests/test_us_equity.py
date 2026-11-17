@@ -1,5 +1,7 @@
 import json
+import logging
 import shutil
+import sys
 from datetime import UTC, date, datetime, timedelta
 from math import prod
 from pathlib import Path
@@ -9,6 +11,7 @@ import numpy as np
 import polars as pl
 import pytest
 
+from alpha_atlas import cli
 from alpha_atlas.assets.audit import audit
 from alpha_atlas.assets.market import ParqMarketData
 from alpha_atlas.assets.us_equity import import_us_equity
@@ -254,3 +257,102 @@ def test_audit_reports_timezone_aware_anomaly(tmp_path):
         row = market.load_features(fields=["at"], end=date(2010, 1, 1)).row(0, named=True)
     assert row["at"] is None and not row["eligible"]
     assert row["total_return"] == 0.0
+
+
+def test_named_us_equity_cli_search_only(tmp_path, monkeypatch, capsys):
+    shutil.copytree(ROOT / "configs", tmp_path / "configs")
+    source = tmp_path / "atlas_data"
+    source.mkdir()
+    for year in (2009, 2010, 2022, 2025):
+        _write_month(source, year)
+    destination = tmp_path / "data/us_equity"
+    import_us_equity(source, destination)
+    name = "us_equity_v3asyc_deepseek"
+    config_path = tmp_path / "configs/versions" / f"{name}.json"
+    version = json.loads(config_path.read_text())
+    with ParqMarketData(destination, "all") as market:
+        version["fields"] = list(market.get_fields())
+        version["data"]["sources"]["base"]["snapshot_id"] = market.snapshot_id()
+    config_path.write_text(json.dumps(version))
+
+    class SyntheticSearch:
+        def __init__(self):
+            self.candidates = iter(["$at", "$at * $at", "$at / $market_cap"])
+            self.feedback = []
+
+        def set_session(self, session):
+            self.session = session
+
+        def ask(self, context, count=1):
+            assert count == 1
+            assert context.asset == "us_equity" and context.frequency == "1d"
+            assert context.target.horizon_bars == 21
+            assert context.target.return_type == "compounded_return"
+            return [Candidate(next(self.candidates))]
+
+        def tell(self, feedback):
+            self.feedback.extend(feedback)
+
+    search = SyntheticSearch()
+
+    def make_synthetic_method(method, seed, options):
+        assert (method, seed) == ("v3_async", 42)
+        assert options == version["method_configs"]["v3_async"]
+        return search
+
+    def forbid_oos(*args, **kwargs):
+        pytest.fail("--search-only must not evaluate OOS")
+
+    monkeypatch.setattr("alpha_atlas.runner.make_method", make_synthetic_method)
+    monkeypatch.setattr("alpha_atlas.experiment.finish_experiment", forbid_oos)
+    logger = logging.getLogger("alpha_atlas.progress")
+    for attribute in ("handlers", "level", "propagate"):
+        monkeypatch.setattr(logger, attribute, getattr(logger, attribute))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "atlas",
+            "run",
+            "--config",
+            name,
+            "--method",
+            "v3_async",
+            "--attempts",
+            "3",
+            "--search-only",
+        ],
+    )
+    cli.main()
+
+    directory = Path(json.loads(capsys.readouterr().out)["run_dir"])
+    spec = json.loads((directory / "run.json").read_text())
+    assert spec["status"] == "frozen" and spec["attempts"] == 3
+    assert spec["experiment_version"] == version
+    assert spec["snapshot_id"] == version["data"]["sources"]["base"]["snapshot_id"]
+    assert len(list((directory / "factor_trials").glob("*.json"))) == 3
+    assert len(search.feedback) == 3
+    assert all(feedback.report.status == "success" for feedback in search.feedback)
+    assert search.feedback[0].accepted
+    frozen = json.loads((directory / "frozen/library.json").read_text())
+    assert frozen["factors"] and not (directory / "oos.json").exists()
+
+    evaluator = search.session._evaluator
+    assert evaluator.features["trading_day"].max() <= date(2022, 12, 31)
+    metadata = evaluator.features.select("row_id", "trading_day", "gsector", "instrument_id")
+    first_cohort = (pl.col("trading_day") == date(2022, 1, 1)) & (pl.col("gsector") == 10)
+    targets = metadata.join(evaluator.targets, on="row_id").filter(first_cohort)
+    targets = targets.sort("instrument_id")
+    raw = (1 + np.arange(10) / 1000) ** 21 - 1
+    clipped = np.clip(raw, *np.quantile(raw, [0.01, 0.99]))
+    assert targets["target_raw"].to_numpy() == pytest.approx(raw)
+    assert targets["target"].to_numpy() == pytest.approx(clipped - clipped.mean())
+
+    observation = evaluator.observation(search.feedback[0].report.observation_ref).frame
+    scores = metadata.join(observation, on="row_id").filter(first_cohort).sort("instrument_id")
+    signal = np.arange(1000.0, 1010.0)
+    signal = np.clip(signal, *np.quantile(signal, [0.01, 0.99]))
+    assert scores["value"].to_numpy() == pytest.approx(
+        (signal - signal.mean()) / signal.std(ddof=1)
+    )
