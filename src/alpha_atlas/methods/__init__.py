@@ -4,6 +4,10 @@ from alpha_atlas.methods.baselines import make_method as make_baseline
 
 
 def make_method(name: str, seed: int, options=None):
+    if name == "analyst_miner":
+        from alpha_atlas.methods.analyst_miner import AnalystMinerConfig, AnalystMinerSearch
+
+        return AnalystMinerSearch(seed, AnalystMinerConfig.from_mapping(options or {}))
     if name == "alphaschema":
         from alpha_atlas.methods.alphaschema import AlphaSchemaConfig, AlphaSchemaSearch
 

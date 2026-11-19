@@ -8416,3 +8416,73 @@ bootstrap。全部结果用了 Test 标签，不作为准入或奖励的设计�
 搜索、拟合或请求 LLM。三组两种模型的加权／等权 Pearson 和 Spearman 均与原报告一致，
 最大绝对差为 `1.05e-17`；有效行、预测覆盖和各指标样本数一致。该复核不重算单因子 OOS，
 也不能保证在线 LLM 重新搜索得到相同候选；日志为 `logs/checks/v3-replay-20261110.log`。
+
+## 2026-11-11 Analyst + Miner 与 V3：B26 Luna 单次对照
+
+新方法 `analyst_miner` 的运行为 `futures_kernel_5m_full-all-fold2-analyst_miner-42-866bd8e9d2`；
+V3 对照为 `futures_kernel_5m_full-all-fold2-v3_async-42-60f742d873`。两组均为 fold2、seed 42、
+300 次上限、B26 初始库及相同数据、字段、算子、准入和 Luna 配置。新方法串行，V3 为并行系统；
+这不是单一机制消融。新方法两次模型流失败后从原检查点恢复。
+
+以共同 B26 样本和权重比较 B26 与 B26 加全部新成员，Linear 和 LightGBM 分开报告：
+
+| 方法 | 预算前缀 | 新成员 | Linear Δ加权 Pearson IC | LightGBM Δ加权 Pearson IC |
+| --- | ---: | ---: | ---: | ---: |
+| Analyst + Miner | 200 | 15 | +0.006082 | +0.013625 |
+| V3 Async | 200 | 4 | −0.002409 | +0.001104 |
+| Analyst + Miner | 300 | 20 | +0.005310 | +0.007115 |
+| V3 Async | 300 | 6 | −0.000458 | +0.004633 |
+
+各组共同 Test 样本为 2,549,205 行、加权 Pearson 使用 80 个共同有效品种；两方法对应模型的
+有效品种集合一致。300 次时 Analyst + Miner 的 Linear／LightGBM 相对 MSE 下降分别为
+−0.0197%／+0.0010%，V3 分别为 −0.0472%／−0.1151%。MSE 和 IC 衡量不同属性。
+新方法 300 次记录 1,028 次 Chat 请求、128,037,150 输入 token、344,316 输出 token，另有
+5 次用量未知；V3 分别为 579 次、23,092,593 输入 token、280,214 输出 token、0 次未知。
+新方法耗时 14,693 秒（含服务中断和恢复），V3 约 2,493 秒；时间受串行／并发及服务条件影响。
+
+结果分别见 [Analyst + Miner](../../artifacts/experiments/zk26_analyst_miner_luna_20261110/test.json)
+和 [V3](../../artifacts/comparisons/zk26_seeded_fold2_v3_luna_noband_r1_20261107/luna/test.json)。
+这是已查看历史留出期的单 seed 探索性系统比较，不证明稳定优势，也不能将差异归因于某个组件。
+200 是同一 300 次搜索轨迹的前缀，不是独立的 200 次预算运行。
+
+## 2026-11-11 Analyst + Miner：空库 1000 次运行及上下文压缩
+
+`futures_kernel_5m_full-all-fold2-analyst_miner-42-e252a46f17` 使用 Luna、fold2、seed 42、
+空初始正式库和 1000 次尝试预算；参考定义为 `futures_cta`。搜索在完成 522 次提交、40 个成员入库后
+失败，尚未冻结，也未对此运行进行 Test 评估。终端显示的 523 为下一次尝试编号。
+
+模型服务返回流错误后，从相同检查点多次恢复均在同一 Analyst 请求被拒绝。对错误内容仅做分类，
+服务返回无效请求，错误特征包含输入上下文超出；未记录供应商错误正文。该方法要求 Analyst 接收完整
+研究历史，不能据此静默截断历史并声称完成了同一协议。报告记录活动时间约 24,441 秒、1,995 次
+Chat 请求、435,059,778 个输入 token、831,572 个输出 token，另有 10 次请求用量未知；这些是
+已记录用量，不是精确费用。检查点与已提交 trial 均保留。
+
+随后从同一检查点恢复：前 522 次提交使用完整历史，自第 523 次尝试所在的 Analyst 计划起，
+改为[结构化压缩历史](../methods/analyst_miner.md)，并保留该计划此前保存的查询结果。原始
+checkpoint 中的历史从约 324.6 万字符压缩至约 12 万字符，513 个计划方向均保留，最近 40 条计划
+及 trial 提供更详细的摘要。后续实验属于中途切换记忆协议的混合运行，不能称作统一协议下从零开始
+的完整 1000 次结果。历史 Test 已被查看，不是全新盲测。
+
+恢复后最终完成 1000 次尝试并冻结，正式库 52 个成员。完成冻结后的单因子 OOS、组合模型 Test 和
+Val 库内相似度。与相同数据快照、fold2、seed 42、空初始正式库、字段、算子、准入、Luna 配置及
+1000 次预算的历史 V3 Async `1aa909d2ce` 比较，V3 入库 31 个。各模型使用各自冻结的全部因子：
+
+| 方法 | Linear Test √成交额加权 Pearson IC | LightGBM Test √成交额加权 Pearson IC |
+| --- | ---: | ---: |
+| Analyst + Miner（中途改为压缩历史） | 0.008367 | 0.013146 |
+| V3 Async | 0.007215 | 0.018351 |
+
+两组 Test eligible rows 均为 2,558,829，实际预测行分别为 2,558,829 与 2,558,815；
+加权 Pearson 的有效行分别为 2,417,631 与 2,417,617，均有 85 个有效品种。因此这是各自
+样本口径的系统比较，并非严格逐行配对。历史 Test 已反复查看，且仅有单 seed、不同角色分工和
+串行／并行执行，不能由此推断稳定优势或将差异归因于 Atlas。
+
+搜索记录的 Analyst + Miner 成本为 3,971 次 Chat 请求、483,475,431 个输入 token、
+1,300,139 个输出 token，另有 14 次用量未知，活动时间 42,947 秒；V3 为 2,143 次、
+152,743,001 输入 token、1,334,544 输出 token、未知 0 次，活动时间 13,923 秒。时间包含各自
+运行过程中的服务和计算条件，前者多次恢复并重建缓存，不能解释为模型或算法的纯速度对比。
+前者在 522 次中断时已记录 435,059,778 输入 token；续跑使用压缩历史后的已记录增量约
+48,415,653 输入 token，未知用量仍另计。
+
+完整结果见 [Analyst + Miner 运行报告](../../artifacts/runs/futures_kernel_5m_full-all-fold2-analyst_miner-42-e252a46f17/report.md)
+和 [V3 运行报告](../../artifacts/comparisons/v3async10_luna_residual_gate_fold2_20261109/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-1aa909d2ce/report.md)。

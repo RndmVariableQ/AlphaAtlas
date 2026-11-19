@@ -96,6 +96,7 @@ uv run atlas ui                              # 本地监控、研究记录与地
 ## 文档
 
 - [研究协议](docs/research_protocol.md)：数据、划分、评价、实验流程与 OOS。
+- [美股接入清单](docs/us_equity_checklist.md)：资产适配、时点数据和端到端验收。
 - [方法目录](docs/methods/README.md)和[方法复现规范](docs/method_reproduction.md)：方法机制、配置与公平比较。
 - [DSL 与算子](docs/dsl.md)、[研究工具](docs/research_tools.md)、[模型评估](docs/model.md)：公共接口和数值口径。
 - [实验记录](docs/records/experiments.md)和[数据记录](docs/records/data.md)：历史证据及限制。

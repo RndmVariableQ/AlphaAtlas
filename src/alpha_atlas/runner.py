@@ -165,7 +165,16 @@ def run(
         load_toml(root / f"configs/{method_name}.toml")
         if experiment_version is None
         and method_name
-        in {"alphaprobe", "alphaschema", "react", "mcts_llm", "annealing", "v1", "v1_async"}
+        in {
+            "alphaprobe",
+            "alphaschema",
+            "react",
+            "mcts_llm",
+            "analyst_miner",
+            "annealing",
+            "v1",
+            "v1_async",
+        }
         else None
     )
     if experiment_version is not None:
@@ -177,6 +186,7 @@ def run(
         raise ValueError(f"{method_name} requires a version with library_residual = residual_ic_v1")
     if method_name in {
         "mcts_llm",
+        "analyst_miner",
         "annealing",
         "v1",
         "v1_async",
@@ -212,6 +222,8 @@ def run(
         "implementation": (
             "session_plugin"
             if method_impl is not None
+            else "analyst_miner_v1"
+            if method_name == "analyst_miner"
             else "single_agent_react_v1"
             if method_name == "react"
             else "alphaprobe_atlas_v1"
@@ -314,7 +326,16 @@ def _search(directory, spec, method, progress, features, fold, runtime, checkpoi
         },
         retain_training=hasattr(method, "correlation_pairs")
         or spec["method"]
-        in {"mcts_llm", "annealing", "v1", "v1_async", "v2_sync", "v2_async", "v3_async"},
+        in {
+            "mcts_llm",
+            "analyst_miner",
+            "annealing",
+            "v1",
+            "v1_async",
+            "v2_sync",
+            "v2_async",
+            "v3_async",
+        },
         diagnostics=rules.get("search_diagnostics", ""),
         clip_quantiles=rules.get("clip_quantiles"),
     )
@@ -866,6 +887,12 @@ def check_config(root, spec):
         raise ValueError("asset configuration changed after search")
     if load_toml(root / "configs/benchmark.toml") != spec["rules"]:
         raise ValueError("evaluation configuration changed after search")
+    if spec["implementation"] == "analyst_miner_v1":
+        from alpha_atlas.methods.analyst_miner import AnalystMinerConfig
+
+        current = AnalystMinerConfig.from_mapping(load_toml(root / "configs/analyst_miner.toml"))
+        if asdict(current) != spec["method_config"]:
+            raise ValueError("analyst_miner configuration changed")
     if spec["implementation"] == "alphaprobe_atlas_v1":
         from alpha_atlas.methods.alphaprobe import AlphaProbeConfig
 

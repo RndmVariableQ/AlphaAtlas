@@ -12,6 +12,7 @@
 | [alphaprobe](alphaprobe.md) | 演化图、贝叶斯检索、三阶段 LLM 生成 | 本地算法适配，需 Chat 与 embedding 服务 |
 | [alphaschema](alphaschema.md) | 五类语义计划、覆盖探索、LightGBM 奖励代理与局部变异 | 作者代码适配；需 Chat 服务和共享滞后 RankIC 诊断 |
 | [mcts_llm](mcts_llm.md) | 公式树、五维奖励、定向改进与 FSA | 本地算法适配，需 Chat 服务和共享训练诊断 |
+| [analyst_miner](analyst_miner.md) | Analyst 长程选题和计划，Miner 按计划执行 | 无 Explorer、Region 选择或退火 |
 | [annealing](annealing.md) | Explorer、Analyst、Miner 三 Agent；Metropolis 退火选择研究 Region | 共享平台预算、评估与准入 |
 | [V1](v1.md) (`v1`) | 同步 ChaoticTrader_Future 的 Explorer 选题、查证与三方向评分 | 保留原三 Agent 退火执行；仅更新 Explorer |
 | [V1 异步](v1_async.md) (`v1_async`) | 多组 Analyst/Miner 并发，完成即补位 | V1 本地异步适配；平台评估、原子提交和退火裁决串行 |

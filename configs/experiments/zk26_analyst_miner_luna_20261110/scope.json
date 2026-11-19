@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "id": "zk26_analyst_miner_luna_20261110",
+  "parent_plan": "configs/experiments/zk26_seeded_fold2_v3_luna_noband_r1_20261107/plan.json",
+  "experiment_version": "rq8_zk26_lgbm_defaults_20261106",
+  "source_experiment_version": "rq8_zk26_seeded_fold2_analyst_miner_luna_20261110",
+  "include_union": false,
+  "methods": ["analyst_miner"],
+  "seeds": [42],
+  "attempts_per_method": 300,
+  "evaluation_nodes": [200, 300],
+  "runs": ["artifacts/runs/futures_kernel_5m_full-all-fold2-analyst_miner-42-866bd8e9d2"],
+  "purpose": "B26 初始化，长程 Analyst 与重置 Miner 的串行搜索；与历史 V3 Luna 系统比较。"
+}

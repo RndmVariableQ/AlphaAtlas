@@ -51,6 +51,7 @@ def _main() -> None:
             "alphaschema",
             "react",
             "mcts_llm",
+            "analyst_miner",
             "annealing",
             "v1",
             "v1_async",

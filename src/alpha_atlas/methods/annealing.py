@@ -1026,6 +1026,9 @@ class AnnealingLLMSearch:
     def _plan_limit(self):
         return self.research_plan_state.get("candidate_limit", self.config.candidates_per_plan)
 
+    def _candidate_regions(self, plan):
+        return (plan["region_id"],)
+
     def _prepare_candidate(self, context):
         if self.research_plan_state is None or self.research_plan_state.get("plan") is None:
             self._start_round(context)
@@ -1047,7 +1050,7 @@ class AnnealingLLMSearch:
             self.work["validation_error"] = str(exc)
             candidate = Candidate(
                 "",
-                (plan["region_id"],),
+                self._candidate_regions(plan),
                 hypothesis=f"generation failed: {exc}",
                 name="alpha_atlas_generation_error",
             )
@@ -1060,7 +1063,7 @@ class AnnealingLLMSearch:
                 return None
             candidate = Candidate(
                 miner["expression"],
-                (plan["region_id"],),
+                self._candidate_regions(plan),
                 hypothesis=plan["hypothesis"],
                 name=miner.get("name"),
             )

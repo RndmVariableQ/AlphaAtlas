@@ -132,7 +132,15 @@ def write_report(directory: Path) -> Path:
         "",
     ]
     method_state = checkpoint.get("method_state", {})
-    if spec.get("method") in {"annealing", "v1", "v1_async", "v2_sync", "v2_async", "v3_async"}:
+    if spec.get("method") in {
+        "analyst_miner",
+        "annealing",
+        "v1",
+        "v1_async",
+        "v2_sync",
+        "v2_async",
+        "v3_async",
+    }:
         records = method_state.get("factor_trial_records", method_state.get("steps", []))
         lines += _table(["研究记录", "数量"], [("计划内因子尝试记录", len(records))])
     if "method_config" in spec:
