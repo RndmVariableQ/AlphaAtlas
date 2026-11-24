@@ -140,6 +140,7 @@ def write_report(directory: Path) -> Path:
         "v2_sync",
         "v2_async",
         "v3_async",
+        "v4_async",
     }:
         records = method_state.get("factor_trial_records", method_state.get("steps", []))
         lines += _table(["研究记录", "数量"], [("计划内因子尝试记录", len(records))])
@@ -604,6 +605,7 @@ def update_experiment_overview(root, directory, spec, oos, tested, similarity):
         "v2_sync": "AlphaAtlas V2",
         "v2_async": "AlphaAtlas V2",
         "v3_async": "AlphaAtlas V3",
+        "v4_async": "AlphaAtlas V4",
         "random": "Random",
         "gp": "GP",
         "mcts": "UCT MCTS",

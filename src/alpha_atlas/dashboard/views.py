@@ -155,7 +155,7 @@ def run_list(index: RunIndex) -> list[dict]:
 
 def _thresholds(spec):
     config = spec.get("method_config") or {}
-    default = V3AsyncConfig() if spec.get("method") == "v3_async" else V2SyncConfig()
+    default = V3AsyncConfig() if spec.get("method") in {"v3_async", "v4_async"} else V2SyncConfig()
     return (
         config.get("sea_level", default.sea_level),
         config.get("probe_attempts", default.probe_attempts),
@@ -523,7 +523,7 @@ def map_view(index: RunIndex, key: str) -> dict:
     timelines: dict[str, list] = {}
     values: dict[str, list] = {}
     bands: dict[str, list] = {}
-    v3 = spec.get("method") == "v3_async"
+    v3 = spec.get("method") in {"v3_async", "v4_async"}
     # V3 runs without a recorded scheme used the V2 bands and the all-bands closing rule.
     scheme = (spec.get("method_config") or {}).get("scale_bands", LEGACY_SCHEME) if v3 else None
     frequency = (spec.get("profile") or {}).get("frequency")

@@ -1,0 +1,281 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1680" height="1030" viewBox="0 0 1680 1030" role="img" aria-labelledby="title desc">
+  <title id="title">Map-Guided Alpha Discovery</title>
+  <desc id="desc">Three V4 DeepSeek plans illustrate adding a predictor, testing a competing explanation and finding a signal's limits. Below, three columns trace Atlas Regions through admitted factors to abstract trial evidence. An elliptical workflow links Explorer, Analyst, Miner and the hypothesis map. Cross-links are illustrative.</desc>
+  <defs>
+    <!-- One projection for all three plates and the same depth vector on each side. -->
+    <path id="plate-top" d="M0 128 165 0H1154L989 128Z"/>
+    <path id="plate-front" d="M0 128H989V154H0Z"/>
+    <path id="plate-side" d="M989 128 1154 0V26L989 154Z"/>
+    <path id="plate-highlight" d="M-109 4C-111-13-77-27-34-25C-7-24 7-32 30-31C65-31 108-21 110-5C112 10 87 25 50 28C25 30 11 23-15 26C-59 32-105 23-109 4Z"/>
+    <path id="hypothesis-top" d="M0 128 165 0H343C384-1 415 14 463 14C516 15 550-8 609-7C654-7 682 8 729 8C779 9 827-7 865-6C912-6 950 3 990 3C1047 3 1101-1 1154 0L989 128Z"/>
+    <clipPath id="hypothesis-surface">
+      <use href="#hypothesis-top" transform="translate(83 237)"/>
+    </clipPath>
+    <path id="explorer-trail" d="M431 281C456 296 474 312 507 310C550 308 569 281 606 268C646 252 663 256 685 266C723 284 743 307 777 308C809 310 832 291 868 291"/>
+    <mask id="terrain-behind-trail" maskUnits="userSpaceOnUse" x="83" y="237" width="1154" height="128">
+      <rect x="83" y="237" width="1154" height="128" fill="#fff"/>
+      <use href="#explorer-trail" fill="none" stroke="#000" stroke-width="8.5" stroke-linecap="round"/>
+    </mask>
+    <marker id="workflow-tip" markerWidth="36" markerHeight="34" refX="10" refY="17" orient="auto" markerUnits="userSpaceOnUse" viewBox="0 0 36 34">
+      <path fill="#f8512b" d="M1 1 34 17 1 33Z"/>
+    </marker>
+    <g id="agent-head">
+      <circle cx="0" cy="0" r="17.5" fill="#ffd7a7"/>
+      <path fill="#101921" d="M-16 8C-21-3-15-16-5-18C5-21 14-16 17-7C7-9 1-3-6 2Z"/>
+    </g>
+    <style>
+      text { font-family: "Helvetica Neue", "DejaVu Sans", sans-serif; fill: #101921; }
+      .mode { font-size: 25px; font-weight: 700; letter-spacing: -.65px; }
+      .case-question { font-size: 18px; letter-spacing: -.35px; }
+      .case-detail { font-size: 16px; letter-spacing: -.35px; }
+      .role { font-size: 26px; font-weight: 700; letter-spacing: -.8px; }
+      .factor { font-size: 23px; font-weight: 700; letter-spacing: -.7px; }
+      .section { font-size: 25px; font-weight: 700; letter-spacing: -.75px; }
+      .question { font-size: 22px; letter-spacing: -.75px; }
+      .navy { fill: #101921; }
+      .blue { fill: #0551d5; }
+      .cream { fill: #fff5e6; }
+      .paper-text { fill: #fff5e6; }
+      .red { fill: #f43c20; }
+      .yellow { fill: #ffc11a; }
+      .contour { fill: none; stroke: #fff5e6; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+      .highlight { fill: #ffd19e; stroke: #ee3d22; stroke-width: 2.5; }
+      .relation { fill: none; stroke: #101921; stroke-width: 3.3; stroke-linecap: round; stroke-dasharray: .1 8; }
+      .ribbon { fill: none; stroke: #f8512b; stroke-width: 17; stroke-linecap: butt; marker-end: url(#workflow-tip); }
+    </style>
+  </defs>
+
+  <rect width="1680" height="1030" fill="#fbf2e6"/>
+
+  <g aria-label="Explorer’s research modes">
+    <path class="blue" opacity=".065"
+          d="M76 28H1626Q1650 28 1650 52V140Q1650 164 1626 164H564
+             C518 164 480 178 456 207Q448 217 440 207
+             C418 179 390 164 346 164H76Q52 164 52 140V52Q52 28 76 28Z"/>
+    <g transform="translate(0 29)">
+      <title>Expansion · Plan 2. Test whether signed 5-minute bar volume forecasts continuation over the next 12 bars.</title>
+      <g transform="translate(72 44)" fill="none" stroke="#0551d5" stroke-width="3.4" stroke-linecap="round">
+        <path d="M0 25h22m0 0c21 0 13-28 55-28M22 25h55m-55 0c21 0 13 28 55 28"/>
+        <circle class="red" cx="90" cy="-3" r="8.5" stroke="none"/>
+        <rect class="blue" x="82" y="17" width="17" height="17" stroke="none"/>
+        <path class="red" d="M90 43l10 18H80Z" stroke="none"/>
+      </g>
+      <text class="mode" x="211" y="53">Knowledge Expansion</text>
+      <text class="case-question" x="211" y="79">Can signed volume predict continuation?</text>
+      <text class="case-detail" x="211" y="103">Price reversal → Add signed volume</text>
+    </g>
+
+    <g transform="translate(0 29)">
+      <title>Revision · Plan 19. Test a competing source of the signal. Does it come from persistent order flow or from where the bar closes within its high-low range? Removing volume weighting and multi-bar aggregation produced the single-bar candidate admitted in trial 72.</title>
+      <g transform="translate(600 44)">
+        <path d="M0 45h18c31 0 1-44 34-44h25c22 0 6 22 27 22h16m-9-8 9 8-9 8" fill="none" stroke="#f43c20" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect class="blue" x="54" y="15" width="17" height="17"/>
+      </g>
+      <text class="mode" x="739" y="53">Knowledge Revision</text>
+      <text class="case-question" x="739" y="79">What drives the order-flow signal?</text>
+      <text class="case-detail" x="739" y="103">Order splitting → Close location?</text>
+    </g>
+
+    <g transform="translate(0 29)">
+      <title>Refinement · Plan 79. Follow up on the admitted compressed-range breakout from trial 243. Compare a close just beyond the prior session's range with a close far beyond it.</title>
+      <g transform="translate(1128 44)" fill="none" stroke="#0551d5" stroke-width="3">
+        <path d="M110 25C78 10 57-3 34-3C-7-3-7 53 34 53C57 53 78 40 110 25Z"/>
+        <path d="M93 25C68 13 53 5 35 5C5 5 5 45 35 45C53 45 68 37 93 25Z"/>
+        <path d="M75 25C58 16 48 13 37 13C19 13 19 37 37 37C48 37 58 34 75 25Z" stroke="#f43c20"/>
+        <circle class="yellow" cx="37" cy="25" r="6.5" stroke="none"/>
+      </g>
+      <text class="mode" x="1267" y="53">Knowledge Refinement</text>
+      <text class="case-question" x="1267" y="79">Which breakouts persist after a squeeze?</text>
+      <text class="case-detail" x="1267" y="103">Squeeze breakout → Near vs. far</text>
+    </g>
+  </g>
+
+  <g transform="translate(0 72)">
+    <g aria-label="Three axonometric map slabs">
+      <g transform="translate(83 237)">
+        <use href="#plate-front" fill="#326bd3"/>
+        <use href="#plate-side" fill="#083797"/>
+        <use href="#hypothesis-top" fill="#0952d1"/>
+        <path d="M0 128H989L1154 0" fill="none" stroke="#fff5e6" stroke-width="1.4" stroke-linejoin="round"/>
+      </g>
+      <g transform="translate(83 499)">
+        <use href="#plate-front" fill="#da950e"/>
+        <use href="#plate-side" fill="#c27e08"/>
+        <use href="#plate-top" fill="#ffbf13"/>
+        <path d="M0 128H989L1154 0" fill="none" stroke="#fff5e6" stroke-width="1.4" stroke-linejoin="round"/>
+      </g>
+      <g transform="translate(83 716)">
+        <use href="#plate-front" fill="#f23e22"/>
+        <use href="#plate-side" fill="#cf2c18"/>
+        <use href="#plate-top" fill="#f9e3cc"/>
+        <path d="M0 128H989L1154 0" fill="none" stroke="#fff5e6" stroke-width="1.4" stroke-linejoin="round"/>
+      </g>
+    </g>
+
+    <g aria-label="Terrain contours and research workflow">
+      <g class="contour" clip-path="url(#hypothesis-surface)">
+        <g mask="url(#terrain-behind-trail)" stroke-width="1.8">
+          <path d="M188 339C219 316 260 307 292 288C324 269 347 255 378 255C419 255 447 280 471 289"/>
+          <path d="M213 330C245 322 274 309 306 289C332 272 354 260 381 258C414 257 445 277 465 288C482 296 494 297 515 296"/>
+          <path d="M232 331C267 322 294 310 322 291C346 274 364 270 386 270C412 271 432 287 451 298"/>
+          <path d="M233 332C276 338 307 332 342 319C372 307 395 307 418 312C444 318 459 320 477 315"/>
+          <path d="M269 324C300 318 323 302 344 294C367 285 385 285 400 290C420 296 432 305 444 311"/>
+
+          <path d="M553 316C582 309 602 288 624 276C641 267 653 267 670 272C694 279 715 305 739 312C710 320 618 324 553 316Z"/>
+          <path d="M577 317C600 311 615 296 635 288C650 281 663 282 675 287C693 295 709 309 725 315"/>
+          <path d="M607 319C626 315 641 296 657 294C676 291 687 310 699 316"/>
+
+          <path d="M721 276C740 273 755 254 773 256C794 257 805 272 833 274C863 276 883 250 919 241C961 231 981 245 1013 255C1042 265 1061 274 1082 275"/>
+          <path d="M730 281C753 287 779 286 800 281C828 274 841 279 867 269C890 260 907 248 929 247C963 244 987 263 1013 271C1030 276 1040 283 1056 286"/>
+          <path d="M850 294C873 285 889 283 910 276C935 268 947 267 966 271C988 276 1000 286 1024 294"/>
+          <path d="M910 301C933 296 946 289 963 292C983 295 993 305 1009 309"/>
+        </g>
+        <use href="#explorer-trail" stroke-width="6.1" stroke-dasharray=".1 10.6"/>
+      </g>
+      <use href="#plate-highlight" class="highlight" transform="translate(901 325) scale(.93 .83)"/>
+      <use href="#plate-highlight" transform="translate(901 325) scale(.85 .66)" fill="none" stroke="#ee3d22" stroke-width="1.8"/>
+      <g opacity=".55" transform="rotate(7 720 351)" aria-label="Explorer to Analyst to Miner and back to the hypothesis map">
+        <path class="ribbon" d="M473.120 234.374A401 148 0 0 1 1035.992 259.882"/>
+        <path class="ribbon" d="M1118.011 369.037A401 148 0 0 1 966.880 467.626"/>
+        <path class="ribbon" d="M754.949 498.437A401 148 0 0 1 359.584 415.879"/>
+      </g>
+    </g>
+
+    <g aria-label="Hypotheses and their implementation links">
+      <text class="factor paper-text" x="382" y="345" text-anchor="middle"><title>Patient holders anchor long-run value · Plan 7</title>Value Anchoring</text>
+      <text class="factor paper-text" x="640" y="345" text-anchor="middle"><title>Stop cascade after range compression · Plan 72</title>Range Compression</text>
+      <text class="factor" x="901" y="334" text-anchor="middle"><title>Order-splitting flow persistence · Plan 19</title>Order Flow</text>
+      <g aria-label="Value Anchoring links to 120D Price Stretch. Range Compression links to Squeeze Breakout. Order Flow links to Close Pressure. The lighter cross-link is illustrative.">
+        <path class="relation" d="M382 371C382 386 382 396 379 409C370 450 351 463 350 533"/>
+        <path class="relation" d="M640 371C646 417 616 446 607 482C604 494 604 503 607 515"/>
+        <path fill="none" stroke="#31405a" stroke-width="2.7" stroke-linecap="round"
+              stroke-dasharray=".1 8" opacity=".84"
+              d="M381 393C387 414 433 425 478 434C533 445 596 451 606 492"/>
+        <path class="relation" d="M914 371C927 436 895 457 921 522"/>
+      </g>
+    </g>
+
+    <g aria-label="Explorer walks, Analyst studies a plan and Miner kneels to place a block">
+      <g transform="translate(441 174)" stroke-linecap="round" stroke-linejoin="round">
+        <use href="#agent-head"/>
+        <path d="M-25 18-10 22-13 53-35 48l-3-6 6-20Z" fill="#fff5e6" stroke="#101921" stroke-width="2"/>
+        <path d="M-10 16C0 13 8 18 10 26l3 23-33 3 3-23c1-7 3-11 7-13Z" fill="#0551d5"/>
+        <path d="M5 24 20 42 34 27" fill="none" stroke="#0551d5" stroke-width="12"/>
+        <path d="m32 30 5-7" stroke="#ffd7a7" stroke-width="7"/>
+        <path d="m34 28 8-12" stroke="#101921" stroke-width="2.6"/>
+        <circle cx="49" cy="7" r="12" fill="#fbf2e6" stroke="#f43c20" stroke-width="2.8"/>
+        <path d="M-19 52 9 50l17 18 8 32-14 3-9-26L-1 66l-6 21-18 15-12-10 17-16Z" fill="#ffc11a"/>
+        <path d="m-35 91 12 11 3 11-23-12Z" fill="#101921"/>
+        <path d="m20 102 15-3 13 7 1 4H21Z" fill="#101921"/>
+      </g>
+      <text class="role" x="512" y="184">Explorer</text>
+
+      <g transform="translate(1073 355)" stroke-linejoin="round" stroke-linecap="round">
+        <circle cx="-23" cy="13" r="10" fill="#101921"/>
+        <use href="#agent-head"/>
+        <path d="M-9 19C6 17 17 26 18 42l-5 23h-46l5-22c2-12 8-20 19-24Z" fill="#ffc11a"/>
+        <path d="M25 18h33L42 63H10Z" fill="#fff5e6" stroke="#101921" stroke-width="1.8"/>
+        <path d="m29 29 5-4 6 5 6-4m-21 12 5-4 6 5 6-4m-20 13 5-4 6 5 6-4" fill="none" stroke="#0551d5" stroke-width="1.7"/>
+        <path d="M-9 37-14 52c-1 5 1 9 7 10l19-4-2-9-13 3 5-12Z" fill="#f0a513"/>
+        <path d="m10 54 12-2" stroke="#ffd7a7" stroke-width="8"/>
+      </g>
+      <text class="role" x="1140" y="369">Analyst</text>
+      <text x="1141" y="390" font-size="16" letter-spacing="-.45">Experiment Design</text>
+
+      <g transform="translate(769 463)" stroke-linejoin="round" stroke-linecap="round">
+        <use href="#agent-head"/>
+        <path d="M-16 18C-7 15 0 20 5 28l-4 24-43 4c3-12 12-31 26-38Z" fill="#0551d5"/>
+        <path d="m-4 27 16 14 26 7" fill="none" stroke="#0551d5" stroke-width="11"/>
+        <path d="m32 46 9 3" stroke="#ffd7a7" stroke-width="7"/>
+        <path d="m-40 54 39-6c10-1 14 4 13 13l-2 26H-4L-4 67l-11 6 2 12c-8 9-17 7-23 1l-6-7-7 12-8-6 9-18Z" fill="#ffc11a" stroke="#fff5e6" stroke-width="1.1"/>
+        <path d="M-6 86h16l8 6v6H-7Z" fill="#101921"/>
+        <path d="m-51 76 9 5-10 16c-3 5-12 4-11 0Z" fill="#101921"/>
+      </g>
+      <text class="role" x="805" y="468">Miner</text>
+    </g>
+
+    <g aria-label="Factor implementations">
+      <g aria-label="120D Price Stretch">
+        <title>val_daily_120
+anchor = TS_MEAN($adj_close@1d, 120)
+$adj_close@1d / anchor - 1</title>
+        <path fill="#fff5e6" d="M271 570l33-23h176l-33 23Z"/>
+        <path fill="#0551d5" d="M271 570h176v16H271Z"/>
+        <path fill="#083797" d="M447 570l33-23v16l-33 23Z"/>
+        <path fill="#fff5e6" d="M305 552l28-20h117l-28 20Z"/>
+        <path fill="#0551d5" d="M305 552h117v15H305Z"/>
+        <path fill="#083797" d="M422 552l28-20v15l-28 20Z"/>
+        <text class="factor" x="377" y="612" text-anchor="middle">120D Price Stretch</text>
+      </g>
+      <g aria-label="Squeeze Breakout">
+        <title>compressed_session_range_outside_5m
+rng = SUBTRACT($adj_high@1d, $adj_low@1d)
+comp = DIVIDE(rng, TS_MEAN(rng, 20))
+mid = DIVIDE(ADD($adj_high@1d, $adj_low@1d), 2)
+half = DIVIDE(SUBTRACT($adj_high@1d, $adj_low@1d), 2)
+pos = DIVIDE(SUBTRACT($adj_close, mid), half)
+IF_THEN_ELSE(AND(GT(ABS(pos), 1), LE(TS_RANK(comp, 120), 0.5)), pos, 0)</title>
+        <path class="blue" d="M540 569h156v12c0 12-35 22-78 22s-78-10-78-22Z"/>
+        <ellipse class="cream" cx="618" cy="569" rx="78" ry="19"/>
+        <path class="blue" d="M558 551h120v11c0 10-27 18-60 18s-60-8-60-18Z"/>
+        <ellipse class="cream" cx="618" cy="551" rx="60" ry="16"/>
+        <path class="blue" d="M578 533h80v10c0 8-18 14-40 14s-40-6-40-14Z"/>
+        <ellipse class="cream" cx="618" cy="533" rx="40" ry="12"/>
+        <text class="factor" x="618" y="620" text-anchor="middle">Squeeze Breakout</text>
+      </g>
+      <g aria-label="Close Pressure">
+        <title>single_bar_pressure_zscore_5m_240
+pressure = SUBTRACT(MULTIPLY(2, DIVIDE(SUBTRACT($adj_close, $adj_low), SUBTRACT($adj_high, $adj_low))), 1)
+TS_ZSCORE(pressure, 240)</title>
+        <path fill="#fff5e6" d="M794 566l29-20h176l-29 20Z"/>
+        <path fill="#0551d5" d="M794 566h176v24H794Z"/>
+        <path fill="#083797" d="M970 566l29-20v24l-29 20Z"/>
+        <path fill="#fff5e6" d="M865 538l24-17h63l-24 17Z"/>
+        <path fill="#0551d5" d="M865 538h63v26h-63Z"/>
+        <path fill="#083797" d="M928 538l24-17v26l-24 17Z"/>
+        <path fill="#fff5e6" d="M815 504l24-17h47l-24 17Z"/>
+        <path fill="#0551d5" d="M815 504h47v25h-47Z"/>
+        <path fill="#083797" d="M862 504l24-17v25l-24 17Z"/>
+        <circle cx="811" cy="510" r="4" fill="#ffd7a7"/>
+        <use href="#plate-highlight" class="highlight" transform="translate(909 609) scale(.88 .60)"/>
+        <text class="factor" x="909" y="617" text-anchor="middle">Close Pressure</text>
+      </g>
+    </g>
+
+    <g aria-label="Abstract trial evidence and illustrative factor correlation">
+      <path class="relation" d="M382 628V758M639 637V753M911 629V746"/>
+      <g fill="#1260dc">
+        <circle cx="343" cy="781" r="6"/><circle cx="365" cy="766" r="6"/><circle cx="393" cy="759" r="6"/>
+        <circle cx="368" cy="796" r="6"/><circle cx="390" cy="781" r="6"/><circle cx="414" cy="776" r="6"/>
+        <circle cx="411" cy="798" r="6"/>
+      </g>
+      <g fill="#101921">
+        <circle cx="592" cy="779" r="6"/><circle cx="616" cy="764" r="6"/><circle cx="650" cy="763" r="6"/>
+        <circle cx="612" cy="795" r="6"/><circle cx="634" cy="780" r="6"/><circle cx="673" cy="780" r="6"/>
+        <circle cx="654" cy="798" r="6"/>
+      </g>
+      <path class="highlight" d="M825 752C827 735 853 727 883 729C911 730 930 726 957 726C1012 726 1080 736 1097 756C1115 780 1076 811 1021 822C977 833 913 831 889 821C867 811 873 795 853 788C831 780 821 768 825 752Z"/>
+      <text x="963" y="753" text-anchor="middle" font-size="18" font-weight="700" letter-spacing="-.4">Trial Evidence</text>
+      <g class="red">
+        <circle cx="898" cy="790" r="6"/><circle cx="925" cy="776" r="6"/><circle cx="968" cy="775" r="6"/>
+        <circle cx="922" cy="809" r="6"/><circle cx="950" cy="790" r="6"/><circle cx="1005" cy="791" r="6"/>
+        <circle cx="982" cy="808" r="6"/>
+      </g>
+      <path d="M431 797Q502 763 578 796M692 796Q768 763 850 793" fill="none" stroke="#0551d5" stroke-width="2.8" stroke-linecap="round"/>
+      <text class="factor" x="641" y="825" text-anchor="middle">Factor Correlation</text>
+    </g>
+
+    <g aria-label="Atlas key and space names">
+      <path class="red" d="M1314 235h9v143h-9zM1314 481h9v122h-9zM1314 712h9v118h-9z"/>
+      <text class="section" x="1343" y="277">Hypothesis Space</text>
+      <text class="question" x="1344" y="311">What do we want to<tspan x="1344" dy="25">understand?</tspan></text>
+      <text class="section" x="1343" y="535">Implementation Space</text>
+      <text class="question" x="1344" y="569">How do we investigate it?</text>
+      <text class="section" x="1343" y="765">Evidence Space</text>
+      <text class="question" x="1344" y="799">What have we learned?</text>
+      <path class="highlight" d="M43 904c3-10 17-13 29-9 10 4 13-1 22 1 17 2 17 19 1 23-9 3-17-1-25 0-15 3-31-1-27-15Z"/>
+      <text x="117" y="912" font-size="17" font-weight="700" letter-spacing="-.45">Regions updated this round</text>
+      <text x="430" y="912" font-size="17" font-weight="700" letter-spacing="-.45">Cross-links are illustrative.</text>
+    </g>
+  </g>
+</svg>

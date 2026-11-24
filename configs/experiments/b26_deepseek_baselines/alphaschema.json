@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "id": "b26_deepseek_baselines_alphaschema",
+  "parent_plan": "configs/experiments/b26_deepseek_baselines/plan.json",
+  "experiment_version": "rq8_zk26_lgbm_defaults_20261106",
+  "source_experiment_version": "rq8_b26_deepseek_baselines_300",
+  "include_union": false,
+  "methods": [
+    "alphaschema"
+  ],
+  "seeds": [
+    42
+  ],
+  "attempts_per_method": 300,
+  "evaluation_nodes": [
+    200,
+    300
+  ],
+  "purpose": "DeepSeek alphaschema 相对 B26 的配对增量。"
+}

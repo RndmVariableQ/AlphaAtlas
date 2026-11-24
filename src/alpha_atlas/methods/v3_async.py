@@ -283,6 +283,7 @@ class V3AsyncConfig(V2AsyncConfig):
 
 
 class V3AsyncSearch(V2AsyncSearch):
+    checkpoint_version = STATE_VERSION
     explorer_reminder = V3_REMINDER
     unresolved_refusal = NO_UNRESOLVED
     min_proposals = 1
@@ -407,11 +408,12 @@ class V3AsyncSearch(V2AsyncSearch):
         super()._finish_round(update_region=update_region)
 
     def dump_state(self):
-        return {**V1AsyncSearch.dump_state(self), "version": STATE_VERSION}
+        return {**V1AsyncSearch.dump_state(self), "version": self.checkpoint_version}
 
     def load_state(self, state):
-        if state.get("version") != STATE_VERSION:
-            raise ValueError("V3 Async requires its own checkpoint")
+        if state.get("version") != self.checkpoint_version:
+            name = self.checkpoint_version.removeprefix("atlas_mechanism_").upper()
+            raise ValueError(f"{name.split('_')[0]} Async requires its own checkpoint")
         V1AsyncSearch.load_state(self, {**state, "version": "atlas_explorer_v1_async"})
 
     def _residual_information(self, region_id, trials=None):

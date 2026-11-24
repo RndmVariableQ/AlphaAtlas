@@ -10,6 +10,7 @@
 | `mcts` | UCT 符号搜索 | 表达式结构基线，不是 LLM-MCTS |
 | `atlas` | 区域 UCB 预算分配 | 区域导航原型，不是完整开放式地图 |
 | [alphaprobe](alphaprobe.md) | 演化图、贝叶斯检索、三阶段 LLM 生成 | 本地算法适配，需 Chat 与 embedding 服务 |
+| [alphamaster](alphamaster.md) | 每轮参考有效和废弃因子，失败候选定向优化一次 | 作者默认在线双链适配，正式准入由公共平台裁决 |
 | [alphaschema](alphaschema.md) | 五类语义计划、覆盖探索、LightGBM 奖励代理与局部变异 | 作者代码适配；需 Chat 服务和共享滞后 RankIC 诊断 |
 | [mcts_llm](mcts_llm.md) | 公式树、五维奖励、定向改进与 FSA | 本地算法适配，需 Chat 服务和共享训练诊断 |
 | [analyst_miner](analyst_miner.md) | Analyst 长程选题和计划，Miner 按计划执行 | 无 Explorer、Region 选择或退火 |
@@ -19,6 +20,7 @@
 | [V2 Sync](v2_sync.md) (`v2_sync`) | 串行 V1 流程；Region 视为机制，按每次尝试的库残差信息退火 | 需开启 `library_residual` 的版本；与已删除的旧 `v2` 无关 |
 | [V2 Async](v2_sync.md#v2-async) (`v2_async`) | V2 Sync 的机制奖励、地图与区域规则，跑在 V1 Async 的并发计划上 | 需开启 `library_residual`；`parallel_plans` 控制并发计划数 |
 | [V3 Async](v3_async.md) (`v3_async`) | V2 Async 流程；入库残差/尝试为得分，Region 以准入判定状态，支持回看分档，可提交单一方向 | 需开启 `library_residual`；版本可设置残差准入 |
+| [V4 Async](v4_async.md) (`v4_async`) | Explorer 根据证据缺口选择拓展、修正或细化方向 | V3 Async 的执行、评分、准入及预算 |
 | [react](react.md) | 单 Agent 工具循环与上下文压缩 | 自建 LLM 基线，需支持 tools 的 Chat 服务 |
 
 前四项共享有限文法；LLM 方法可使用更广 DSL，比较时必须披露搜索空间、初始化、

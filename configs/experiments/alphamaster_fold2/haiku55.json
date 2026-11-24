@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "id": "alphamaster_fold2_haiku55_b26_300",
+  "parent_plan": "configs/experiments/alphamaster_fold2/plan.json",
+  "experiment_version": "rq8_zk26_lgbm_defaults_20261106",
+  "source_experiment_version": "rq8_fold2_alphamaster_haiku55_b26_300",
+  "include_union": false,
+  "methods": [
+    "alphamaster"
+  ],
+  "seeds": [
+    42
+  ],
+  "attempts_per_method": 300,
+  "evaluation_nodes": [
+    200,
+    300
+  ],
+  "purpose": "AlphaMaster 相对 B26 的 200／300 次配对增量。"
+}

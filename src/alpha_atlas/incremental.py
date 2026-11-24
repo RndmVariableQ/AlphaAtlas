@@ -202,7 +202,12 @@ def _load_study(root, scope_path, directories):
         baseline_ids = {item["compiled"]["factor_id"] for item in baseline_frozen["factors"]}
         if initial_ids != expected_initial or initial_ids and initial_ids != baseline_ids:
             raise ValueError("source initial library differs from the paired baseline")
-        usage = read_json(directory / "checkpoint.json")["method_state"].get("usage", {})
+        # Prefix snapshots have no method checkpoint or attributable model cost.
+        usage = (
+            None
+            if spec.get("snapshot_trial_count") is not None
+            else read_json(directory / "checkpoint.json")["method_state"].get("usage", {})
+        )
         members.append((spec["method"], frozen, RunStore(directory).trials(), usage))
     factors, origins, arms = assemble_arms(
         baseline_frozen["factors"], members, scope["evaluation_nodes"], include_union=include_union

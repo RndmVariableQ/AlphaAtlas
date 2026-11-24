@@ -48,6 +48,7 @@ def _main() -> None:
             "mcts",
             "atlas",
             "alphaprobe",
+            "alphamaster",
             "alphaschema",
             "react",
             "mcts_llm",
@@ -58,6 +59,7 @@ def _main() -> None:
             "v2_sync",
             "v2_async",
             "v3_async",
+            "v4_async",
         ],
         help="Search method; inferred when the configuration contains exactly one method",
     )

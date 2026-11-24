@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import logging
+from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -17,9 +18,11 @@ from alpha_atlas.checkpoint import (
     read_json,
     run_lock,
 )
+from alpha_atlas.expressions import compile_factor
+from alpha_atlas.operators import OperatorRegistry
 from alpha_atlas.reporting import refresh_report
 from alpha_atlas.runner import check_config, run_model
-from alpha_atlas.storage import FORMAT_VERSION, RunStore
+from alpha_atlas.storage import FORMAT_VERSION, RunStore, candidate_from_dict
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -59,8 +62,8 @@ def freeze_prefix(source: Path, *, attempts: int | None = None, factors: int | N
     check_config(workspace, spec)
     if spec["status"] == "frozen" and attempts is None and factors is None:
         return source
-    if spec.get("initial_library") or list((source / "operators").glob("*.json")):
-        raise ValueError("prefix helper supports empty initial libraries and builtin operators")
+    if list((source / "operators").glob("*.json")):
+        raise ValueError("prefix helper supports builtin operators only")
     checkpoint_path = source / "checkpoint.json"
     if checkpoint_path.exists():
         checkpoint = read_json(checkpoint_path)
@@ -75,6 +78,22 @@ def freeze_prefix(source: Path, *, attempts: int | None = None, factors: int | N
         raise ValueError(f"only {completed} attempts have been committed")
     captured_at = datetime.now(ZoneInfo("Asia/Shanghai")).isoformat()
     payloads, members = [], []
+    initial = spec.get("initial_library", {}).get("members", [])
+    if initial:
+        registry = OperatorRegistry(versions=spec["experiment_version"]["operator_versions"])
+        for entry in initial:
+            compiled = compile_factor(
+                candidate_from_dict(entry["candidate"]).expression,
+                set(spec["fields"]),
+                registry,
+                max_nodes=spec["rules"]["max_expression_nodes"],
+                max_depth=spec["rules"]["max_expression_depth"],
+            )
+            if compiled.factor_id != entry["report"]["expression_id"]:
+                raise ValueError("initial member identity mismatch")
+            members.append({**entry, "compiled": asdict(compiled), "initial": True})
+        if factors is not None and factors < len(initial):
+            raise ValueError("requested factor count is below initial membership")
     store = RunStore(source)
     for index in range(1, (attempts or completed) + 1):
         payload = (store.factor_trials_directory / f"{index:08d}.json").read_bytes()
@@ -90,6 +109,7 @@ def freeze_prefix(source: Path, *, attempts: int | None = None, factors: int | N
                     "candidate": feedback["candidate"],
                     "report": feedback["report"],
                     "compiled": trial["compiled"],
+                    **({"initial": False} if initial else {}),
                 }
             )
         if len(members) != feedback["library_version"] or len(members) != trial["library_size"]:

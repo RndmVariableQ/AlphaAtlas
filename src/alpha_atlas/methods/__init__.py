@@ -8,6 +8,10 @@ def make_method(name: str, seed: int, options=None):
         from alpha_atlas.methods.analyst_miner import AnalystMinerConfig, AnalystMinerSearch
 
         return AnalystMinerSearch(seed, AnalystMinerConfig.from_mapping(options or {}))
+    if name == "alphamaster":
+        from alpha_atlas.methods.alphamaster import AlphaMasterSearch, LLMSearchConfig
+
+        return AlphaMasterSearch(seed, LLMSearchConfig.from_mapping(options or {}))
     if name == "alphaschema":
         from alpha_atlas.methods.alphaschema import AlphaSchemaConfig, AlphaSchemaSearch
 
@@ -24,6 +28,11 @@ def make_method(name: str, seed: int, options=None):
         from alpha_atlas.methods.v3_async import V3AsyncConfig, V3AsyncSearch
 
         return V3AsyncSearch(seed, V3AsyncConfig.from_mapping(options or {}))
+    if name == "v4_async":
+        from alpha_atlas.methods.v3_async import V3AsyncConfig
+        from alpha_atlas.methods.v4_async import V4AsyncSearch
+
+        return V4AsyncSearch(seed, V3AsyncConfig.from_mapping(options or {}))
     if name == "v1_async":
         from alpha_atlas.methods.v1_async import V1AsyncConfig, V1AsyncSearch
 

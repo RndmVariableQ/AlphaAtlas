@@ -167,6 +167,7 @@ def run(
         and method_name
         in {
             "alphaprobe",
+            "alphamaster",
             "alphaschema",
             "react",
             "mcts_llm",
@@ -182,7 +183,9 @@ def run(
             raise ValueError(f"method is not configured in this version: {method_name}")
         options = experiment_version["method_configs"][method_name]
     method = method_impl if method_impl is not None else make_method(method_name, seed, options)
-    if method_name in {"v2_sync", "v2_async", "v3_async"} and not _library_residual(rules):
+    if method_name in {"v2_sync", "v2_async", "v3_async", "v4_async"} and not _library_residual(
+        rules
+    ):
         raise ValueError(f"{method_name} requires a version with library_residual = residual_ic_v1")
     if method_name in {
         "mcts_llm",
@@ -193,6 +196,7 @@ def run(
         "v2_sync",
         "v2_async",
         "v3_async",
+        "v4_async",
     } and rules.get("search_diagnostics") not in {"icir_turnover_v1", "icir_turnover_lag1_v2"}:
         raise ValueError(f"{method_name} requires shared icir_turnover_v1 diagnostics")
     if method_name == "alphaschema" and rules.get("search_diagnostics") != "icir_turnover_lag1_v2":
@@ -228,6 +232,8 @@ def run(
             if method_name == "react"
             else "alphaprobe_atlas_v1"
             if method_name == "alphaprobe"
+            else "alphamaster_atlas_v1"
+            if method_name == "alphamaster"
             else "alphaschema_atlas_v1"
             if method_name == "alphaschema"
             else "mcts_llm_atlas_v1"
@@ -236,6 +242,8 @@ def run(
             if method_name == "v2_sync"
             else "atlas_mechanism_v2_async"
             if method_name == "v2_async"
+            else "atlas_mechanism_v4_async"
+            if method_name == "v4_async"
             else "atlas_mechanism_v3_async"
             if method_name == "v3_async"
             else "atlas_explorer_v1_async"
@@ -335,6 +343,7 @@ def _search(directory, spec, method, progress, features, fold, runtime, checkpoi
             "v2_sync",
             "v2_async",
             "v3_async",
+            "v4_async",
         },
         diagnostics=rules.get("search_diagnostics", ""),
         clip_quantiles=rules.get("clip_quantiles"),
@@ -899,6 +908,12 @@ def check_config(root, spec):
         current = AlphaProbeConfig.from_mapping(load_toml(root / "configs/alphaprobe.toml"))
         if json.loads(json.dumps(asdict(current))) != spec["method_config"]:
             raise ValueError("AlphaPROBE configuration changed")
+    if spec["implementation"] == "alphamaster_atlas_v1":
+        from alpha_atlas.methods.models import LLMSearchConfig
+
+        current = LLMSearchConfig.from_mapping(load_toml(root / "configs/alphamaster.toml"))
+        if asdict(current) != spec["method_config"]:
+            raise ValueError("AlphaMaster configuration changed")
     if spec["implementation"] == "alphaschema_atlas_v1":
         from alpha_atlas.methods.alphaschema import AlphaSchemaConfig
 

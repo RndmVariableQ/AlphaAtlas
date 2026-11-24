@@ -1,0 +1,6 @@
+chat_model = "gpt-6-luna"
+chat_base_url = "http://127.0.0.1:27483/codex/v1"
+chat_key_env = "ATLAS_EXPLORER_OPENAI_API_KEY"
+temperature = 0.3
+timeout_seconds = 1800.0
+max_formula_repairs = 1

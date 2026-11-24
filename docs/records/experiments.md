@@ -8486,3 +8486,169 @@ Val 库内相似度。与相同数据快照、fold2、seed 42、空初始正式�
 
 完整结果见 [Analyst + Miner 运行报告](../../artifacts/runs/futures_kernel_5m_full-all-fold2-analyst_miner-42-e252a46f17/report.md)
 和 [V3 运行报告](../../artifacts/comparisons/v3async10_luna_residual_gate_fold2_20261109/workspace/artifacts/runs/futures_kernel_5m_full-all-fold2-v3_async-42-1aa909d2ce/report.md)。
+
+## 2026-11-20 B26 AlphaAtlas V4：DeepSeek 与 Haiku 的证据选题
+
+两组为 fold2、seed 42，各从 26 个固定初始成员出发，模型为 deepseek-flash
+（`4a6b37a399`）和 claude-haiku-5-5（`d3e9cb4115`）。搜索开始时各设 500 次预算，
+运行中按要求改为在第 300 次停止，测试使用前 300 条提交。平台配置保留原预算；
+200 次为补充节点。选题检查仅使用当时的提案、引用及 Train/Val 记录。
+
+| 前 100 次 | 已选计划中有明确引用 | 拓展／修正／细化 | 新增入库 | 入库时残差 IC 合计 |
+| --- | ---: | --- | ---: | ---: |
+| V4 DeepSeek | 18/24 | 13／10／1 | 10 | 0.064938 |
+| V4 Haiku | 10/28 | 28／0／0 | 5 | 0.024110 |
+| V3 Haiku 第一次 | 14/29 | 未标注 | 2 | 0.014283 |
+| V3 Haiku 第二次 | 16/32 | 未标注 | 4 | 0.023280 |
+
+计划计数按首次记录已选提案的 trial 落入区间统计。有引用不等于引用内容支持推断。
+V4 DeepSeek 计划 24 引用 trial 69 与 71：含价格的非流动性因子和成交额收缩对照
+Val IC 接近（0.00786／0.00771），后者库残差仅 0.00027。新计划要求去掉价格输入；
+trial 88 纯成交额版本 Val IC 0.00423，未入库。这是实测结果改变下一步问题的实例。
+同一组计划 7 把原始 Train 与定向 Val 的符号差异称为冲突，但其引用的两项原始 IC 均为负，
+反映了提案对指标口径的误读。
+
+V4 Haiku 的前 100 次偏向未测字段或机制组合。第 101–200 次有引用的计划为 45/46，
+39 个拓展、4 个修正、3 个细化。历史 V3 Haiku 也会根据弱结果追问，例如第一次运行的
+计划 15 引用 trial 10 与 25，区分市场共同成分延续与个体成分反转。上述人工阅读用于描述
+行为，尚无跨模型、跨 seed 的选题质量因果结论。
+
+[DeepSeek 原运行](../../artifacts/runs/futures_kernel_5m_full-all-fold2-v4_async-42-4a6b37a399/run.json)、
+[Haiku 原运行](../../artifacts/runs/futures_kernel_5m_full-all-fold2-v4_async-42-d3e9cb4115/run.json)、
+[300 次配对评估计划](../../artifacts/comparisons/v4_b26_fold2_300/plan.json)。
+
+Haiku 的停止请求生效前，第 301 条并发候选已提交，结果为质量拒绝。冻结截面只含前 300 条，
+新增 20 个，入模 46 列；每百次新增入库残差 IC 为 0.033607，历史 Haiku V3 两次均值
+0.025960。按用户要求先完成 Haiku 测试，DeepSeek 继续独立搜索。配对模型的训练行相同
+（5,296,605 行）；Val 末固定名单中的 73 品种、2,326,761 行用于 IC，74 品种用于 WMSE。
+相对 B26 的历史 Test 增量如下，括号为按年分层、20 交易日块、2,000 次重采样的 95% 区间。
+
+| 模型 | Haiku V4 ΔPearson | Haiku V4 ΔSpearman | V3 Haiku 两次平均 ΔPearson／ΔSpearman |
+| --- | ---: | ---: | ---: |
+| Linear | +0.007209 [+0.001479, +0.017828] | +0.011975 [+0.005992, +0.021844] | +0.006636／+0.005428 |
+| LightGBM | +0.011774 [+0.002365, +0.024013] | +0.013911 [+0.006377, +0.023996] | +0.006841／+0.007029 |
+
+Haiku 变换目标的 WMSE 下降分别为 0.00595% 和 0.02632%，两项区间均跨零。区间为
+单组冻结模型与 B26 的配对比较；V3 均值是历史运行的描述性参照。
+
+[Haiku 配对指标及区间](../../artifacts/comparisons/v4_b26_fold2_300/haiku55/scores.json)、
+[Haiku 300 次冻结截面](../../artifacts/runs/futures_kernel_5m_full-all-fold2-v4_async-42-d3e9cb4115-prefix300/run.json)。
+
+DeepSeek 原运行在 300 次停止，新增 28 个，B26 加新增共 54 列全部入模，每百次入库
+残差 IC 为 0.043659。固定 73 品种下，Linear ΔPearson 为 +0.010586
+[+0.002046, +0.021490]，ΔSpearman 为 +0.011582 [+0.002437, +0.022860]；
+LightGBM ΔPearson 为 +0.014875 [+0.000307, +0.031536]，ΔSpearman 为
++0.019928 [+0.009151, +0.035205]。同口径历史 Luna 分档 V3 三次均值分别为
++0.003974、+0.011153、+0.002252、+0.013335；模型不同，属于跨后端描述性比较。
+
+前 300 次的 DeepSeek 已选计划共 84 个（拓展 31、修正 45、细化 8），77 个有引用。
+Haiku 共 117 个（拓展 99、修正 11、细化 7），98 个有引用。
+按第 300 条原子 trial 的累计时间，DeepSeek 用时 8,767 秒，Haiku 用时 5,285 秒。
+源运行停止时保留的用量为 DeepSeek 746 次请求、已知输入/输出 token 39,923,813 /
+5,083,862（5 次用量未知）；Haiku 768 次、51,565,239 / 3,065,816（3 次用量未知）。
+用量包括并发在途工作及 Haiku 原运行的第 301 条，不能精确分摊至同一截面。
+两组在历史 Test 的四项配对 IC 增量区间均高于零；每后端一个 V4 seed，无法据此分离
+模型差异和选题规则的贡献。
+
+[DeepSeek 配对指标及区间](../../artifacts/comparisons/v4_b26_fold2_300/deepseek/scores.json)、
+[DeepSeek 300 次冻结截面](../../artifacts/runs/futures_kernel_5m_full-all-fold2-v4_async-42-4a6b37a399-prefix300/run.json)。
+
+## 2026-11-20 B26 Luna V4：原生 300 次与三次并行重复
+
+首次运行 `e3e78fa36a` 使用分档配置、fold2、seed 42，从 B26 开始，300 次后自然冻结，新增 12 个。按 Val 末固定 73 品种计算的历史 Test 增量及 95% 配对时间块区间如下。
+
+- linear：ΔPearson +0.001147 [-0.005869, +0.010593]，ΔSpearman +0.011979 [+0.005756, +0.019968]。
+- lightgbm：ΔPearson -0.003074 [-0.013028, +0.009397]，ΔSpearman +0.009781 [+0.000082, +0.021056]。
+
+[首次运行配对指标](../../artifacts/comparisons/v4_b26_fold2_300/luna/scores.json)。
+
+之后另外同时启动三次同配置、同 seed 的独立运行（R1 `e16056279e`、R2 `ea04cf327f`、R3 `0a2d677875`）。每次 300 个新增尝试，独立维护因子库。三次重复单独汇总，首次运行单列。三组均冻结、全部配对模型保存后统一打开历史 Test。
+
+三组在 167／177／166 条提交时批进程收到 SIGTERM，确认写锁释放后沿各自原运行并行恢复。
+每组均自然冻结，核验 trial 序号连续 1–300，冻结成员数等于 26 加新增数。三组模型全部
+拟合后再测试。初次重算基准时逐行预测与历史 B26 数值一致至既定容差，重新排序产生约
+3×10⁻⁸ 的基准 Spearman 差异。固定使用通过行顺序和数值核验的历史 B26 预测列作为
+三组共同对照，增强模型仍使用各自冻结预测。下表均为 300 次历史 Test 相对 B26 的增量。
+
+| Luna 运行 | 新增 | 每百次入库残差 IC | Linear ΔPearson | Linear ΔSpearman | LightGBM ΔPearson | LightGBM ΔSpearman |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| V4 R1 | 10 | 0.010339 | +0.004386 | +0.012059 | +0.006559 | +0.014916 |
+| V4 R2 | 6 | 0.010829 | +0.005768 | +0.008767 | −0.002281 | +0.006292 |
+| V4 R3 | 9 | 0.008523 | +0.002216 | +0.009361 | +0.002355 | +0.012405 |
+| V4 三次均值 | 8.33 | 0.009897 | +0.004123 | +0.010062 | +0.002211 | +0.011204 |
+| V4 组间样本标准差 | 2.08 | 0.001215 | 0.001791 | 0.001755 | 0.004422 | 0.004436 |
+| V3 分档三次均值 | 12.67 | 0.013546 | +0.003974 | +0.011153 | +0.002252 | +0.013335 |
+
+主要 Pearson 增量的组间均值接近，V4 的 Spearman 增量均值和新增数较低。
+这些是同一 seed 的在线重复和已查看历史 Test，不能据此断言方法稳定优于另一方法。
+
+[三次重复汇总](../../artifacts/comparisons/v4_b26_fold2_300_luna_repeat3/summary.json)、
+[R1 指标与区间](../../artifacts/comparisons/v4_b26_fold2_300_luna_repeat3/r1/scores.json)、
+[R2 指标与区间](../../artifacts/comparisons/v4_b26_fold2_300_luna_repeat3/r2/scores.json)、
+[R3 指标与区间](../../artifacts/comparisons/v4_b26_fold2_300_luna_repeat3/r3/scores.json)。
+
+## 2026-11-21 Fold2 Luna V4 空库 500 次截面
+
+三组同 seed 42、总预算各 1000 次。分别冻结前 500 条提交，在 Train+Val 拟合固定组合模型后评估历史 Test。R1／R2／R3 分别入库 17／24／21 个因子。下表为三组均值 ± 样本标准差。
+
+| 方法 | 尝试次数 | 入库因子 | Linear 加权 Pearson | Linear 加权 Spearman | LightGBM 加权 Pearson | LightGBM 加权 Spearman | 入库残差累计（Val） |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| V4 | 500 | 20.7 ± 3.5 | 0.016444 ± 0.003906 | 0.019448 ± 0.000850 | 0.013801 ± 0.002140 | 0.018237 ± 0.002634 | 0.079515 ± 0.021277 |
+
+[同预算历史方法对照](../../experiment_overview.md#规模曲线fold2-gpt6-luna2026-11-09)。
+
+## 2026-11-21 Fold2 Luna V4 空库 1000 次端点
+
+三组均已冻结，沿用 500 次截面的固定组合模型配置。各组依次入库 24／30／35 个因子。下表为三组均值 ± 样本标准差。
+
+| 方法 | 尝试次数 | 入库因子 | Linear 加权 Pearson | Linear 加权 Spearman | LightGBM 加权 Pearson | LightGBM 加权 Spearman | 入库残差累计（Val） |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| V4 | 1000 | 29.7 ± 5.5 | 0.016321 ± 0.002527 | 0.019239 ± 0.001074 | 0.014509 ± 0.002492 | 0.018897 ± 0.001562 | 0.085593 ± 0.023114 |
+
+[同预算横向比较](../../experiment_overview.md#规模曲线fold2-gpt6-luna2026-11-09)。
+
+## 2026-11-21 Fold2 Luna V4 七因子 PCA 有效维度率
+
+普通 V4 三次空库运行各完成 1000 次搜索。沿用 Val 全库共同有效行、1%／99% 裁剪及标准化，每组以 seed 20261110 抽取 10000 个七因子组合，求累计解释 90% 方差的最少主成分数。
+
+| 运行 | 库内因子 | Val 共同有效行 | 平均有效维度 | 有效维度率 |
+| --- | ---: | ---: | ---: | ---: |
+| `6049b139fc` | 24 | 1,841,911 | 5.9069 | 84.38% |
+| `923fcdb9b4` | 30 | 1,990,228 | 6.0324 | 86.18% |
+| `93da3fdba9` | 35 | 2,038,770 | 5.9738 | 85.34% |
+
+三组有效维度为 5.97 ± 0.06，有效维度率为 85.3% ± 0.9%（均值 ± 样本标准差）。[同口径方法对照](../../experiment_overview.md#等数量因子库的-pca-有效维度率)。
+
+同库复抽使用抽样种子 20261121，每库重新抽取 10000 个组合。按上表运行顺序，复抽有效维度率分别为 84.41%、86.10%、85.29%。三库等权均值由 85.300% 变为 85.268%（变化 -0.032 个百分点），复抽组间样本标准差为 0.84 个百分点。[逐次抽样结果](../../artifacts/comparisons/scaling_curves_fold2_20261109/pca_dimension90/equal7_V4_20261121.json)。
+
+## 2026-11-21 Fold2 AlphaMaster 在线双链实验
+
+两种模型各运行一次空库 1000 次和 B26 初始库 300 次，同 seed 42。平台快照、字段和预算以各组冻结配置为准。
+空库沿用历史八字段 Kernel 基准；B26 使用 34 个字段和 26 个预置成员。作者方法的筛选与本地准入映射见[适配说明](../methods/alphamaster.md)。
+
+| 研究模型 | 空库运行 | B26 运行 |
+| --- | --- | --- |
+| GPT6-luna | `612a1afc41` | `d18257a8fa` |
+| Claude Haiku 5.5 | `d7fb5f3cf1` | `b7cdb06bc3` |
+
+B26 预先指定 200／300 次两个节点，分别在共同样本上拟合基线及扩充库。[配对评估计划](../../configs/experiments/alphamaster_fold2/plan.json)
+
+Luna B26 搜索已冻结。前 200／300 次分别新增 5／6 个成员，冻结端点共 32 个因子。基线及两个截面的 Linear、LightGBM 已在相同的 5,296,605 条 Train+Val 记录上拟合。[配对拟合产物](../../artifacts/comparisons/alphamaster_fold2/luna/fit.json)
+
+Haiku B26 搜索已冻结。前 200／300 次分别新增 10／12 个成员，最终库共 38 个因子。初始 26 因子库、200 次的 36 因子库和 300 次的 38 因子库均已在相同的 5,296,605 条 Train+Val 记录上完成 Linear 和 LightGBM 拟合。[配对拟合产物](../../artifacts/comparisons/alphamaster_fold2/haiku55/fit.json)
+
+固定 Val 末名单的历史 Test 配对点估计如下。两种 IC 均在共同的 73 个品种、2,326,761 行上计算，Δ 表示扩充库减去初始 B26。WMSE 下降沿用主表目标口径，Luna 为原始目标，Haiku 为变换后目标。[Luna 点估计](../../artifacts/comparisons/alphamaster_fold2/luna/point.json) · [Haiku 点估计](../../artifacts/comparisons/alphamaster_fold2/haiku55/point.json)
+
+| 研究模型 | 次数 | 新增 | Linear ΔPearson / ΔSpearman | LightGBM ΔPearson / ΔSpearman | WMSE 下降（Linear / LightGBM） |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Luna | 200 | 5 | +0.003437 / +0.010825 | +0.007906 / +0.015250 | +0.007204% / +0.010033% |
+| Luna | 300 | 6 | +0.003964 / +0.010213 | +0.006623 / +0.012704 | +0.011141% / +0.014940% |
+| Haiku | 200 | 10 | +0.004329 / +0.003897 | +0.005949 / +0.004740 | −0.011297% / −0.022323% |
+| Haiku | 300 | 12 | +0.001387 / +0.001395 | +0.002904 / +0.000093 | −0.030228% / −0.004026% |
+
+Luna 空库组（`612a1afc41`）在第 1000 次冻结，共 34 个因子，34 个均完成单因子 Test。加权 Pearson IC 均值 0.004108，中位数 0.004022，31/34 为正（91.18%）。组合 Test 的加权 Pearson / Spearman IC 为 Linear 0.010311 / 0.013890、LightGBM 0.017366 / 0.017849。[单因子结果](../../artifacts/runs/futures_kernel_5m_full-all-fold2-alphamaster-42-612a1afc41/oos.json) · [组合模型结果](../../artifacts/runs/futures_kernel_5m_full-all-fold2-alphamaster-42-612a1afc41/model/test.json)
+
+
+## 2026-11-21 Fold2 DeepSeek Flash 四种 B26 基线
+
+AlphaPROBE（`43122aa597`）、AlphaSchema（`12ec7e513e`）、MCTS-LLM（`5a0723ec06`）和 AlphaMaster（`f6c3701f96`）各自从同一 26 成员初始库启动，seed 42，独立预算 300 次。200 次为次要截面，300 次为主截面。各自冻结后在共同样本上拟合 Linear 和 LightGBM，再按固定 Val 末名单配对评估历史 Test。主表报告变换后目标的 WMSE 下降。[预定协议](../../configs/experiments/b26_deepseek_baselines/plan.json) · [DeepSeek 结果表](../../experiment_overview.md#b26-deepseek-flash)

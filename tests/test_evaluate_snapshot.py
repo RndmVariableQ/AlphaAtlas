@@ -133,3 +133,37 @@ def test_resolver_supports_identifiers_and_rejects_ambiguity(helper, source, tmp
     atomic_json(other / "run.json", json.loads((source / "run.json").read_text()))
     with pytest.raises(ValueError, match="expected one source run"):
         helper.resolve_run(tmp_path, "example_version")
+
+
+def test_seeded_prefix_preserves_initial_members_without_spending_attempts(helper, source):
+    from alpha_atlas.expressions import compile_factor
+
+    spec = read_json(source / "run.json")
+    identity = compile_factor("$close", {"close"}).factor_id
+    spec.update(
+        fields=["close"],
+        rules={"max_expression_nodes": 100, "max_expression_depth": 20},
+        initial_library={
+            "members": [
+                {
+                    "candidate": {"expression": "$close", "name": "baseline"},
+                    "report": {"expression_id": identity, "direction": -1},
+                }
+            ]
+        },
+    )
+    spec["experiment_version"]["operator_versions"] = {}
+    spec["config_fingerprint"] = config_fingerprint(spec)
+    atomic_json(source / "run.json", spec)
+    checkpoint = read_json(source / "checkpoint.json")
+    checkpoint.update(config_fingerprint=spec["config_fingerprint"], library_version=4)
+    atomic_json(source / "checkpoint.json", checkpoint)
+    for path in (source / "factor_trials").glob("*.json"):
+        trial = read_json(path)
+        trial["feedback"]["library_version"] += 1
+        trial["library_size"] += 1
+        atomic_json(path, trial)
+    frozen = read_json(helper.freeze_prefix(source, attempts=3) / "frozen/library.json")
+    assert [f["initial"] for f in frozen["factors"]] == [True, False, False]
+    assert frozen["factors"][0]["compiled"]["factor_id"] == identity
+    assert frozen["factors"][0]["report"]["direction"] == -1
